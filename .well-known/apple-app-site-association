@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "5HQ65DN588.JaeCho.StancePro",
+        "paths": [ "/auth-callback/*", "/reset/*" ]
+      }
+    ]
+  }
+}
