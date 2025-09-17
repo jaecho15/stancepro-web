@@ -12,5 +12,8 @@
   "redirects": [
     { "source": "/functions/v1/auth-callback/:splat*", "destination": "/auth-callback/:splat*", "permanent": false },
     { "source": "/auth-callback/", "destination": "/auth-callback", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/auth/v1/verify", "destination": "https://ryiitcblrrqvjvxkobpf.supabase.co/auth/v1/verify" }
   ]
 }
