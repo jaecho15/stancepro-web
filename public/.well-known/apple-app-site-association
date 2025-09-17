@@ -4,7 +4,9 @@
       {
         "appIDs": ["5HQ65DN588.JaeCho.StancePro"],
         "components": [
-          { "/": "/auth-callback*", "comment": "Password reset & magic links" }
+          { "/": "/auth-callback*", "comment": "Password reset & magic links" },
+          { "/": "/auth/v1/*", "comment": "Supabase verify/recovery endpoints" },
+          { "/": "/functions/v1/auth-callback*", "comment": "Legacy function path" }
         ]
       }
     ]
