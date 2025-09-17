@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["5HQ65DN588.JaeCho.StancePro"],
+        "components": [
+          { "/": "/auth-callback*", "comment": "Password reset & magic links" }
+        ]
+      }
+    ]
+  }
+}
