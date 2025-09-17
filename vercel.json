@@ -4,5 +4,9 @@
       "source": "/.well-known/apple-app-site-association",
       "headers": [{ "key": "Content-Type", "value": "application/json" }]
     }
+  ],
+  "redirects": [
+    { "source": "/functions/v1/auth-callback/:splat*", "destination": "/auth-callback/:splat*", "permanent": false },
+    { "source": "/auth-callback/", "destination": "/auth-callback", "permanent": false }
   ]
 }
