@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://stance-pro.com'),
   title: "StancePro - The Ultimate Snowboard & Ski Stance Calculator",
   description: "Dial in your perfect stance setup with science-backed recommendations. Compare with pro riders, get video coaching, and join the community.",
   keywords: ["snowboard", "ski", "stance calculator", "binding angles", "stance width", "snowboarding app"],
