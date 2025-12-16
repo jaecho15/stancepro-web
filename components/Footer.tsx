@@ -53,9 +53,14 @@ export function Footer() {
 
         {/* Bottom */}
         <div className="flex flex-col md:flex-row items-center justify-between pt-8 border-t border-white/10">
-          <p className="text-slate-400 text-sm mb-4 md:mb-0">
-            © {new Date().getFullYear()} StancePro. All rights reserved.
-          </p>
+          <div className="text-center md:text-left mb-4 md:mb-0">
+            <p className="text-slate-400 text-sm">
+              © {new Date().getFullYear()} StancePro. All rights reserved.
+            </p>
+            <p className="text-slate-500 text-xs mt-1">
+              Developed by Richie Johnston & Jae Cho | <span className="text-slate-400">JC Kraft</span>
+            </p>
+          </div>
           <div className="flex items-center gap-4">
             <a 
               href="https://instagram.com/stancepro" 
@@ -85,4 +90,3 @@ export function Footer() {
     </footer>
   );
 }
-
