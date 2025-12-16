@@ -18,6 +18,7 @@ import { AppStoreButtons } from "@/components/AppStoreButtons";
 import { FeatureCard } from "@/components/FeatureCard";
 import { TestimonialCard } from "@/components/TestimonialCard";
 import { StatsSection } from "@/components/StatsSection";
+import { ProRidersShowcase } from "@/components/ProRidersShowcase";
 
 export default function Home() {
   return (
@@ -178,6 +179,9 @@ export default function Home() {
           </Link>
         </div>
       </section>
+
+      {/* Pro Riders Section */}
+      <ProRidersShowcase />
 
       {/* How It Works Section */}
       <section className="relative container mx-auto px-6 py-24">
