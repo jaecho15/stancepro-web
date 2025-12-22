@@ -39,3 +39,9 @@ export function TestimonialCard({ quote, author, role, rating, delay = 0 }: Test
   );
 }
 
+
+
+
+
+
+

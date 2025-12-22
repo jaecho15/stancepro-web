@@ -29,3 +29,9 @@ export function FeatureCard({ icon: Icon, title, description, gradient, delay = 
   );
 }
 
+
+
+
+
+
+
