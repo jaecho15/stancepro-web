@@ -63,7 +63,7 @@ export function Footer() {
           </div>
           <div className="flex items-center gap-4">
             <a 
-              href="https://instagram.com/stancepro" 
+              href="https://instagram.com/stance.pro" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-slate-400 hover:text-white transition-colors"

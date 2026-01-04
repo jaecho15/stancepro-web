@@ -112,7 +112,7 @@ export default function SupportPage() {
           </motion.a>
 
           <motion.a
-            href="https://instagram.com/stancepro"
+            href="https://instagram.com/stance.pro"
             target="_blank"
             rel="noopener noreferrer"
             initial={{ opacity: 0, y: 20 }}
