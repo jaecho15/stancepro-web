@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X, Snowflake, AlertCircle } from "lucide-react";
+import { Menu, X, Snowflake } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const navLinks = [
@@ -13,30 +13,10 @@ const navLinks = [
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showBanner, setShowBanner] = useState(true);
 
   return (
     <>
-      {/* Beta Banner */}
-      {showBanner && (
-        <div className="fixed top-0 left-0 right-0 z-[60] bg-gradient-to-r from-amber-500/90 to-orange-500/90 backdrop-blur-sm">
-          <div className="container mx-auto px-6 py-2 flex items-center justify-center gap-2 text-sm text-white">
-            <AlertCircle className="w-4 h-4" />
-            <span>
-              <strong>Beta:</strong> StancePro is currently undergoing beta testing. Features may change.
-            </span>
-            <button 
-              onClick={() => setShowBanner(false)}
-              className="ml-4 hover:bg-white/20 rounded p-1 transition-colors"
-              aria-label="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <header className={`fixed left-0 right-0 z-50 glass transition-all ${showBanner ? 'top-10' : 'top-0'}`}>
+      <header className="fixed top-0 left-0 right-0 z-50 glass transition-all">
         <div className="container mx-auto px-6">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}

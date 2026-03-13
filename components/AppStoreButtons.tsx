@@ -2,6 +2,10 @@
 
 import { Apple } from "lucide-react";
 
+const IOS_APP_STORE_URL =
+  process.env.NEXT_PUBLIC_IOS_APP_STORE_URL ??
+  "https://apps.apple.com/fr/app/stancepro/id6744301646?l=en-GB";
+
 // Custom Play Store icon since lucide doesn't have one
 function PlayStoreIcon({ className }: { className?: string }) {
   return (
@@ -16,7 +20,7 @@ export function AppStoreButtons() {
     <div className="flex flex-col sm:flex-row items-center gap-4">
       {/* App Store Button */}
       <a
-        href="https://apps.apple.com/app/stancepro" // Replace with actual URL
+        href={IOS_APP_STORE_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-3 px-6 py-3 rounded-xl bg-white text-black hover:bg-slate-100 transition-colors min-w-[180px]"
@@ -30,7 +34,7 @@ export function AppStoreButtons() {
 
       {/* Google Play Button */}
       <a
-        href="https://play.google.com/store/apps/details?id=com.stancepro" // Replace with actual URL
+        href="https://play.google.com/store/apps/details?id=com.stancepro"
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-3 px-6 py-3 rounded-xl bg-white text-black hover:bg-slate-100 transition-colors min-w-[180px]"
