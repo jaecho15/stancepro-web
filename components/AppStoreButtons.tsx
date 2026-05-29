@@ -4,7 +4,7 @@ import { Apple } from "lucide-react";
 
 const IOS_APP_STORE_URL =
   process.env.NEXT_PUBLIC_IOS_APP_STORE_URL ??
-  "https://apps.apple.com/fr/app/stancepro/id6744301646?l=en-GB";
+  "https://apps.apple.com/app/id6744301646";
 
 // Custom Play Store icon since lucide doesn't have one
 function PlayStoreIcon({ className }: { className?: string }) {

@@ -13,7 +13,7 @@ interface Stats {
 const defaultStats = [
   { value: "1K+", label: "Active Users" },
   { value: "5K+", label: "Setups Created" },
-  { value: "100+", label: "Pro Rider Profiles" },
+  { value: "100+", label: "Rider Profiles" },
   { value: "4.8", label: "App Store Rating" },
 ];
 
@@ -42,7 +42,7 @@ export function StatsSection() {
     ? [
         { value: stats.users, label: "Active Users" },
         { value: stats.setups, label: "Setups Created" },
-        { value: `${stats.proRiders}+`, label: "Pro Rider Profiles" },
+        { value: `${stats.proRiders}+`, label: "Rider Profiles" },
         { value: stats.rating, label: "App Store Rating" },
       ]
     : defaultStats;

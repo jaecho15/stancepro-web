@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X, Snowflake } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const navLinks = [
   { href: "/features", label: "Features" },
@@ -20,11 +21,8 @@ export function Header() {
         <div className="container mx-auto px-6">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 font-bold text-xl">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center">
-                <Snowflake className="w-5 h-5 text-white" />
-              </div>
-              <span>StancePro</span>
+            <Link href="/" className="flex items-center">
+              <BrandLogo iconSize={32} wordmarkWidth={156} />
             </Link>
 
             {/* Desktop Navigation */}

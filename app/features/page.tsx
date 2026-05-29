@@ -1,103 +1,100 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { 
-  Calculator, 
-  Users, 
-  Video, 
-  Mountain, 
+import {
+  Calculator,
+  Users,
+  Video,
+  Mountain,
   Target,
   TrendingUp,
   Ruler,
   Compass,
   Sliders,
-  Camera,
   MessageCircle,
   BookOpen,
   Award,
-  Zap,
-  Shield,
-  Cloud
+  Zap
 } from "lucide-react";
 import { AppStoreButtons } from "@/components/AppStoreButtons";
 
 const features = [
   {
-    id: "calculator",
-    title: "Stance Calculator",
-    description: "Our advanced stance calculator uses biomechanical principles and industry research to recommend your optimal stance setup.",
-    icon: Calculator,
+    id: "coaching",
+    title: "AI Coaching + Certified Trainers",
+    description: "Upload riding clips for AI feedback, then add human coaching from certified coaches and top-level trainers when you want deeper review.",
+    icon: Video,
     gradient: "from-brand-500 to-cyan-500",
     details: [
-      { icon: Ruler, text: "Personalized stance width based on your leg length and height" },
-      { icon: Compass, text: "Binding angle recommendations for your riding style" },
-      { icon: Sliders, text: "Setback calculations for different terrain" },
-      { icon: Target, text: "Ski length recommendations using performance-focused formula" },
+      { icon: Video, text: "Upload existing riding clips from your device" },
+      { icon: MessageCircle, text: "Choose AI feedback or request human coach review" },
+      { icon: Users, text: "Top-level trainers are available for advanced coaching tiers" },
+      { icon: Zap, text: "Review completed sessions and follow-up actions in one place" },
+    ]
+  },
+  {
+    id: "equipment",
+    title: "AI Gear Assessment",
+    description: "Use AI-assisted gear assessment together with your saved gear, comparisons, and riding context to make smarter equipment decisions.",
+    icon: Target,
+    gradient: "from-purple-500 to-pink-500",
+    details: [
+      { icon: Sliders, text: "Assess gear with riding context in mind" },
+      { icon: Target, text: "Save gear to your personal kit and shortlists" },
+      { icon: TrendingUp, text: "Compare options side by side before deciding" },
+      { icon: BookOpen, text: "Build setups around your saved equipment" },
+    ]
+  },
+  {
+    id: "calculator",
+    title: "Snowboard + Ski Setup Tools",
+    description: "Build personalized snowboard and ski recommendations from your body profile, riding style, terrain, and equipment context.",
+    icon: Calculator,
+    gradient: "from-orange-500 to-red-500",
+    details: [
+      { icon: Ruler, text: "Profile-based stance width and sizing guidance" },
+      { icon: Compass, text: "Snowboard angles, setback, and ski setup recommendations" },
+      { icon: Sliders, text: "Saved setups you can revisit, edit, and compare" },
+      { icon: Target, text: "QR share and import tools for quick handoff" },
     ]
   },
   {
     id: "pro-riders",
-    title: "Pro Rider Database",
-    description: "Compare your setup with over 100 professional snowboarders and skiers. See exactly what the best in the world are riding.",
+    title: "Rider Setup Inspiration",
+    description: "Explore published rider profiles and compare setup references inside the app without losing sight of your own saved setup.",
     icon: Users,
-    gradient: "from-purple-500 to-pink-500",
+    gradient: "from-green-500 to-emerald-500",
     details: [
-      { icon: Award, text: "100+ verified pro rider setups" },
-      { icon: Target, text: "Filter by riding style, height, and weight" },
-      { icon: TrendingUp, text: "See how your setup compares" },
-      { icon: BookOpen, text: "Learn from the pros' equipment choices" },
-    ]
-  },
-  {
-    id: "coaching",
-    title: "Video Coaching",
-    description: "Get personalized feedback from certified coaches. Record your runs, add annotations, and receive expert analysis.",
-    icon: Video,
-    gradient: "from-orange-500 to-red-500",
-    details: [
-      { icon: Camera, text: "Record directly in the app or upload existing videos" },
-      { icon: MessageCircle, text: "Voice annotations and drawing tools" },
-      { icon: Users, text: "Connect with certified coaches" },
-      { icon: Zap, text: "Quick turnaround on feedback" },
+      { icon: Award, text: "Browse rider profiles already in the app database" },
+      { icon: Target, text: "Compare stance widths and angles to your own" },
+      { icon: TrendingUp, text: "Use style tags and references for setup ideas" },
+      { icon: BookOpen, text: "Save useful comparisons alongside your own setups" },
     ]
   },
   {
     id: "community",
     title: "Community Hub",
-    description: "Connect with fellow riders, share your experiences, and learn from the community.",
+    description: "Field Talks, reviews, events, and training media give riders a place to learn, share, and stay connected.",
     icon: Mountain,
-    gradient: "from-green-500 to-emerald-500",
-    details: [
-      { icon: MessageCircle, text: "Field Talks - Share experiences on the slopes" },
-      { icon: BookOpen, text: "Gear Reviews - Community equipment reviews" },
-      { icon: Video, text: "Training Media - Professional training videos" },
-      { icon: Award, text: "Events - Find and join riding events" },
-    ]
-  },
-  {
-    id: "equipment",
-    title: "Equipment Database",
-    description: "Browse our extensive database of snowboards, skis, bindings, and boots. Find the perfect gear for your setup.",
-    icon: Target,
     gradient: "from-blue-500 to-indigo-500",
     details: [
-      { icon: Shield, text: "Verified specs from manufacturers" },
-      { icon: Sliders, text: "Filter by size, flex, and style" },
-      { icon: TrendingUp, text: "Compatibility recommendations" },
-      { icon: Cloud, text: "Always up-to-date catalog" },
+      { icon: MessageCircle, text: "Field Talks for questions, stories, and discussion" },
+      { icon: BookOpen, text: "Community reviews for stance and gear feedback" },
+      { icon: Video, text: "Training media with technique-focused content" },
+      { icon: Award, text: "Events and browsing tools for the riding community" },
     ]
   },
   {
     id: "tracking",
-    title: "Setup Tracking",
-    description: "Save multiple setups, track your evolution, and fine-tune your gear as you progress.",
+    title: "Messaging, Saves & Progress",
+    description: "Keep conversations, saved setups, gear, and progression tools together in one account.",
     icon: TrendingUp,
     gradient: "from-amber-500 to-orange-500",
     details: [
-      { icon: Cloud, text: "Cloud sync across all your devices" },
-      { icon: BookOpen, text: "Detailed setup history" },
-      { icon: Sliders, text: "Compare different configurations" },
-      { icon: Zap, text: "Quick setup switching" },
+      { icon: MessageCircle, text: "Direct messaging with conversation tracking" },
+      { icon: BookOpen, text: "Saved stance and gear setups tied to your account" },
+      { icon: Sliders, text: "Progression and coaching hub tools for riders and coaches" },
+      { icon: Zap, text: "Premium coaching credits and upgrade flows live in-app" },
     ]
   },
 ];
@@ -128,8 +125,8 @@ export default function FeaturesPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            From stance calculations to video coaching, StancePro gives you everything 
-            you need to optimize your setup and improve your riding.
+            AI-powered coaching, AI gear assessment, certified trainer reviews,
+            and setup tools all work together inside StancePro.
           </motion.p>
         </div>
       </section>
@@ -188,8 +185,9 @@ export default function FeaturesPage() {
             Ready to Get Started?
           </h2>
           <p className="text-xl text-slate-400 mb-8 max-w-2xl mx-auto">
-            Download StancePro today and unlock all these features.
-            Free to download with premium coaching available.
+            Download StancePro today and explore AI coaching, AI gear
+            assessment, certified trainer reviews, and the setup tools that
+            support them.
           </p>
           <AppStoreButtons />
         </motion.div>

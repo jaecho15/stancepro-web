@@ -15,7 +15,11 @@ const faqs = [
   },
   {
     question: "How does video coaching work?",
-    answer: "Record your riding directly in the app or upload existing videos. Your video is then assigned to a certified coach who will add voice annotations, drawings, and text feedback. You'll receive notification when your coached session is ready to view."
+    answer: "Upload an existing riding clip, then start with AI feedback or request human coaching depending on the level of support you want. For deeper technical review, StancePro also supports advanced coaching from certified coaches and top-level trainers, with the completed session returned in the app alongside your video and follow-up actions."
+  },
+  {
+    question: "Does StancePro include AI gear assessment?",
+    answer: "Yes. StancePro includes AI-powered gear assessment alongside your saved gear, comparisons, and setup context so you can make smarter equipment decisions instead of relying on guesswork alone."
   },
   {
     question: "Is my data synced across devices?",
@@ -26,12 +30,12 @@ const faqs = [
     answer: "Yes! Your saved setups, recent coaching sessions, and most features work offline. Videos and thumbnails are cached automatically for offline viewing. Data syncs when you're back online."
   },
   {
-    question: "How do I cancel my Pro subscription?",
-    answer: "You can manage your subscription through the App Store (iOS) or Google Play (Android). Go to your account settings in the respective store and select 'Subscriptions' to cancel or modify your plan."
+    question: "How do I manage premium purchases?",
+    answer: "Premium purchases are managed through the App Store on iOS or Google Play on Android, with in-app restore and customer-center flows where available. Check the current offering details in the app before purchasing because premium options can vary."
   },
   {
-    question: "Are the pro rider setups verified?",
-    answer: "We source our pro rider data from published interviews, sponsor content, and official sources. While setups may change between seasons, we strive to keep our database as current and accurate as possible."
+    question: "What are rider setup profiles used for?",
+    answer: "Rider setup profiles are there to give you reference points and inspiration while you compare against your own saved setup. They are best used as context, not as a one-size-fits-all recommendation."
   },
   {
     question: "What measurements do I need for the calculator?",

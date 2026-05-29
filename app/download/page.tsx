@@ -5,22 +5,23 @@ import { Smartphone, Check, Sparkles } from "lucide-react";
 import { AppStoreButtons } from "@/components/AppStoreButtons";
 
 const freeFeatures = [
-  "Stance calculator for snowboard & ski",
-  "Save up to 3 setups",
-  "Pro rider database access",
-  "Equipment database",
-  "Community access (Field Talks)",
-  "Basic gear reviews",
+  "AI gear assessment tools",
+  "Snowboard and ski setup tools",
+  "Saved stance and gear setups",
+  "Rider setup inspiration",
+  "Gear hub and compare tools",
+  "Field Talks, reviews, and community browsing",
+  "Messaging and account sync",
 ];
 
 const proFeatures = [
-  "Everything in Free, plus:",
-  "Unlimited setup saves",
-  "Video coaching sessions",
-  "Priority coach matching",
-  "Advanced analytics",
-  "Training media library",
-  "Ad-free experience",
+  "AI video feedback sessions",
+  "Human coach review requests",
+  "Top-level certified trainer coaching tiers",
+  "Premium coaching credit packs",
+  "In-app upgrades and restore flows",
+  "Advanced coaching and coach hub tools",
+  "Offerings may vary by platform and region",
 ];
 
 export default function DownloadPage() {
@@ -60,8 +61,9 @@ export default function DownloadPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            Get the app that's helping thousands of riders dial in their perfect setup. 
-            Free to download with optional premium features.
+            Get the app that combines AI-powered coaching, AI gear assessment,
+            certified trainer reviews, and rider tools in one place. Free to
+            download with optional premium coaching and in-app upgrades.
           </motion.p>
 
           <motion.div
@@ -95,7 +97,7 @@ export default function DownloadPage() {
         </motion.div>
       </section>
 
-      {/* Pricing Section */}
+      {/* Access Options */}
       <section className="relative container mx-auto px-6 py-24">
         <div className="text-center mb-16">
           <motion.h2 
@@ -104,7 +106,7 @@ export default function DownloadPage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            Simple Pricing
+            Access Options
           </motion.h2>
           <motion.p 
             className="text-xl text-slate-400"
@@ -113,23 +115,23 @@ export default function DownloadPage() {
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
           >
-            Start free, upgrade when you&apos;re ready for more.
+            Start with AI-powered rider tools, then unlock premium coaching
+            inside the app when you want deeper support.
           </motion.p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {/* Free Tier */}
+          {/* Core App */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             className="glass rounded-2xl p-8"
           >
-            <h3 className="text-2xl font-bold mb-2">Free</h3>
-            <p className="text-slate-400 mb-6">Everything you need to get started</p>
-            <div className="text-4xl font-bold mb-8">
-              $0
-              <span className="text-lg text-slate-400 font-normal">/forever</span>
+            <h3 className="text-2xl font-bold mb-2">Core App</h3>
+            <p className="text-slate-400 mb-6">A strong starting point for AI gear insight, setup, and community</p>
+            <div className="text-3xl font-bold mb-8">
+              Free to download
             </div>
             <ul className="space-y-4 mb-8">
               {freeFeatures.map((feature) => (
@@ -144,7 +146,7 @@ export default function DownloadPage() {
             </div>
           </motion.div>
 
-          {/* Pro Tier */}
+          {/* Premium & Coaching */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -153,13 +155,12 @@ export default function DownloadPage() {
             className="relative glass rounded-2xl p-8 border-2 border-brand-500"
           >
             <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-brand-500 rounded-full text-sm font-semibold">
-              Most Popular
+              In-App Options
             </div>
-            <h3 className="text-2xl font-bold mb-2">Pro</h3>
-            <p className="text-slate-400 mb-6">For serious riders who want it all</p>
-            <div className="text-4xl font-bold mb-8">
-              $9.99
-              <span className="text-lg text-slate-400 font-normal">/month</span>
+            <h3 className="text-2xl font-bold mb-2">Premium & Coaching</h3>
+            <p className="text-slate-400 mb-6">Extra support when you want AI plus certified human review</p>
+            <div className="text-3xl font-bold mb-8">
+              Purchased in app
             </div>
             <ul className="space-y-4 mb-8">
               {proFeatures.map((feature) => (
@@ -170,7 +171,7 @@ export default function DownloadPage() {
               ))}
             </ul>
             <p className="text-center text-sm text-slate-400">
-              Upgrade in-app after downloading
+              Check current offerings in the app after downloading
             </p>
           </motion.div>
         </div>

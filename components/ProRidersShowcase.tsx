@@ -2,7 +2,6 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { ChevronRight, User } from "lucide-react";
 
@@ -61,8 +60,8 @@ export function ProRidersShowcase() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
         >
-          Learn from the
-          <span className="gradient-text"> Pros</span>
+          Explore Rider
+          <span className="gradient-text"> Setups</span>
         </motion.h2>
         <motion.p 
           className="text-xl text-slate-400 max-w-2xl mx-auto"
@@ -71,7 +70,18 @@ export function ProRidersShowcase() {
           viewport={{ once: true }}
           transition={{ delay: 0.1 }}
         >
-          Compare your setup with professional riders and see what works for the best in the world.
+          Browse rider profiles and published setup references for inspiration,
+          then compare them with your own saved setup.
+        </motion.p>
+        <motion.p
+          className="text-sm text-slate-500 max-w-2xl mx-auto mt-4"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.15 }}
+        >
+          Rider setup references are compiled from publicly available information
+          and may change over time. Use them as inspiration, not fixed specs.
         </motion.p>
       </div>
 
@@ -88,12 +98,14 @@ export function ProRidersShowcase() {
             {/* Rider Image */}
             <div className="w-20 h-20 mx-auto mb-3 rounded-full overflow-hidden bg-mountain-800">
               {rider.image_url ? (
-                <Image
+                <img
                   src={rider.image_url}
                   alt={rider.name}
                   width={80}
                   height={80}
                   className="w-full h-full object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
@@ -134,7 +146,7 @@ export function ProRidersShowcase() {
           href="/download"
           className="inline-flex items-center gap-2 text-brand-400 hover:text-brand-300 transition-colors"
         >
-          See all {riders.length > 0 ? '100+' : ''} pro setups in the app
+          See more rider setup inspiration in the app
           <ChevronRight className="w-4 h-4" />
         </Link>
       </div>
