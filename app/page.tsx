@@ -92,6 +92,11 @@ export default function Home() {
                       label: "Progress + Saved Setups",
                     },
                     {
+                      src: "/screenshots/measurements.png",
+                      alt: "StancePro body measurements form with height, weight, boot size and leg length",
+                      label: "Body Measurements",
+                    },
+                    {
                       src: "/screenshots/gear-setup.png",
                       alt: "StancePro gear setup details with saved board, boots and bindings",
                       label: "Gear Setup",
@@ -100,11 +105,6 @@ export default function Home() {
                       src: "/screenshots/my-requests.png",
                       alt: "StancePro rider coaching requests queue with pending reviews",
                       label: "Coaching Requests",
-                    },
-                    {
-                      src: "/screenshots/body-measurement.png",
-                      alt: "StancePro live body measurement with pose detection and leg length",
-                      label: "Body Measurement",
                     },
                     {
                       src: "/screenshots/pose-analysis.png",
