@@ -10,11 +10,16 @@ import {
   PreviewImageButton,
 } from "@/components/brand-review/ImageLightbox";
 import {
+  WordmarkFontCompare,
+  type SelectionRow,
+} from "@/components/brand-review/WordmarkFontCompare";
+import {
   BRAND_REVIEW_ASSETS,
   BRAND_REVIEW_CATEGORY_LABELS,
   type BrandReviewAsset,
   type BrandReviewCategory,
 } from "@/lib/brand-review-assets";
+import type { WordmarkChoiceSlug } from "@/lib/wordmark-compare";
 
 type RatingRow = {
   id: string;
@@ -243,6 +248,7 @@ export function BrandReviewPortal() {
   const { supabase, session, signOut } = useInternalAuth();
   const [accessDenied, setAccessDenied] = useState(false);
   const [ratings, setRatings] = useState<RatingRow[]>([]);
+  const [selections, setSelections] = useState<SelectionRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, ProfileRow>>({});
   const [category, setCategory] = useState<CategoryFilter>("all");
@@ -250,15 +256,16 @@ export function BrandReviewPortal() {
 
   const loadReviewData = useCallback(async () => {
     if (!supabase) return;
-    const [ratingsRes, commentsRes] = await Promise.all([
+    const [ratingsRes, commentsRes, selectionsRes] = await Promise.all([
       supabase.from("brand_review_ratings").select("*"),
       supabase
         .from("brand_review_comments")
         .select("*")
         .order("created_at", { ascending: true }),
+      supabase.from("brand_review_selections").select("*"),
     ]);
 
-    if (ratingsRes.error || commentsRes.error) {
+    if (ratingsRes.error || commentsRes.error || selectionsRes.error) {
       setAccessDenied(true);
       return;
     }
@@ -267,11 +274,14 @@ export function BrandReviewPortal() {
     setRatings((ratingsRes.data ?? []) as RatingRow[]);
     const commentRows = (commentsRes.data ?? []) as CommentRow[];
     setComments(commentRows);
+    const selectionRows = (selectionsRes.data ?? []) as SelectionRow[];
+    setSelections(selectionRows);
 
     const userIds = [
       ...new Set([
         ...((ratingsRes.data ?? []) as RatingRow[]).map((r) => r.user_id),
         ...commentRows.map((c) => c.user_id),
+        ...selectionRows.map((s) => s.user_id),
       ]),
     ];
 
@@ -319,6 +329,22 @@ export function BrandReviewPortal() {
       user_id: session.user.id,
       body,
     });
+    if (!error) await loadReviewData();
+  };
+
+  const handleSelect = async (pollSlug: string, choiceSlug: WordmarkChoiceSlug) => {
+    if (!session?.user || !supabase) return;
+    setBusy(true);
+    const { error } = await supabase.from("brand_review_selections").upsert(
+      {
+        poll_slug: pollSlug,
+        choice_slug: choiceSlug,
+        user_id: session.user.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "poll_slug,user_id" }
+    );
+    setBusy(false);
     if (!error) await loadReviewData();
   };
 
@@ -376,7 +402,8 @@ export function BrandReviewPortal() {
         <p className="mb-6 text-sm text-slate-400">
           Rate each creative (1–5 stars) and leave comments for the team. Use{" "}
           <strong className="font-medium text-slate-300">Wordmark fonts</strong>{" "}
-          to compare Michroma v5 vs Microgramma D Extended Bold.
+          to pick Michroma v5 vs Microgramma — business cards and posters
+          separately.
         </p>
 
         <div className="mb-8 flex flex-wrap gap-2">
@@ -397,22 +424,34 @@ export function BrandReviewPortal() {
           )}
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
-          {filteredAssets.map((asset) => (
-            <AssetReviewCard
-              key={asset.slug}
-              asset={asset}
-              user={session.user}
-              myRating={myRatingsBySlug[asset.slug] ?? null}
-              teamAverage={averageStars(asset.slug, ratings)}
-              comments={comments}
-              profiles={profiles}
-              onRate={handleRate}
-              onComment={handleComment}
-              busy={busy}
-            />
-          ))}
-        </div>
+        {category === "wordmark_compare" ? (
+          <WordmarkFontCompare
+            user={session.user}
+            selections={selections}
+            profiles={profiles}
+            comments={comments}
+            onSelect={handleSelect}
+            onComment={handleComment}
+            busy={busy}
+          />
+        ) : (
+          <div className="grid gap-8 lg:grid-cols-2">
+            {filteredAssets.map((asset) => (
+              <AssetReviewCard
+                key={asset.slug}
+                asset={asset}
+                user={session.user}
+                myRating={myRatingsBySlug[asset.slug] ?? null}
+                teamAverage={averageStars(asset.slug, ratings)}
+                comments={comments}
+                profiles={profiles}
+                onRate={handleRate}
+                onComment={handleComment}
+                busy={busy}
+              />
+            ))}
+          </div>
+        )}
       </main>
     </InternalChrome>
   );
