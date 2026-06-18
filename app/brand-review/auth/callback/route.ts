@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 
+/** Legacy callback — forwards to shared internal auth handler. */
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/brand-review";
-
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
-    }
+  const url = new URL(request.url);
+  const target = new URL("/internal/auth/callback", url.origin);
+  for (const [key, value] of url.searchParams.entries()) {
+    target.searchParams.set(key, value);
   }
-
-  return NextResponse.redirect(`${origin}/brand-review?error=auth`);
+  if (!target.searchParams.has("next")) {
+    target.searchParams.set("next", "/internal/brand-review");
+  }
+  return NextResponse.redirect(target);
 }

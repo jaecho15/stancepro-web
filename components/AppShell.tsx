@@ -6,9 +6,9 @@ import { Footer } from "@/components/Footer";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isBrandReview = pathname?.startsWith("/brand-review");
+  const isInternal = pathname?.startsWith("/internal") || pathname?.startsWith("/brand-review");
 
-  if (isBrandReview) {
+  if (isInternal) {
     return <>{children}</>;
   }
 

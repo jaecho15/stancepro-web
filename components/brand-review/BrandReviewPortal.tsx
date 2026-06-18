@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { LogOut, MessageSquare, Star } from "lucide-react";
-import type { Session, User } from "@supabase/supabase-js";
-import { BrandLogo } from "@/components/BrandLogo";
-import { createClient } from "@/lib/supabase/client";
+import { MessageSquare, Star } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+import { InternalChrome } from "@/components/internal/InternalChrome";
+import { useInternalAuth } from "@/hooks/useInternalAuth";
 import {
   BRAND_REVIEW_ASSETS,
   BRAND_REVIEW_CATEGORY_LABELS,
@@ -227,15 +227,8 @@ function AssetReviewCard({
 }
 
 export function BrandReviewPortal() {
-  const [supabase, setSupabase] = useState<ReturnType<typeof createClient> | null>(
-    null
-  );
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { supabase, session, signOut } = useInternalAuth();
   const [accessDenied, setAccessDenied] = useState(false);
-  const [email, setEmail] = useState("");
-  const [loginMessage, setLoginMessage] = useState<string | null>(null);
-  const [loginError, setLoginError] = useState<string | null>(null);
   const [ratings, setRatings] = useState<RatingRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, ProfileRow>>({});
@@ -286,72 +279,9 @@ export function BrandReviewPortal() {
   }, [supabase]);
 
   useEffect(() => {
-    setSupabase(createClient());
-  }, []);
-
-  useEffect(() => {
-    if (!supabase) return;
-    let mounted = true;
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [supabase]);
-
-  useEffect(() => {
     if (!session || !supabase) return;
     loadReviewData();
   }, [session, supabase, loadReviewData]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("error") === "auth") {
-      setLoginError("Sign-in link expired or invalid. Request a new one.");
-    }
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supabase) return;
-    setLoginError(null);
-    setLoginMessage(null);
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed) return;
-
-    const redirectTo = `${window.location.origin}/brand-review/auth/callback`;
-    const { error } = await supabase.auth.signInWithOtp({
-      email: trimmed,
-      options: { emailRedirectTo: redirectTo },
-    });
-
-    if (error) {
-      setLoginError(error.message);
-      return;
-    }
-    setLoginMessage("Check your email for a sign-in link.");
-  };
-
-  const handleSignOut = async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    setRatings([]);
-    setComments([]);
-    setProfiles({});
-    setAccessDenied(false);
-  };
 
   const handleRate = async (slug: string, stars: number) => {
     if (!session?.user || !supabase) return;
@@ -395,53 +325,8 @@ export function BrandReviewPortal() {
     return map;
   }, [ratings, session?.user]);
 
-  if (loading || !supabase) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0f1c40] text-slate-300">
-        Loading…
-      </div>
-    );
-  }
-
-  if (!session?.user) {
-    return (
-      <div className="min-h-screen bg-[#0f1c40] px-6 py-16">
-        <div className="mx-auto max-w-md space-y-8">
-          <div className="flex justify-center">
-            <BrandLogo iconSize={40} wordmarkWidth={180} />
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/50 p-8">
-            <h1 className="text-2xl font-bold text-white">Brand Review</h1>
-            <p className="mt-2 text-sm text-slate-300">
-              Internal portal for StancePro marketing assets. Sign in with your
-              @stance-pro.com email.
-            </p>
-            <form onSubmit={handleLogin} className="mt-6 space-y-4">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@stance-pro.com"
-                className="w-full rounded-lg border border-white/10 bg-[#0f1c40] px-4 py-3 text-white placeholder:text-slate-500 focus:border-brand-400 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-brand-600 py-3 font-medium text-white hover:bg-brand-500"
-              >
-                Email me a sign-in link
-              </button>
-            </form>
-            {loginMessage ? (
-              <p className="mt-4 text-sm text-emerald-400">{loginMessage}</p>
-            ) : null}
-            {loginError ? (
-              <p className="mt-4 text-sm text-red-400">{loginError}</p>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    );
+  if (!supabase || !session?.user) {
+    return null;
   }
 
   if (accessDenied) {
@@ -455,7 +340,7 @@ export function BrandReviewPortal() {
           </p>
           <button
             type="button"
-            onClick={handleSignOut}
+            onClick={() => signOut()}
             className="rounded-lg border border-white/20 px-4 py-2 text-sm text-white"
           >
             Sign out
@@ -466,30 +351,14 @@ export function BrandReviewPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1c40]">
-      <header className="border-b border-white/10 bg-[#1a2e61]/60">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-5">
-          <div className="flex items-center gap-4">
-            <BrandLogo iconSize={32} wordmarkWidth={140} />
-            <div>
-              <p className="text-lg font-semibold text-white">Brand Review</p>
-              <p className="text-xs text-slate-400">Internal · preview assets</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-slate-300">
-            <span>{session.user.email}</span>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-1.5 hover:bg-white/5"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <InternalChrome
+      title="Brand Review"
+      subtitle="Internal · preview assets"
+      email={session.user.email}
+      onSignOut={signOut}
+      backHref="/internal"
+      backLabel="Internal home"
+    >
       <main className="mx-auto max-w-6xl px-6 py-8">
         <p className="mb-6 text-sm text-slate-400">
           Rate each creative (1–5 stars) and leave comments for the team. Updates
@@ -531,7 +400,7 @@ export function BrandReviewPortal() {
           ))}
         </div>
       </main>
-    </div>
+    </InternalChrome>
   );
 }
 
