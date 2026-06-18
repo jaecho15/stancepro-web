@@ -5,20 +5,20 @@ import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 
 type InternalAuthState = {
-  supabase: ReturnType<typeof createClient> | null;
+  supabase: ReturnType<typeof createClient>;
   session: Session | null;
   loading: boolean;
+  configError: boolean;
   isMember: boolean | null;
   signOut: () => Promise<void>;
   refreshAccess: () => Promise<boolean>;
 };
 
 export function useInternalAuth(): InternalAuthState {
-  const [supabase, setSupabase] = useState<ReturnType<typeof createClient> | null>(
-    null
-  );
+  const [supabase, setSupabase] = useState<ReturnType<typeof createClient>>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [configError, setConfigError] = useState(false);
   const [isMember, setIsMember] = useState<boolean | null>(null);
 
   const refreshAccess = useCallback(async () => {
@@ -30,7 +30,13 @@ export function useInternalAuth(): InternalAuthState {
   }, [supabase]);
 
   useEffect(() => {
-    setSupabase(createClient());
+    const client = createClient();
+    if (!client) {
+      setConfigError(true);
+      setLoading(false);
+      return;
+    }
+    setSupabase(client);
   }, []);
 
   useEffect(() => {
@@ -71,5 +77,5 @@ export function useInternalAuth(): InternalAuthState {
     setIsMember(null);
   }, [supabase]);
 
-  return { supabase, session, loading, isMember, signOut, refreshAccess };
+  return { supabase, session, loading, configError, isMember, signOut, refreshAccess };
 }

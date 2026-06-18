@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { BrandLogo } from "@/components/BrandLogo";
 import {
   INTERNAL_AUTH_CALLBACK_PATH,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/internal-paths";
 
 type InternalLoginFormProps = {
-  supabase: ReturnType<typeof import("@/lib/supabase/client").createClient>;
+  supabase: SupabaseClient;
   nextPath?: string | null;
   authError?: boolean;
 };

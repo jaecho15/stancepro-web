@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 import { INTERNAL_LOGIN_PATH } from "@/lib/internal-paths";
+import { InternalConfigError } from "@/components/internal/InternalConfigError";
 
 type InternalGateProps = {
   children: React.ReactNode;
@@ -12,16 +13,20 @@ type InternalGateProps = {
 
 export function InternalGate({ children, loginNext }: InternalGateProps) {
   const router = useRouter();
-  const { session, loading, isMember, signOut } = useInternalAuth();
+  const { session, loading, configError, isMember, signOut } = useInternalAuth();
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || configError) return;
     if (!session?.user) {
       router.replace(
         `${INTERNAL_LOGIN_PATH}?next=${encodeURIComponent(loginNext)}`
       );
     }
-  }, [loading, session, loginNext, router]);
+  }, [loading, configError, session, loginNext, router]);
+
+  if (configError) {
+    return <InternalConfigError />;
+  }
 
   if (loading) {
     return (
