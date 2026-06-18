@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { BrandLogo } from "@/components/BrandLogo";
+import { useInternalAuth } from "@/hooks/useInternalAuth";
 import {
   INTERNAL_AUTH_CALLBACK_PATH,
   sanitizeInternalNext,
@@ -16,11 +18,15 @@ type InternalLoginFormProps = {
 
 type LoginStep = "email" | "code";
 
+const OTP_VERIFY_TIMEOUT_MS = 20_000;
+
 export function InternalLoginForm({
   supabase,
   nextPath,
   authError,
 }: InternalLoginFormProps) {
+  const router = useRouter();
+  const { refreshAccess } = useInternalAuth();
   const [step, setStep] = useState<LoginStep>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -64,19 +70,42 @@ export function InternalLoginForm({
     if (!trimmedEmail || !trimmedCode) return;
 
     setSubmitting(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email: trimmedEmail,
-      token: trimmedCode,
-      type: "email",
-    });
-    setSubmitting(false);
+    const next = sanitizeInternalNext(nextPath);
+    try {
+      const verifyPromise = supabase.auth.verifyOtp({
+        email: trimmedEmail,
+        token: trimmedCode,
+        type: "email",
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        window.setTimeout(
+          () => reject(new Error("Verification timed out. Try again or resend the code.")),
+          OTP_VERIFY_TIMEOUT_MS
+        );
+      });
+      const { error } = await Promise.race([verifyPromise, timeout]);
 
-    if (error) {
-      setLoginError(error.message);
-      return;
+      if (error) {
+        setLoginError(error.message);
+        return;
+      }
+
+      setLoginMessage("Signed in. Redirecting…");
+      const allowed = await refreshAccess();
+      if (allowed) {
+        router.replace(next);
+        return;
+      }
+      setLoginError(
+        "Signed in, but access check failed. Retry or contact Jae if your email should be on the allowlist."
+      );
+    } catch (err) {
+      setLoginError(
+        err instanceof Error ? err.message : "Verification failed. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
     }
-
-    setLoginMessage("Signed in. Redirecting…");
   };
 
   return (

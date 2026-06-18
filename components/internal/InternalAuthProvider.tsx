@@ -6,10 +6,30 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+
+const SESSION_INIT_TIMEOUT_MS = 12_000;
+const ACCESS_CHECK_TIMEOUT_MS = 8_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 type InternalAuthState = {
   supabase: ReturnType<typeof createClient>;
@@ -17,6 +37,7 @@ type InternalAuthState = {
   loading: boolean;
   configError: boolean;
   isMember: boolean | null;
+  memberCheckError: boolean;
   signOut: () => Promise<void>;
   refreshAccess: () => Promise<boolean>;
 };
@@ -29,16 +50,32 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
   const [loading, setLoading] = useState(true);
   const [configError, setConfigError] = useState(false);
   const [isMember, setIsMember] = useState<boolean | null>(null);
+  const [memberCheckError, setMemberCheckError] = useState(false);
+  const accessCheckGen = useRef(0);
 
   const refreshAccess = useCallback(async () => {
     if (!supabase) return false;
+
+    const generation = ++accessCheckGen.current;
+    setMemberCheckError(false);
+    setIsMember(null);
+
     try {
-      const { data, error } = await supabase.rpc("check_internal_access");
-      const allowed = !error && data === true;
+      const result = await withTimeout(
+        Promise.resolve(supabase.rpc("check_internal_access")),
+        ACCESS_CHECK_TIMEOUT_MS,
+        "Access check"
+      );
+      if (generation !== accessCheckGen.current) return false;
+
+      const allowed = !result.error && result.data === true;
       setIsMember(allowed);
+      if (result.error) setMemberCheckError(true);
       return allowed;
     } catch {
+      if (generation !== accessCheckGen.current) return false;
       setIsMember(false);
+      setMemberCheckError(true);
       return false;
     }
   }, [supabase]);
@@ -62,22 +99,29 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
       if (mounted) setLoading(false);
     };
 
-    const timeout = window.setTimeout(finishLoading, 12_000);
+    const timeout = window.setTimeout(finishLoading, SESSION_INIT_TIMEOUT_MS);
 
     void (async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const sessionResult = await withTimeout(
+          Promise.resolve(supabase.auth.getSession()),
+          SESSION_INIT_TIMEOUT_MS,
+          "Session init"
+        );
         if (!mounted) return;
 
-        if (error) {
+        if (sessionResult.error) {
           setSession(null);
           setIsMember(null);
           return;
         }
 
-        setSession(data.session);
-        if (data.session) {
-          await refreshAccess();
+        setSession(sessionResult.data.session);
+        if (sessionResult.data.session) {
+          // Defer RPC — avoid Supabase auth callback deadlock.
+          window.setTimeout(() => {
+            if (mounted) void refreshAccess();
+          }, 0);
         } else {
           setIsMember(null);
         }
@@ -93,13 +137,17 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
       setSession(nextSession);
       if (nextSession) {
-        await refreshAccess();
+        window.setTimeout(() => {
+          if (mounted) void refreshAccess();
+        }, 0);
       } else {
+        accessCheckGen.current += 1;
         setIsMember(null);
+        setMemberCheckError(false);
       }
       finishLoading();
     });
@@ -114,7 +162,9 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    accessCheckGen.current += 1;
     setIsMember(null);
+    setMemberCheckError(false);
   }, [supabase]);
 
   const value = useMemo(
@@ -124,10 +174,20 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
       loading,
       configError,
       isMember,
+      memberCheckError,
       signOut,
       refreshAccess,
     }),
-    [supabase, session, loading, configError, isMember, signOut, refreshAccess]
+    [
+      supabase,
+      session,
+      loading,
+      configError,
+      isMember,
+      memberCheckError,
+      signOut,
+      refreshAccess,
+    ]
   );
 
   return (

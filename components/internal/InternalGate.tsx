@@ -13,7 +13,7 @@ type InternalGateProps = {
 
 export function InternalGate({ children, loginNext }: InternalGateProps) {
   const router = useRouter();
-  const { session, loading, configError, isMember, signOut } = useInternalAuth();
+  const { session, loading, configError, isMember, signOut, refreshAccess } = useInternalAuth();
 
   useEffect(() => {
     if (loading || configError) return;
@@ -67,8 +67,15 @@ export function InternalGate({ children, loginNext }: InternalGateProps) {
 
   if (isMember !== true) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0f1c40] text-slate-300">
-        Checking access…
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#0f1c40] px-6 text-center text-slate-300">
+        <p>Checking access…</p>
+        <button
+          type="button"
+          onClick={() => void refreshAccess()}
+          className="rounded-lg border border-white/20 px-4 py-2 text-sm text-white"
+        >
+          Retry access check
+        </button>
       </div>
     );
   }
