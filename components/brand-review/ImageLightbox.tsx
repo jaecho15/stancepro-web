@@ -6,10 +6,11 @@ import { X, ZoomIn } from "lucide-react";
 type ImageLightboxProps = {
   src: string;
   alt: string;
+  whiteMat?: boolean;
   onClose: () => void;
 };
 
-export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps) {
+export function ImageLightbox({ src, alt, whiteMat = false, onClose }: ImageLightboxProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -43,12 +44,24 @@ export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps) {
       </button>
 
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className="max-h-[92vh] max-w-[92vw] object-contain"
+      <div
+        className={
+          whiteMat
+            ? "max-h-[92vh] max-w-[92vw] overflow-auto bg-white p-6 shadow-2xl sm:p-10"
+            : undefined
+        }
         onClick={(event) => event.stopPropagation()}
-      />
+      >
+        <img
+          src={src}
+          alt={alt}
+          className={
+            whiteMat
+              ? "mx-auto max-h-[80vh] w-auto max-w-full object-contain"
+              : "max-h-[92vh] max-w-[92vw] object-contain"
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -58,6 +71,7 @@ type PreviewImageButtonProps = {
   alt: string;
   width: number;
   height: number;
+  whiteMat?: boolean;
   onOpen: () => void;
 };
 
@@ -66,6 +80,7 @@ export function PreviewImageButton({
   alt,
   width,
   height,
+  whiteMat = false,
   onOpen,
 }: PreviewImageButtonProps) {
   return (
@@ -75,14 +90,16 @@ export function PreviewImageButton({
       className="group relative block w-full overflow-hidden rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
       aria-label={`Enlarge ${alt}`}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        width={width}
-        height={height}
-        className="mx-auto h-auto w-full max-h-[420px] object-contain transition-transform group-hover:scale-[1.01]"
-      />
+      <div className={whiteMat ? "bg-white p-4 sm:p-6" : undefined}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          width={width}
+          height={height}
+          className="mx-auto h-auto w-full max-h-[420px] object-contain transition-transform group-hover:scale-[1.01]"
+        />
+      </div>
       <span className="pointer-events-none absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white">
         <ZoomIn className="h-3.5 w-3.5" />
         Tap to enlarge
