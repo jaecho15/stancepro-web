@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { MessageSquare, Star } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { InternalChrome } from "@/components/internal/InternalChrome";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
+import {
+  ImageLightbox,
+  PreviewImageButton,
+} from "@/components/brand-review/ImageLightbox";
 import {
   BRAND_REVIEW_ASSETS,
   BRAND_REVIEW_CATEGORY_LABELS,
@@ -129,6 +132,7 @@ function AssetReviewCard({
 }) {
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const assetComments = comments.filter((c) => c.asset_slug === asset.slug);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -147,14 +151,20 @@ function AssetReviewCard({
   return (
     <article className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 overflow-hidden">
       <div className="relative bg-[#0f1c40] p-4">
-        <Image
+        <PreviewImageButton
           src={asset.imagePath}
           alt={asset.label}
           width={1200}
           height={800}
-          className="mx-auto h-auto w-full max-h-[420px] object-contain"
-          unoptimized
+          onOpen={() => setLightboxOpen(true)}
         />
+        {lightboxOpen ? (
+          <ImageLightbox
+            src={asset.imagePath}
+            alt={asset.label}
+            onClose={() => setLightboxOpen(false)}
+          />
+        ) : null}
       </div>
       <div className="space-y-4 p-5">
         <div>
