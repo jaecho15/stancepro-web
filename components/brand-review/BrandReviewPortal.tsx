@@ -134,7 +134,7 @@ function AssetReviewCard({
   const [submitting, setSubmitting] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const assetComments = comments.filter((c) => c.asset_slug === asset.slug);
-  const whiteMat = asset.category !== "business_cards";
+  const whiteMat = asset.whiteMat ?? asset.category !== "business_cards";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -374,8 +374,9 @@ export function BrandReviewPortal() {
     >
       <main className="mx-auto max-w-6xl px-6 py-8">
         <p className="mb-6 text-sm text-slate-400">
-          Rate each creative (1–5 stars) and leave comments for the team. Updates
-          sync for everyone on this page.
+          Rate each creative (1–5 stars) and leave comments for the team. Use{" "}
+          <strong className="font-medium text-slate-300">Wordmark fonts</strong>{" "}
+          to compare Michroma v5 vs Microgramma D Extended Bold.
         </p>
 
         <div className="mb-8 flex flex-wrap gap-2">

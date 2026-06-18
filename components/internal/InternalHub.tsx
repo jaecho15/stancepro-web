@@ -30,7 +30,8 @@ export function InternalHub() {
             <div>
               <h2 className="text-lg font-semibold text-white">Brand Review</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Rate and comment on business cards and marketing posters.
+                Rate and comment on business cards, posters, and wordmark font
+                options.
               </p>
             </div>
           </Link>
