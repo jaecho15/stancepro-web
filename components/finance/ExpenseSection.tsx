@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ExternalLink, Paperclip, Trash2 } from "lucide-react";
+import { Paperclip, Trash2 } from "lucide-react";
 import { fetchFxRate } from "@/lib/finance/fx";
 import { fmtDate, fmtMoney, statusLabel } from "@/lib/finance/format";
-import { receiptUrlFromNotes, sha256Hex } from "@/lib/finance/receipts";
+import { sha256Hex } from "@/lib/finance/receipts";
 import type {
   DisplayCurrency,
   FinanceExpenseRow,
@@ -287,7 +287,6 @@ export function ExpenseSection({
                   row={row}
                   currency={currency}
                   nzdRate={nzdRateForRow(row)}
-                  externalUrl={receiptUrlFromNotes(row.notes)}
                   receipts={receiptsByExpense.get(row.id) ?? []}
                   signedUrls={signedUrls}
                   uploading={uploadingId === row.id}
@@ -307,7 +306,6 @@ function ExpenseRow({
   row,
   currency,
   nzdRate,
-  externalUrl,
   receipts,
   signedUrls,
   uploading,
@@ -317,18 +315,15 @@ function ExpenseRow({
   row: FinanceExpenseRow;
   currency: DisplayCurrency;
   nzdRate?: number;
-  externalUrl: string | null;
   receipts: FinanceReceiptRow[];
   signedUrls: Map<string, string>;
   uploading: boolean;
   onDelete: () => void;
   onUpload: (file: File) => void;
 }) {
-  const storageUrl = row.receipt_storage_path
-    ? signedUrls.get(row.receipt_storage_path)
-    : receipts[0]
-      ? signedUrls.get(receipts[0].storage_path)
-      : null;
+  const storagePath =
+    row.receipt_storage_path ?? receipts[0]?.storage_path ?? null;
+  const storageUrl = storagePath ? signedUrls.get(storagePath) : null;
 
   return (
     <tr className="border-b border-white/5 text-slate-200">
@@ -345,17 +340,6 @@ function ExpenseRow({
       </td>
       <td className="py-2 pr-3">
         <div className="flex flex-wrap items-center gap-2">
-          {externalUrl ? (
-            <a
-              href={externalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-brand-300 hover:text-brand-200"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Vendor
-            </a>
-          ) : null}
           {storageUrl ? (
             <a
               href={storageUrl}
@@ -364,9 +348,11 @@ function ExpenseRow({
               className="inline-flex items-center gap-1 text-xs text-emerald-300 hover:text-emerald-200"
             >
               <Paperclip className="h-3.5 w-3.5" />
-              File
+              Invoice
             </a>
-          ) : null}
+          ) : (
+            <span className="text-xs text-slate-500">No invoice</span>
+          )}
           {!row.audit_locked_at ? (
             <label className="inline-flex cursor-pointer items-center gap-1 text-xs text-slate-400 hover:text-white">
               <Paperclip className="h-3.5 w-3.5" />
