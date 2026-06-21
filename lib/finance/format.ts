@@ -5,6 +5,24 @@ export function fmtSgd(value: number | null | undefined): string {
   });
 }
 
+export function fmtNzd(value: number | null | undefined): string {
+  return Number(value || 0).toLocaleString("en-NZ", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+export function fmtMoney(
+  amountSgd: number | null | undefined,
+  currency: "SGD" | "NZD",
+  nzdRate?: number
+): string {
+  if (currency === "SGD") return `S$${fmtSgd(amountSgd)}`;
+  if (nzdRate == null) return "NZ$—";
+  const nzd = Number(amountSgd || 0) * nzdRate;
+  return `NZ$${fmtNzd(nzd)}`;
+}
+
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(`${iso}T12:00:00`);

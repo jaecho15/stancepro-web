@@ -1,4 +1,9 @@
-import type { FinanceExpenseRow, MonthBurn, VendorSummary } from "@/lib/finance/types";
+import type {
+  FinanceExpenseRow,
+  MonthBurn,
+  StackedMonthBurn,
+  VendorSummary,
+} from "@/lib/finance/types";
 
 export function sumSgd(rows: FinanceExpenseRow[]): number {
   return rows.reduce((acc, row) => acc + Number(row.amount_sgd || 0), 0);
@@ -45,4 +50,35 @@ function formatMonthLabel(ym: string): string {
 
 export function distinctFiscalYears(rows: FinanceExpenseRow[]): number[] {
   return [...new Set(rows.map((r) => r.fiscal_year))].sort((a, b) => b - a);
+}
+
+export function stackedMonthlyBurnByVendor(
+  rows: FinanceExpenseRow[],
+  vendorColors: Map<string, string>
+): StackedMonthBurn[] {
+  const monthMap = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const month = row.transaction_date.slice(0, 7);
+    const vendor = row.vendor_name || "(unknown)";
+    if (!monthMap.has(month)) monthMap.set(month, new Map());
+    const seg = monthMap.get(month)!;
+    seg.set(vendor, (seg.get(vendor) ?? 0) + Number(row.amount_sgd || 0));
+  }
+  return [...monthMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, segs]) => {
+      const segments = [...segs.entries()]
+        .map(([vendor, amountSgd]) => ({
+          vendor,
+          amountSgd,
+          color: vendorColors.get(vendor) ?? "#64748b",
+        }))
+        .sort((a, b) => b.amountSgd - a.amountSgd);
+      return {
+        key,
+        label: formatMonthLabel(key),
+        totalSgd: segments.reduce((acc, s) => acc + s.amountSgd, 0),
+        segments,
+      };
+    });
 }
