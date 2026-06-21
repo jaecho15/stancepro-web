@@ -117,8 +117,8 @@ export function InternalLoginForm({
         <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/50 p-8">
           <h1 className="text-2xl font-bold text-white">StancePro Internal</h1>
           <p className="mt-2 text-sm text-slate-300">
-            Company tools for the StancePro team. Sign in with your
-            @stance-pro.com email.
+            Company tools for the StancePro team. Sign in with your allowlisted
+            email (team or finance admin).
           </p>
 
           {step === "email" ? (

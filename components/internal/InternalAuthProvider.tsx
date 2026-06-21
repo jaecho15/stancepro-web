@@ -37,6 +37,7 @@ type InternalAuthState = {
   loading: boolean;
   configError: boolean;
   isMember: boolean | null;
+  isFinanceAdmin: boolean | null;
   memberCheckError: boolean;
   signOut: () => Promise<void>;
   refreshAccess: () => Promise<boolean>;
@@ -50,6 +51,7 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
   const [loading, setLoading] = useState(true);
   const [configError, setConfigError] = useState(false);
   const [isMember, setIsMember] = useState<boolean | null>(null);
+  const [isFinanceAdmin, setIsFinanceAdmin] = useState<boolean | null>(null);
   const [memberCheckError, setMemberCheckError] = useState(false);
   const accessCheckGen = useRef(0);
 
@@ -59,22 +61,32 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
     const generation = ++accessCheckGen.current;
     setMemberCheckError(false);
     setIsMember(null);
+    setIsFinanceAdmin(null);
 
     try {
       const result = await withTimeout(
-        Promise.resolve(supabase.rpc("check_internal_access")),
+        Promise.all([
+          supabase.rpc("check_internal_access"),
+          supabase.rpc("is_finance_admin"),
+        ]),
         ACCESS_CHECK_TIMEOUT_MS,
         "Access check"
       );
       if (generation !== accessCheckGen.current) return false;
 
-      const allowed = !result.error && result.data === true;
+      const [internalResult, financeResult] = result;
+      const internalOk = !internalResult.error && internalResult.data === true;
+      const financeOk = !financeResult.error && financeResult.data === true;
+      const allowed = internalOk || financeOk;
+
       setIsMember(allowed);
-      if (result.error) setMemberCheckError(true);
+      setIsFinanceAdmin(financeOk);
+      if (internalResult.error || financeResult.error) setMemberCheckError(true);
       return allowed;
     } catch {
       if (generation !== accessCheckGen.current) return false;
       setIsMember(false);
+      setIsFinanceAdmin(false);
       setMemberCheckError(true);
       return false;
     }
@@ -147,6 +159,7 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
       } else {
         accessCheckGen.current += 1;
         setIsMember(null);
+        setIsFinanceAdmin(null);
         setMemberCheckError(false);
       }
       finishLoading();
@@ -164,6 +177,7 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
     await supabase.auth.signOut();
     accessCheckGen.current += 1;
     setIsMember(null);
+    setIsFinanceAdmin(null);
     setMemberCheckError(false);
   }, [supabase]);
 
@@ -174,6 +188,7 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
       loading,
       configError,
       isMember,
+      isFinanceAdmin,
       memberCheckError,
       signOut,
       refreshAccess,
@@ -184,6 +199,7 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
       loading,
       configError,
       isMember,
+      isFinanceAdmin,
       memberCheckError,
       signOut,
       refreshAccess,

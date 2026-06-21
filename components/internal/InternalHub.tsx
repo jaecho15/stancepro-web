@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ImageIcon } from "lucide-react";
+import { ImageIcon, Wallet } from "lucide-react";
 import { InternalChrome } from "@/components/internal/InternalChrome";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 
 export function InternalHub() {
-  const { session, signOut } = useInternalAuth();
+  const { session, signOut, isFinanceAdmin } = useInternalAuth();
 
   return (
     <InternalChrome
@@ -20,6 +20,23 @@ export function InternalHub() {
           Pick a tool below. More internal apps will appear here over time.
         </p>
         <div className="grid gap-4">
+          {isFinanceAdmin ? (
+            <Link
+              href="/internal/finance"
+              className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6 transition-colors hover:border-brand-400/40 hover:bg-[#1a2e61]/70"
+            >
+              <div className="rounded-xl border border-white/10 bg-[#0f1c40] p-3 text-brand-300 group-hover:text-brand-200">
+                <Wallet className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Finance</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  FY spend, vendor breakdown, monthly burn, and expense ledger
+                  (SGD).
+                </p>
+              </div>
+            </Link>
+          ) : null}
           <Link
             href="/internal/brand-review"
             className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6 transition-colors hover:border-brand-400/40 hover:bg-[#1a2e61]/70"
