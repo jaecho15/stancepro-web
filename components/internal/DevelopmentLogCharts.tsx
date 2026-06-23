@@ -139,12 +139,12 @@ type MonthlyChartProps = {
   stats: MonthlyStats[];
 };
 
-/** Monthly founder + Cursor activity as stacked columns. */
+/** Monthly founder + git + Cursor activity as stacked columns. */
 export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
   if (stats.length === 0) return null;
 
   const maxTotal = Math.max(
-    ...stats.map((s) => s.founderEntries + s.cursorSessions),
+    ...stats.map((s) => s.founderEntries + s.gitCommits + s.cursorSessions),
     1
   );
   const barW = 28;
@@ -157,7 +157,7 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
     <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-5">
       <h2 className="text-sm font-semibold text-white">Monthly activity</h2>
       <p className="mt-1 text-xs text-slate-400">
-        Stacked columns — founder (bottom) + Cursor sessions (top) per month.
+        Stacked columns — founder (bottom), git commits (middle), Cursor (top).
       </p>
       <div className="mt-4 overflow-x-auto">
         <svg
@@ -169,30 +169,45 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
         >
           {stats.map((row, i) => {
             const x = 20 + i * (barW + gap);
-            const total = row.founderEntries + row.cursorSessions;
+            const total = row.founderEntries + row.gitCommits + row.cursorSessions;
             const columnH = total > 0 ? (total / maxTotal) * (plotH - 16) : 0;
             const founderH =
               total > 0 ? (row.founderEntries / total) * columnH : 0;
-            const cursorH = columnH - founderH;
+            const gitH = total > 0 ? (row.gitCommits / total) * columnH : 0;
+            const cursorH = columnH - founderH - gitH;
             const baseY = plotH;
+            const founderTop = baseY - founderH;
+            const gitTop = founderTop - gitH;
+            const cursorTop = gitTop - cursorH;
 
             return (
               <g key={row.month}>
                 {founderH > 0 ? (
                   <rect
                     x={x}
-                    y={baseY - founderH}
+                    y={founderTop}
                     width={barW}
                     height={founderH}
                     fill="#fbbf24"
                     opacity={0.9}
-                    rx={total === row.founderEntries ? 3 : 0}
+                    rx={columnH === founderH ? 3 : 0}
+                  />
+                ) : null}
+                {gitH > 0 ? (
+                  <rect
+                    x={x}
+                    y={gitTop}
+                    width={barW}
+                    height={gitH}
+                    fill="#34d399"
+                    opacity={0.92}
+                    rx={cursorH <= 0 ? 3 : 0}
                   />
                 ) : null}
                 {cursorH > 0 ? (
                   <rect
                     x={x}
-                    y={baseY - columnH}
+                    y={cursorTop}
                     width={barW}
                     height={cursorH}
                     fill="#38bdf8"
@@ -236,11 +251,15 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
       <div className="mt-2 flex flex-wrap gap-4 text-[10px] text-slate-400">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />
-          Founder (bottom)
+          Founder
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-400" />
+          Git
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-sky-400" />
-          Cursor (top)
+          Cursor
         </span>
       </div>
     </div>

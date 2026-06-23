@@ -44,6 +44,44 @@ export type DevelopmentLogPayload = {
 
 export const PROMPT_LOG_PUBLIC_PATH = "/internal/prompt_log.json";
 export const FOUNDER_JOURNAL_PUBLIC_PATH = "/internal/founder_development_journal.json";
+export const TIMELINE_2025_PUBLIC_PATH = "/internal/development_timeline_2025.json";
+
+export type TimelineEvidenceEntry = {
+  date: string;
+  month: string;
+  source: "git" | "documentation" | "supabase migration" | string;
+  confidence: string;
+  areas: string[];
+  title: string;
+  evidence: string;
+  detail?: string;
+};
+
+export type Timeline2025MonthlySummary = {
+  month: string;
+  founder_entries: number;
+  evidence_rows: number;
+  git_commits: number;
+  documentation_rows: number;
+  migration_rows: number;
+};
+
+export type Timeline2025Payload = {
+  generated_at: string;
+  source: string;
+  time_range_start: string;
+  time_range_end: string;
+  summary: {
+    founder_entries: number;
+    evidence_rows: number;
+    git_commits: number;
+    documentation_rows: number;
+    migration_rows: number;
+    months_covered: number;
+  };
+  monthly: Timeline2025MonthlySummary[];
+  evidence: TimelineEvidenceEntry[];
+};
 
 export type FounderJournalEntry = {
   date: string;

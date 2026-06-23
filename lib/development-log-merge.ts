@@ -1,12 +1,14 @@
 import type {
   DevelopmentLogSession,
   FounderJournalEntry,
+  TimelineEvidenceEntry,
 } from "@/lib/development-log-types";
 
 export type DayGroup = {
   date: string;
   month: string;
   founder: FounderJournalEntry[];
+  evidence: TimelineEvidenceEntry[];
   cursor: DevelopmentLogSession[];
 };
 
@@ -16,19 +18,31 @@ export function sessionDateKey(startedAt: string): string {
 
 export function mergeByDay(
   founder: FounderJournalEntry[],
+  evidence: TimelineEvidenceEntry[],
   cursor: DevelopmentLogSession[]
 ): DayGroup[] {
   const map = new Map<string, DayGroup>();
 
   const ensure = (date: string): DayGroup => {
     if (!map.has(date)) {
-      map.set(date, { date, month: date.slice(0, 7), founder: [], cursor: [] });
+      map.set(date, {
+        date,
+        month: date.slice(0, 7),
+        founder: [],
+        evidence: [],
+        cursor: [],
+      });
     }
     return map.get(date)!;
   };
 
   for (const entry of founder) {
     ensure(entry.date).founder.push(entry);
+  }
+
+  for (const row of evidence) {
+    if (!row.date) continue;
+    ensure(row.date).evidence.push(row);
   }
 
   for (const session of cursor) {
@@ -39,6 +53,13 @@ export function mergeByDay(
 
   for (const group of map.values()) {
     group.founder.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+    group.evidence.sort((a, b) => {
+      const sourceOrder = (s: string) =>
+        s === "git" ? 0 : s === "supabase migration" ? 1 : 2;
+      const bySource = sourceOrder(a.source) - sourceOrder(b.source);
+      if (bySource !== 0) return bySource;
+      return a.title.localeCompare(b.title);
+    });
   }
 
   return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
@@ -65,11 +86,14 @@ export type MonthlyStats = {
   month: string;
   cursorSessions: number;
   founderEntries: number;
+  gitCommits: number;
+  evidenceRows: number;
   linesChanged: number;
 };
 
 export function buildMonthlyStats(
   founder: FounderJournalEntry[],
+  evidence: TimelineEvidenceEntry[],
   cursor: DevelopmentLogSession[],
   hideSubagents: boolean
 ): MonthlyStats[] {
@@ -81,6 +105,8 @@ export function buildMonthlyStats(
         month,
         cursorSessions: 0,
         founderEntries: 0,
+        gitCommits: 0,
+        evidenceRows: 0,
         linesChanged: 0,
       });
     }
@@ -90,6 +116,14 @@ export function buildMonthlyStats(
   for (const entry of founder) {
     const month = entry.date.slice(0, 7);
     if (month) ensure(month).founderEntries += 1;
+  }
+
+  for (const row of evidence) {
+    const month = row.month || row.date.slice(0, 7);
+    if (!month) continue;
+    const stats = ensure(month);
+    stats.evidenceRows += 1;
+    if (row.source === "git") stats.gitCommits += 1;
   }
 
   for (const session of cursor) {
