@@ -1,15 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { BookOpen, MessageSquare, RefreshCw } from "lucide-react";
 import { InternalChrome } from "@/components/internal/InternalChrome";
-import { DevelopmentLogTabs } from "@/components/internal/DevelopmentLogTabs";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 import {
+  DifficultyChart,
+  MonthlyActivityChart,
+} from "@/components/internal/DevelopmentLogCharts";
+import {
+  FOUNDER_JOURNAL_PUBLIC_PATH,
   PROMPT_LOG_PUBLIC_PATH,
   type DevelopmentLogPayload,
   type DevelopmentLogSession,
+  type FounderJournalEntry,
+  type FounderJournalPayload,
 } from "@/lib/development-log-types";
+import {
+  buildMonthlyStats,
+  groupDaysByMonth,
+  mergeByDay,
+  type DayGroup,
+} from "@/lib/development-log-merge";
 
 const DIFFICULTY_STYLES: Record<string, string> = {
   Trivial: "bg-slate-500/20 text-slate-300",
@@ -23,146 +35,194 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat("en-US").format(n);
 }
 
-function truncate(text: string, max = 120) {
+function truncate(text: string, max = 140) {
   const t = text.trim().replace(/\s+/g, " ");
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 
-function sortSessions(
-  sessions: DevelopmentLogSession[],
-  sortBy: string
-): DevelopmentLogSession[] {
-  const copy = [...sessions];
-  const byStarted = (a: DevelopmentLogSession, b: DevelopmentLogSession) =>
-    (a.started_at || "").localeCompare(b.started_at || "");
-  const byLines = (a: DevelopmentLogSession, b: DevelopmentLogSession) =>
-    b.lines_added +
-    b.lines_removed -
-    (a.lines_added + a.lines_removed);
-
-  switch (sortBy) {
-    case "started_asc":
-      return copy.sort(byStarted);
-    case "lines_desc":
-      return copy.sort(byLines);
-    case "duration_desc":
-      return copy.sort((a, b) =>
-        (b.duration || "").localeCompare(a.duration || "")
-      );
-    case "title_asc":
-      return copy.sort((a, b) =>
-        (a.title || "").localeCompare(b.title || "", "en")
-      );
-    default:
-      return copy.sort((a, b) => byStarted(b, a));
-  }
+function filterFounder(
+  entries: FounderJournalEntry[],
+  q: string,
+  month: string,
+  tag: string
+) {
+  return entries.filter((entry) => {
+    if (month && !entry.date.startsWith(month)) return false;
+    if (tag && !entry.tags.includes(tag)) return false;
+    if (!q) return true;
+    const hay = `${entry.title} ${entry.body} ${entry.tags.join(" ")}`.toLowerCase();
+    return hay.includes(q);
+  });
 }
 
-function SessionTable({
-  sessions,
-  onSelect,
+function filterCursor(
+  sessions: DevelopmentLogSession[],
+  q: string,
+  month: string,
+  difficulty: string,
+  model: string,
+  hideSubagents: boolean
+) {
+  return sessions.filter((s) => {
+    if (hideSubagents && s.is_subagent) return false;
+    if (month && s.month !== month) return false;
+    if (difficulty && s.difficulty !== difficulty) return false;
+    if (model && s.model !== model) return false;
+    if (!q) return true;
+    const hay = `${s.title} ${s.first_user_prompt} ${s.subtitle} ${s.model}`.toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+function DayTimeline({
+  day,
+  onSelectFounder,
+  onSelectCursor,
 }: {
-  sessions: DevelopmentLogSession[];
-  onSelect: (session: DevelopmentLogSession) => void;
+  day: DayGroup;
+  onSelectFounder: (e: FounderJournalEntry) => void;
+  onSelectCursor: (s: DevelopmentLogSession) => void;
 }) {
+  const hasFounder = day.founder.length > 0;
+  const hasCursor = day.cursor.length > 0;
+  if (!hasFounder && !hasCursor) return null;
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-white/10">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-[#0f1c40]/80 text-xs uppercase tracking-wide text-slate-400">
-          <tr>
-            <th className="px-4 py-3">Started</th>
-            <th className="px-4 py-3">Duration</th>
-            <th className="px-4 py-3">Difficulty</th>
-            <th className="px-4 py-3">Title / prompt</th>
-            <th className="hidden px-4 py-3 md:table-cell">Model</th>
-            <th className="hidden px-4 py-3 sm:table-cell">Files</th>
-            <th className="hidden px-4 py-3 lg:table-cell">Line changes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sessions.map((session) => (
-            <tr
-              key={session.composer_id}
-              className="cursor-pointer border-t border-white/5 transition-colors hover:bg-white/5"
-              onClick={() => onSelect(session)}
-            >
-              <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-300">
-                {session.started_at || "—"}
-              </td>
-              <td className="whitespace-nowrap px-4 py-3 text-slate-400">
-                {session.duration || "—"}
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                    DIFFICULTY_STYLES[session.difficulty] ??
-                    "bg-white/10 text-slate-300"
-                  }`}
+    <article className="rounded-2xl border border-white/10 bg-[#0f1c40]/40 overflow-hidden">
+      <header className="border-b border-white/10 bg-[#1a2e61]/30 px-4 py-3">
+        <h3 className="font-mono text-sm font-semibold text-white">{day.date}</h3>
+      </header>
+
+      {hasFounder ? (
+        <section className="border-b border-white/5 px-4 py-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-200/90">
+            <BookOpen className="h-3.5 w-3.5" />
+            Founder journal · {day.founder.length}
+          </div>
+          <ul className="space-y-2">
+            {day.founder.map((entry) => (
+              <li key={`${entry.date}-${entry.title}-${entry.time ?? ""}`}>
+                <button
+                  type="button"
+                  onClick={() => onSelectFounder(entry)}
+                  className="w-full rounded-xl border border-amber-500/15 bg-amber-500/5 p-3 text-left transition-colors hover:border-amber-400/30 hover:bg-amber-500/10"
                 >
-                  {session.difficulty}
-                </span>
-              </td>
-              <td className="px-4 py-3">
-                {session.is_subagent ? (
-                  <span className="mr-2 inline-block rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-200">
-                    subagent
+                  <p className="text-[10px] text-amber-200/70">
+                    {entry.time ? `${entry.date} ${entry.time}` : entry.date}
+                  </p>
+                  <p className="mt-0.5 font-medium text-white">{entry.title}</p>
+                  <p className="mt-1 line-clamp-2 text-sm text-slate-400">
+                    {entry.body}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {entry.tags.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-400"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {hasCursor ? (
+        <section className="px-4 py-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-200/90">
+            <MessageSquare className="h-3.5 w-3.5" />
+            Cursor sessions · {day.cursor.length}
+          </div>
+          <div className="space-y-2">
+            {day.cursor.map((session) => (
+              <button
+                key={session.composer_id}
+                type="button"
+                onClick={() => onSelectCursor(session)}
+                className="w-full rounded-xl border border-sky-500/15 bg-sky-500/5 p-3 text-left transition-colors hover:border-sky-400/30 hover:bg-sky-500/10"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                  <span>{session.started_at}</span>
+                  {session.duration ? <span>· {session.duration}</span> : null}
+                  <span
+                    className={`rounded-full px-2 py-0.5 font-semibold uppercase ${
+                      DIFFICULTY_STYLES[session.difficulty] ??
+                      "bg-white/10 text-slate-300"
+                    }`}
+                  >
+                    {session.difficulty}
                   </span>
-                ) : null}
-                <span className="font-medium text-white">{session.title}</span>
+                  {session.is_subagent ? (
+                    <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-violet-200">
+                      subagent
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 font-medium text-white">{session.title}</p>
                 {session.first_user_prompt ? (
-                  <p className="mt-1 line-clamp-2 text-xs text-slate-400">
-                    {truncate(session.first_user_prompt, 140)}
+                  <p className="mt-1 line-clamp-2 text-sm text-slate-400">
+                    {truncate(session.first_user_prompt)}
                   </p>
                 ) : null}
-              </td>
-              <td className="hidden px-4 py-3 font-mono text-xs text-slate-400 md:table-cell">
-                {session.model || "—"}
-              </td>
-              <td className="hidden px-4 py-3 text-slate-400 sm:table-cell">
-                {session.files_changed}
-              </td>
-              <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-slate-400 lg:table-cell">
-                +{session.lines_added} / −{session.lines_removed}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                <p className="mt-2 text-[10px] text-slate-500">
+                  {session.model || "—"} · {session.files_changed} files · +
+                  {session.lines_added}/−{session.lines_removed} lines
+                </p>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </article>
   );
 }
 
 export function DevelopmentLogViewer() {
   const { session, signOut } = useInternalAuth();
   const [payload, setPayload] = useState<DevelopmentLogPayload | null>(null);
+  const [journal, setJournal] = useState<FounderJournalPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState("");
   const [difficulty, setDifficulty] = useState("");
   const [model, setModel] = useState("");
+  const [tag, setTag] = useState("");
   const [hideSubagents, setHideSubagents] = useState(true);
-  const [groupByMonth, setGroupByMonth] = useState(true);
-  const [sortBy, setSortBy] = useState("started_desc");
-  const [selected, setSelected] = useState<DevelopmentLogSession | null>(null);
+  const [selectedFounder, setSelectedFounder] = useState<FounderJournalEntry | null>(
+    null
+  );
+  const [selectedCursor, setSelectedCursor] = useState<DevelopmentLogSession | null>(
+    null
+  );
 
   const load = useCallback(async (bustCache = false) => {
     setLoading(true);
     setError(null);
+    const bust = bustCache ? `?t=${Date.now()}` : "";
     try {
-      const url = bustCache
-        ? `${PROMPT_LOG_PUBLIC_PATH}?t=${Date.now()}`
-        : PROMPT_LOG_PUBLIC_PATH;
-      const res = await fetch(url);
-      if (!res.ok) {
+      const [promptRes, journalRes] = await Promise.all([
+        fetch(`${PROMPT_LOG_PUBLIC_PATH}${bust}`),
+        fetch(`${FOUNDER_JOURNAL_PUBLIC_PATH}${bust}`),
+      ]);
+      if (!promptRes.ok) {
+        throw new Error(`Failed to load prompt_log.json (${promptRes.status})`);
+      }
+      if (!journalRes.ok) {
         throw new Error(
-          `Failed to load prompt_log.json (${res.status}). Run extract + sync in the StancePro repo.`
+          `Failed to load founder_development_journal.json (${journalRes.status})`
         );
       }
-      setPayload((await res.json()) as DevelopmentLogPayload);
+      setPayload((await promptRes.json()) as DevelopmentLogPayload);
+      setJournal((await journalRes.json()) as FounderJournalPayload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Load failed");
       setPayload(null);
+      setJournal(null);
     } finally {
       setLoading(false);
     }
@@ -172,69 +232,95 @@ export function DevelopmentLogViewer() {
     void load();
   }, [load]);
 
+  const q = search.trim().toLowerCase();
+
+  const filteredFounder = useMemo(
+    () => filterFounder(journal?.entries ?? [], q, month, tag),
+    [journal, q, month, tag]
+  );
+
+  const filteredCursor = useMemo(
+    () =>
+      filterCursor(
+        payload?.sessions ?? [],
+        q,
+        month,
+        difficulty,
+        model,
+        hideSubagents
+      ),
+    [payload, q, month, difficulty, model, hideSubagents]
+  );
+
+  const dayGroups = useMemo(
+    () => mergeByDay(filteredFounder, filteredCursor),
+    [filteredFounder, filteredCursor]
+  );
+
+  const monthGroups = useMemo(() => groupDaysByMonth(dayGroups), [dayGroups]);
+
   const months = useMemo(() => {
-    if (!payload) return [];
-    return [
-      ...new Set(payload.sessions.map((s) => s.month).filter(Boolean)),
-    ].sort((a, b) => b.localeCompare(a));
-  }, [payload]);
+    const set = new Set<string>();
+    for (const s of payload?.sessions ?? []) {
+      if (s.month) set.add(s.month);
+    }
+    for (const e of journal?.entries ?? []) {
+      set.add(e.date.slice(0, 7));
+    }
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [payload, journal]);
 
   const models = useMemo(() => {
     if (!payload) return [];
-    return [
-      ...new Set(payload.sessions.map((s) => s.model).filter(Boolean)),
-    ].sort();
+    return [...new Set(payload.sessions.map((s) => s.model).filter(Boolean))].sort();
   }, [payload]);
 
-  const filtered = useMemo(() => {
-    if (!payload) return [];
-    const q = search.trim().toLowerCase();
-    const rows = payload.sessions.filter((s) => {
-      if (hideSubagents && s.is_subagent) return false;
-      if (month && s.month !== month) return false;
-      if (difficulty && s.difficulty !== difficulty) return false;
-      if (model && s.model !== model) return false;
-      if (!q) return true;
-      const hay = `${s.title} ${s.first_user_prompt} ${s.subtitle} ${s.model}`.toLowerCase();
-      return hay.includes(q);
-    });
-    return sortSessions(rows, sortBy);
-  }, [
-    payload,
-    search,
-    month,
-    difficulty,
-    model,
-    hideSubagents,
-    sortBy,
-  ]);
+  const tags = useMemo(() => {
+    if (!journal) return [];
+    const set = new Set<string>();
+    for (const e of journal.entries) for (const t of e.tags) set.add(t);
+    return [...set].sort();
+  }, [journal]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, DevelopmentLogSession[]>();
-    for (const row of filtered) {
-      const key = row.month || "(unknown)";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(row);
+  const monthlyStats = useMemo(
+    () =>
+      buildMonthlyStats(
+        journal?.entries ?? [],
+        payload?.sessions ?? [],
+        hideSubagents
+      ),
+    [journal, payload, hideSubagents]
+  );
+
+  const difficultyCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of filteredCursor) {
+      if (s.is_subagent) continue;
+      counts[s.difficulty] = (counts[s.difficulty] ?? 0) + 1;
     }
-    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
-  }, [filtered]);
+    return counts;
+  }, [filteredCursor]);
+
+  const humanCursorCount = useMemo(
+    () => filteredCursor.filter((s) => !s.is_subagent).length,
+    [filteredCursor]
+  );
 
   const summary = payload?.summary;
 
   return (
     <InternalChrome
       title="Development Log"
-      subtitle="Cursor prompt & task history"
+      subtitle="Founder journal + Cursor sessions"
       email={session?.user?.email}
       onSignOut={signOut}
       backHref="/internal"
     >
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <DevelopmentLogTabs />
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-400">
-            Cursor chat sessions for the StancePro workspace. Search, filter,
-            and browse by month.
+            Unified timeline: manual founder notes and Cursor chat sessions on the
+            same day, stacked vertically.
           </p>
           <button
             type="button"
@@ -254,19 +340,19 @@ export function DevelopmentLogViewer() {
         ) : null}
 
         {summary ? (
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
             {[
-              ["Total sessions", formatNumber(summary.total_sessions)],
-              ["Human sessions", formatNumber(summary.human_sessions)],
-              ["Subagent", formatNumber(summary.subagent_sessions)],
+              ["Founder entries", formatNumber(journal?.entries.length ?? 0)],
+              ["Cursor sessions", formatNumber(summary.total_sessions)],
+              ["Human Cursor", formatNumber(summary.human_sessions)],
               ["Files changed", formatNumber(summary.human_files_changed)],
               [
                 "+lines / −lines",
                 `+${formatNumber(summary.human_lines_added)} / −${formatNumber(summary.human_lines_removed)}`,
               ],
               [
-                "Time range",
-                `${summary.time_range_start || "—"} → ${summary.time_range_end || "—"}`,
+                "Range",
+                `${journal?.time_range_start?.slice(0, 7) ?? "—"} → ${summary.time_range_end?.slice(0, 7) ?? "—"}`,
               ],
             ].map(([label, value]) => (
               <div
@@ -282,10 +368,11 @@ export function DevelopmentLogViewer() {
           </div>
         ) : null}
 
-        {payload?.generated_at ? (
-          <p className="mb-4 text-xs text-slate-500">
-            Generated: {payload.generated_at}
-          </p>
+        {!loading && payload && journal ? (
+          <div className="mb-8 grid gap-4 lg:grid-cols-2">
+            <DifficultyChart counts={difficultyCounts} total={humanCursorCount} />
+            <MonthlyActivityChart stats={monthlyStats} />
+          </div>
         ) : null}
 
         <section className="mb-6 rounded-2xl border border-white/10 bg-[#1a2e61]/30 p-4">
@@ -295,7 +382,7 @@ export function DevelopmentLogViewer() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Title, prompt, model…"
+                placeholder="Title, prompt, journal body…"
                 className="mt-1 w-full rounded-lg border border-white/10 bg-[#0f1c40] px-3 py-2 text-sm text-white placeholder:text-slate-500"
               />
             </label>
@@ -315,7 +402,7 @@ export function DevelopmentLogViewer() {
               </select>
             </label>
             <label className="block text-xs text-slate-400">
-              Difficulty
+              Difficulty (Cursor)
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value)}
@@ -330,7 +417,7 @@ export function DevelopmentLogViewer() {
               </select>
             </label>
             <label className="block text-xs text-slate-400">
-              Model
+              Model (Cursor)
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
@@ -345,17 +432,18 @@ export function DevelopmentLogViewer() {
               </select>
             </label>
             <label className="block text-xs text-slate-400">
-              Sort
+              Tag (Founder)
               <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-white/10 bg-[#0f1c40] px-3 py-2 text-sm text-white"
               >
-                <option value="started_desc">Start date ↓</option>
-                <option value="started_asc">Start date ↑</option>
-                <option value="lines_desc">Line changes ↓</option>
-                <option value="duration_desc">Duration ↓</option>
-                <option value="title_asc">Title A→Z</option>
+                <option value="">All</option>
+                {tags.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -367,99 +455,114 @@ export function DevelopmentLogViewer() {
                 onChange={(e) => setHideSubagents(e.target.checked)}
                 className="rounded border-white/20"
               />
-              Human sessions only
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={groupByMonth}
-                onChange={(e) => setGroupByMonth(e.target.checked)}
-                className="rounded border-white/20"
-              />
-              Group by month
+              Hide Cursor subagents
             </label>
             <span className="ml-auto text-xs text-slate-500">
-              {formatNumber(filtered.length)} /{" "}
-              {formatNumber(payload?.sessions.length ?? 0)} sessions
+              {formatNumber(dayGroups.length)} days · {formatNumber(filteredFounder.length)}{" "}
+              founder · {formatNumber(filteredCursor.length)} cursor
             </span>
           </div>
         </section>
 
         {loading && !payload ? (
           <p className="text-sm text-slate-400">Loading…</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-slate-400">No sessions match your filters.</p>
-        ) : groupByMonth ? (
-          <div className="space-y-8">
-            {grouped.map(([monthKey, rows]) => (
+        ) : dayGroups.length === 0 ? (
+          <p className="text-sm text-slate-400">No entries match your filters.</p>
+        ) : (
+          <div className="space-y-10">
+            {monthGroups.map(([monthKey, days]) => (
               <section key={monthKey}>
-                <h2 className="mb-3 text-base font-semibold text-white">
-                  {monthKey}{" "}
-                  <span className="text-sm font-normal text-slate-400">
-                    {rows.length} session(s)
+                <h2 className="mb-4 text-lg font-semibold text-white">
+                  {monthKey}
+                  <span className="ml-2 text-sm font-normal text-slate-400">
+                    {days.length} day(s)
                   </span>
                 </h2>
-                <SessionTable sessions={rows} onSelect={setSelected} />
+                <div className="space-y-4">
+                  {days.map((day) => (
+                    <DayTimeline
+                      key={day.date}
+                      day={day}
+                      onSelectFounder={setSelectedFounder}
+                      onSelectCursor={setSelectedCursor}
+                    />
+                  ))}
+                </div>
               </section>
             ))}
           </div>
-        ) : (
-          <SessionTable sessions={filtered} onSelect={setSelected} />
         )}
+
+        {journal?.open_todos?.length ? (
+          <section className="mt-10 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-200">
+              Open TODOs (founder journal snapshot)
+            </h2>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">
+              {journal.open_todos.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </main>
 
-      {selected ? (
+      {selectedFounder ? (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
-          onClick={() => setSelected(null)}
+          onClick={() => setSelectedFounder(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-amber-500/20 bg-[#0f1c40] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs text-amber-200/80">Founder journal</p>
+            <h3 className="mt-1 text-lg font-semibold text-white">
+              {selectedFounder.title}
+            </h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">
+              {selectedFounder.body}
+            </p>
+            <button
+              type="button"
+              onClick={() => setSelectedFounder(null)}
+              className="mt-4 rounded-lg border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedCursor ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
+          onClick={() => setSelectedCursor(null)}
         >
           <div
             className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-[#0f1c40] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white">
-                  {selected.title}
-                </h3>
-                <p className="mt-1 text-xs text-slate-400">
-                  {selected.started_at} · {selected.duration || "—"} ·{" "}
-                  {selected.difficulty}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="rounded-lg border border-white/15 px-2 py-1 text-sm text-slate-300 hover:bg-white/5"
-              >
-                Close
-              </button>
-            </div>
-            <dl className="grid grid-cols-2 gap-3 border-b border-white/10 px-5 py-4 text-sm sm:grid-cols-3">
-              {[
-                ["Model", selected.model || "—"],
-                ["Files", selected.files_changed],
-                ["+lines", selected.lines_added],
-                ["−lines", selected.lines_removed],
-                ["Bubbles", selected.bubbles],
-                ["Subagent", selected.is_subagent ? "yes" : "no"],
-              ].map(([k, v]) => (
-                <div key={k}>
-                  <dt className="text-[10px] uppercase tracking-wide text-slate-500">
-                    {k}
-                  </dt>
-                  <dd className="text-slate-200">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <div className="px-5 py-4">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                First user prompt
+            <div className="border-b border-white/10 px-5 py-4">
+              <p className="text-xs text-sky-300/80">Cursor session</p>
+              <h3 className="mt-1 text-lg font-semibold text-white">
+                {selectedCursor.title}
+              </h3>
+              <p className="mt-1 text-xs text-slate-400">
+                {selectedCursor.started_at} · {selectedCursor.duration || "—"} ·{" "}
+                {selectedCursor.difficulty}
               </p>
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-[#1a2e61]/40 p-4 font-mono text-xs text-slate-200">
-                {selected.first_user_prompt || "(empty)"}
-              </pre>
             </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap p-5 font-mono text-xs text-slate-200">
+              {selectedCursor.first_user_prompt || "(empty)"}
+            </pre>
+            <button
+              type="button"
+              onClick={() => setSelectedCursor(null)}
+              className="mx-5 mb-5 rounded-lg border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5"
+            >
+              Close
+            </button>
           </div>
         </div>
       ) : null}

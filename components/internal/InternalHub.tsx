@@ -47,8 +47,8 @@ export function InternalHub() {
             <div>
               <h2 className="text-lg font-semibold text-white">Development Log</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Cursor chat sessions (auto) and founder journal Mar–Nov 2025
-                (manual).
+                Unified founder journal and Cursor session timeline with difficulty
+                and monthly activity charts.
               </p>
             </div>
           </Link>
