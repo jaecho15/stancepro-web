@@ -81,6 +81,18 @@ export type Timeline2025Payload = {
   };
   monthly: Timeline2025MonthlySummary[];
   evidence: TimelineEvidenceEntry[];
+  cursor_estimates?: {
+    ensemble_human_sessions: number;
+    ensemble_including_subagents: number;
+    confidence_range_human: [number, number];
+    methodology: string;
+    monthly: {
+      month: string;
+      active_days: number;
+      estimated_human_sessions: number;
+      era_multiplier: number;
+    }[];
+  };
 };
 
 export type FounderJournalEntry = {

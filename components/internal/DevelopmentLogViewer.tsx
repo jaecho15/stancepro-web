@@ -483,6 +483,14 @@ export function DevelopmentLogViewer() {
                 "Range",
                 `${timeline2025.time_range_start.slice(0, 7)} → ${summary.time_range_end?.slice(0, 7) ?? "—"}`,
               ],
+              ...(timeline2025.cursor_estimates
+                ? [
+                    [
+                      "Est. Cursor 2025",
+                      `~${formatNumber(timeline2025.cursor_estimates.ensemble_human_sessions)} human (${formatNumber(timeline2025.cursor_estimates.confidence_range_human[0])}–${formatNumber(timeline2025.cursor_estimates.confidence_range_human[1])})`,
+                    ],
+                  ]
+                : []),
             ].map(([label, value]) => (
               <div
                 key={label}

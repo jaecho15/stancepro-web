@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-23T23:47:38+08:00",
+  "generated_at": "2026-06-24T01:30:56+08:00",
   "source": "Founder journal + DEVELOPMENT_TIMELINE.csv (git, docs, migrations)",
   "time_range_start": "2025-03-09",
   "time_range_end": "2025-12-21",
@@ -7074,5 +7074,94 @@
       "evidence": "commit 5b23f30",
       "detail": "Catalogs/~$pro_riders.xlsx; Proriders/Anna Gasser.jpg; Proriders/Ayumu Hirano.jpg; Proriders/Bryan_Iguchi.jpeg; Proriders/Harry Kearney.jpg; Proriders/Pro_Riders-20251216T154855Z-3-001.zip; Proriders/antti-autti.webp; Proriders/bryan-iguchi.avif"
     }
-  ]
+  ],
+  "cursor_estimates": {
+    "generated_at": "2026-06-24T01:30:56+08:00",
+    "methodology": "Calibrate on 2026 human Cursor sessions per active dev day; apply monthly era multipliers from founder journal (Cursor start Apr 2025, Ultra Oct 2025); blend era-weighted days, discounted flat active-day, and git-commit scaling.",
+    "calibration_2026": {
+      "human_sessions": 380,
+      "sessions_per_active_day": 7.45,
+      "subagent_ratio": 0.14,
+      "git_commits_in_window": 61
+    },
+    "inputs_2025": {
+      "founder_entries": 38,
+      "git_commits_main": 127,
+      "active_dev_days": 65,
+      "cursor_usage_start": "2025-04-02"
+    },
+    "models": {
+      "era_weighted_active_day": 497,
+      "simple_active_day": 329,
+      "git_commit_scaled": 435
+    },
+    "ensemble_human_sessions": 446,
+    "ensemble_including_subagents": 508,
+    "confidence_range_human": [
+      334,
+      558
+    ],
+    "monthly": [
+      {
+        "month": "2025-03",
+        "active_days": 0,
+        "estimated_human_sessions": 0,
+        "era_multiplier": 0.0
+      },
+      {
+        "month": "2025-04",
+        "active_days": 17,
+        "estimated_human_sessions": 80,
+        "era_multiplier": 0.52
+      },
+      {
+        "month": "2025-05",
+        "active_days": 9,
+        "estimated_human_sessions": 51,
+        "era_multiplier": 0.58
+      },
+      {
+        "month": "2025-06",
+        "active_days": 0,
+        "estimated_human_sessions": 0,
+        "era_multiplier": 0.5
+      },
+      {
+        "month": "2025-07",
+        "active_days": 1,
+        "estimated_human_sessions": 5,
+        "era_multiplier": 0.55
+      },
+      {
+        "month": "2025-08",
+        "active_days": 4,
+        "estimated_human_sessions": 22,
+        "era_multiplier": 0.58
+      },
+      {
+        "month": "2025-09",
+        "active_days": 5,
+        "estimated_human_sessions": 32,
+        "era_multiplier": 0.62
+      },
+      {
+        "month": "2025-10",
+        "active_days": 13,
+        "estimated_human_sessions": 132,
+        "era_multiplier": 0.92
+      },
+      {
+        "month": "2025-11",
+        "active_days": 12,
+        "estimated_human_sessions": 138,
+        "era_multiplier": 0.9
+      },
+      {
+        "month": "2025-12",
+        "active_days": 4,
+        "estimated_human_sessions": 37,
+        "era_multiplier": 0.85
+      }
+    ]
+  }
 }
