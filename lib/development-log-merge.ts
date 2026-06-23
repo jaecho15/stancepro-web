@@ -85,17 +85,24 @@ export const DIFFICULTY_ORDER = [
 export type MonthlyStats = {
   month: string;
   cursorSessions: number;
+  estimatedCursorSessions: number;
   founderEntries: number;
   gitCommits: number;
   evidenceRows: number;
   linesChanged: number;
 };
 
+export type CursorEstimateMonth = {
+  month: string;
+  estimated_human_sessions: number;
+};
+
 export function buildMonthlyStats(
   founder: FounderJournalEntry[],
   evidence: TimelineEvidenceEntry[],
   cursor: DevelopmentLogSession[],
-  hideSubagents: boolean
+  hideSubagents: boolean,
+  cursorEstimates: CursorEstimateMonth[] = []
 ): MonthlyStats[] {
   const map = new Map<string, MonthlyStats>();
 
@@ -104,6 +111,7 @@ export function buildMonthlyStats(
       map.set(month, {
         month,
         cursorSessions: 0,
+        estimatedCursorSessions: 0,
         founderEntries: 0,
         gitCommits: 0,
         evidenceRows: 0,
@@ -133,6 +141,11 @@ export function buildMonthlyStats(
     const row = ensure(month);
     row.cursorSessions += 1;
     row.linesChanged += session.lines_added + session.lines_removed;
+  }
+
+  for (const row of cursorEstimates) {
+    if (!row.month) continue;
+    ensure(row.month).estimatedCursorSessions = row.estimated_human_sessions ?? 0;
   }
 
   return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));

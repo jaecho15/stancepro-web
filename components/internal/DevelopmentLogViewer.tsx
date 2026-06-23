@@ -419,7 +419,8 @@ export function DevelopmentLogViewer() {
         journal?.entries ?? [],
         timeline2025?.evidence ?? [],
         payload?.sessions ?? [],
-        hideSubagents
+        hideSubagents,
+        timeline2025?.cursor_estimates?.monthly ?? []
       ),
     [journal, timeline2025, payload, hideSubagents]
   );
@@ -507,7 +508,13 @@ export function DevelopmentLogViewer() {
 
         {!loading && payload && journal && timeline2025 ? (
           <div className="mb-8 grid gap-4 lg:grid-cols-2">
-            <DifficultyChart counts={difficultyCounts} total={humanCursorCount} />
+            <DifficultyChart
+              counts={difficultyCounts}
+              total={humanCursorCount}
+              estimatedCursor2025={
+                timeline2025.cursor_estimates?.ensemble_human_sessions
+              }
+            />
             <MonthlyActivityChart stats={monthlyStats} />
           </div>
         ) : null}

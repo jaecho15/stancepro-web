@@ -39,10 +39,15 @@ function pieSlicePath(
 type DifficultyChartProps = {
   counts: Record<string, number>;
   total: number;
+  estimatedCursor2025?: number;
 };
 
 /** Total Cursor session mix by difficulty (pie). */
-export function DifficultyChart({ counts, total }: DifficultyChartProps) {
+export function DifficultyChart({
+  counts,
+  total,
+  estimatedCursor2025,
+}: DifficultyChartProps) {
   const slices = DIFFICULTY_ORDER.map((level) => ({
     level,
     count: counts[level] ?? 0,
@@ -58,10 +63,13 @@ export function DifficultyChart({ counts, total }: DifficultyChartProps) {
     <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-5">
       <h2 className="text-sm font-semibold text-white">Total by difficulty</h2>
       <p className="mt-1 text-xs text-slate-400">
-        Cursor human sessions · {total} total
+        Cursor human sessions · {total} logged
+        {estimatedCursor2025 ? (
+          <> · ~{estimatedCursor2025} est. in 2025</>
+        ) : null}
       </p>
       {total === 0 ? (
-        <p className="mt-6 text-sm text-slate-500">No sessions in current filters.</p>
+        <p className="mt-6 text-sm text-slate-500">No logged sessions in current filters.</p>
       ) : (
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
           <svg
@@ -139,14 +147,20 @@ type MonthlyChartProps = {
   stats: MonthlyStats[];
 };
 
-/** Monthly founder + git + Cursor activity as stacked columns. */
+function monthStackTotal(row: MonthlyStats) {
+  return (
+    row.founderEntries +
+    row.gitCommits +
+    row.cursorSessions +
+    row.estimatedCursorSessions
+  );
+}
+
+/** Monthly founder + git + Cursor (logged or estimated) as stacked columns. */
 export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
   if (stats.length === 0) return null;
 
-  const maxTotal = Math.max(
-    ...stats.map((s) => s.founderEntries + s.gitCommits + s.cursorSessions),
-    1
-  );
+  const maxTotal = Math.max(...stats.map(monthStackTotal), 1);
   const barW = 28;
   const gap = 12;
   const chartW = Math.max(stats.length * (barW + gap) + 32, 320);
@@ -157,7 +171,7 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
     <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-5">
       <h2 className="text-sm font-semibold text-white">Monthly activity</h2>
       <p className="mt-1 text-xs text-slate-400">
-        Stacked columns — founder (bottom), git commits (middle), Cursor (top).
+        Stacked columns — founder, git, logged Cursor (2026), estimated Cursor (2025).
       </p>
       <div className="mt-4 overflow-x-auto">
         <svg
@@ -169,16 +183,20 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
         >
           {stats.map((row, i) => {
             const x = 20 + i * (barW + gap);
-            const total = row.founderEntries + row.gitCommits + row.cursorSessions;
+            const total = monthStackTotal(row);
             const columnH = total > 0 ? (total / maxTotal) * (plotH - 16) : 0;
             const founderH =
               total > 0 ? (row.founderEntries / total) * columnH : 0;
             const gitH = total > 0 ? (row.gitCommits / total) * columnH : 0;
-            const cursorH = columnH - founderH - gitH;
+            const cursorH = total > 0 ? (row.cursorSessions / total) * columnH : 0;
+            const estH =
+              total > 0 ? (row.estimatedCursorSessions / total) * columnH : 0;
             const baseY = plotH;
             const founderTop = baseY - founderH;
             const gitTop = founderTop - gitH;
             const cursorTop = gitTop - cursorH;
+            const estTop = cursorTop - estH;
+            const hasEstimate = row.estimatedCursorSessions > 0;
 
             return (
               <g key={row.month}>
@@ -201,7 +219,7 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
                     height={gitH}
                     fill="#34d399"
                     opacity={0.92}
-                    rx={cursorH <= 0 ? 3 : 0}
+                    rx={cursorH <= 0 && estH <= 0 ? 3 : 0}
                   />
                 ) : null}
                 {cursorH > 0 ? (
@@ -212,6 +230,20 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
                     height={cursorH}
                     fill="#38bdf8"
                     opacity={0.92}
+                    rx={estH <= 0 ? 3 : 0}
+                  />
+                ) : null}
+                {estH > 0 ? (
+                  <rect
+                    x={x}
+                    y={estTop}
+                    width={barW}
+                    height={estH}
+                    fill="#a78bfa"
+                    opacity={0.88}
+                    stroke="#c4b5fd"
+                    strokeWidth={1}
+                    strokeDasharray="3 2"
                     rx={3}
                   />
                 ) : null}
@@ -240,7 +272,9 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
                     textAnchor="middle"
                     className="fill-slate-400 text-[8px]"
                   >
-                    {total}
+                    {hasEstimate && row.cursorSessions === 0
+                      ? `~${total}`
+                      : total}
                   </text>
                 ) : null}
               </g>
@@ -259,7 +293,11 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-sky-400" />
-          Cursor
+          Cursor (logged)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm border border-violet-300 bg-violet-400/80" />
+          Cursor est. (2025)
         </span>
       </div>
     </div>
