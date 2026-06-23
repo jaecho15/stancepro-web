@@ -13,46 +13,124 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   "Very Hard": "#f87171",
 };
 
+function polar(cx: number, cy: number, r: number, angle: number) {
+  return {
+    x: cx + r * Math.cos(angle),
+    y: cy + r * Math.sin(angle),
+  };
+}
+
+function pieSlicePath(
+  cx: number,
+  cy: number,
+  r: number,
+  start: number,
+  end: number
+) {
+  if (end - start >= Math.PI * 2 - 0.0001) {
+    return `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`;
+  }
+  const s = polar(cx, cy, r, start);
+  const e = polar(cx, cy, r, end);
+  const large = end - start > Math.PI ? 1 : 0;
+  return `M ${cx} ${cy} L ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y} Z`;
+}
+
 type DifficultyChartProps = {
   counts: Record<string, number>;
   total: number;
 };
 
+/** Total Cursor session mix by difficulty (pie). */
 export function DifficultyChart({ counts, total }: DifficultyChartProps) {
-  const max = Math.max(...DIFFICULTY_ORDER.map((d) => counts[d] ?? 0), 1);
+  const slices = DIFFICULTY_ORDER.map((level) => ({
+    level,
+    count: counts[level] ?? 0,
+    color: DIFFICULTY_COLORS[level],
+  })).filter((s) => s.count > 0);
+
+  const cx = 72;
+  const cy = 72;
+  const r = 58;
+  let angle = -Math.PI / 2;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-5">
-      <h2 className="text-sm font-semibold text-white">Cursor sessions by difficulty</h2>
+      <h2 className="text-sm font-semibold text-white">Total by difficulty</h2>
       <p className="mt-1 text-xs text-slate-400">
-        Human-authored sessions only · {total} total
+        Cursor human sessions · {total} total
       </p>
-      <div className="mt-4 space-y-3">
-        {DIFFICULTY_ORDER.map((level) => {
-          const count = counts[level] ?? 0;
-          const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-          const width = max > 0 ? (count / max) * 100 : 0;
-          return (
-            <div key={level}>
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="text-slate-300">{level}</span>
-                <span className="tabular-nums text-slate-500">
-                  {count} · {pct}%
-                </span>
-              </div>
-              <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${width}%`,
-                    backgroundColor: DIFFICULTY_COLORS[level],
-                  }}
+      {total === 0 ? (
+        <p className="mt-6 text-sm text-slate-500">No sessions in current filters.</p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
+          <svg
+            width={144}
+            height={144}
+            viewBox="0 0 144 144"
+            className="shrink-0"
+            role="img"
+            aria-label="Difficulty distribution pie chart"
+          >
+            {slices.map((slice) => {
+              const sweep = (slice.count / total) * Math.PI * 2;
+              const start = angle;
+              const end = angle + sweep;
+              angle = end;
+              return (
+                <path
+                  key={slice.level}
+                  d={pieSlicePath(cx, cy, r, start, end)}
+                  fill={slice.color}
+                  stroke="#0f1c40"
+                  strokeWidth={1.5}
                 />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+            <circle cx={cx} cy={cy} r={28} fill="#0f1c40" />
+            <text
+              x={cx}
+              y={cy - 4}
+              textAnchor="middle"
+              className="fill-white text-[13px] font-semibold"
+            >
+              {total}
+            </text>
+            <text
+              x={cx}
+              y={cy + 12}
+              textAnchor="middle"
+              className="fill-slate-500 text-[8px]"
+            >
+              sessions
+            </text>
+          </svg>
+          <ul className="min-w-0 flex-1 space-y-2">
+            {DIFFICULTY_ORDER.map((level) => {
+              const count = counts[level] ?? 0;
+              if (count === 0) return null;
+              const pct = Math.round((count / total) * 100);
+              return (
+                <li
+                  key={level}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="inline-flex items-center gap-2 text-slate-300">
+                    <span
+                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: DIFFICULTY_COLORS[level] }}
+                    />
+                    {level}
+                  </span>
+                  <span className="tabular-nums text-slate-500">
+                    {count} · {pct}%
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -61,86 +139,95 @@ type MonthlyChartProps = {
   stats: MonthlyStats[];
 };
 
+/** Monthly founder + Cursor activity as stacked columns. */
 export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
   if (stats.length === 0) return null;
 
-  const maxCount = Math.max(
-    ...stats.map((s) => s.cursorSessions + s.founderEntries),
+  const maxTotal = Math.max(
+    ...stats.map((s) => s.founderEntries + s.cursorSessions),
     1
   );
-  const maxLines = Math.max(...stats.map((s) => s.linesChanged), 1);
-  const chartW = Math.max(stats.length * 36, 320);
-  const barW = 14;
-  const gap = 22;
-  const height = 160;
-  const padBottom = 28;
+  const barW = 28;
+  const gap = 12;
+  const chartW = Math.max(stats.length * (barW + gap) + 32, 320);
+  const plotH = 168;
+  const padBottom = 36;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-5">
       <h2 className="text-sm font-semibold text-white">Monthly activity</h2>
       <p className="mt-1 text-xs text-slate-400">
-        Founder entries (amber) + Cursor sessions (blue). Line overlay = code churn.
+        Stacked columns — founder (bottom) + Cursor sessions (top) per month.
       </p>
       <div className="mt-4 overflow-x-auto">
         <svg
           width={chartW}
-          height={height + padBottom}
+          height={plotH + padBottom}
           className="min-w-full"
           role="img"
-          aria-label="Monthly development activity chart"
+          aria-label="Monthly stacked activity chart"
         >
           {stats.map((row, i) => {
-            const x = 24 + i * gap;
+            const x = 20 + i * (barW + gap);
+            const total = row.founderEntries + row.cursorSessions;
+            const columnH = total > 0 ? (total / maxTotal) * (plotH - 16) : 0;
             const founderH =
-              (row.founderEntries / maxCount) * (height - 20);
-            const cursorH =
-              (row.cursorSessions / maxCount) * (height - 20);
-            const lineY =
-              height - (row.linesChanged / maxLines) * (height - 20);
+              total > 0 ? (row.founderEntries / total) * columnH : 0;
+            const cursorH = columnH - founderH;
+            const baseY = plotH;
+
             return (
               <g key={row.month}>
-                <rect
-                  x={x}
-                  y={height - founderH}
-                  width={barW / 2 - 1}
-                  height={founderH}
-                  rx={2}
-                  fill="#fbbf24"
-                  opacity={0.85}
-                />
-                <rect
-                  x={x + barW / 2 + 1}
-                  y={height - cursorH}
-                  width={barW / 2 - 1}
-                  height={cursorH}
-                  rx={2}
-                  fill="#38bdf8"
-                  opacity={0.9}
-                />
-                {i > 0 ? (
-                  <line
-                    x1={24 + (i - 1) * gap + barW / 2}
-                    y1={
-                      height -
-                      (stats[i - 1].linesChanged / maxLines) * (height - 20)
-                    }
-                    x2={x + barW / 2}
-                    y2={lineY}
-                    stroke="#a78bfa"
-                    strokeWidth={1.5}
-                    opacity={0.7}
+                {founderH > 0 ? (
+                  <rect
+                    x={x}
+                    y={baseY - founderH}
+                    width={barW}
+                    height={founderH}
+                    fill="#fbbf24"
+                    opacity={0.9}
+                    rx={total === row.founderEntries ? 3 : 0}
                   />
                 ) : null}
-                <circle cx={x + barW / 2} cy={lineY} r={2.5} fill="#c4b5fd" />
+                {cursorH > 0 ? (
+                  <rect
+                    x={x}
+                    y={baseY - columnH}
+                    width={barW}
+                    height={cursorH}
+                    fill="#38bdf8"
+                    opacity={0.92}
+                    rx={3}
+                  />
+                ) : null}
+                {columnH === 0 ? (
+                  <rect
+                    x={x}
+                    y={baseY - 2}
+                    width={barW}
+                    height={2}
+                    fill="#334155"
+                    rx={1}
+                  />
+                ) : null}
                 <text
                   x={x + barW / 2}
-                  y={height + padBottom - 8}
+                  y={baseY + 14}
                   textAnchor="middle"
                   className="fill-slate-500 text-[9px]"
-                  transform={`rotate(-35 ${x + barW / 2} ${height + padBottom - 8})`}
                 >
                   {row.month.slice(2)}
                 </text>
+                {total > 0 ? (
+                  <text
+                    x={x + barW / 2}
+                    y={baseY - columnH - 4}
+                    textAnchor="middle"
+                    className="fill-slate-400 text-[8px]"
+                  >
+                    {total}
+                  </text>
+                ) : null}
               </g>
             );
           })}
@@ -149,15 +236,11 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
       <div className="mt-2 flex flex-wrap gap-4 text-[10px] text-slate-400">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />
-          Founder
+          Founder (bottom)
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-sky-400" />
-          Cursor
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-3 bg-violet-300" />
-          Line churn
+          Cursor (top)
         </span>
       </div>
     </div>
