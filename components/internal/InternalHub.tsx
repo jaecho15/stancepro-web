@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ImageIcon, Wallet } from "lucide-react";
+import { History, ImageIcon, Wallet } from "lucide-react";
 import { InternalChrome } from "@/components/internal/InternalChrome";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 
@@ -37,6 +37,21 @@ export function InternalHub() {
               </div>
             </Link>
           ) : null}
+          <Link
+            href="/internal/development-log"
+            className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6 transition-colors hover:border-brand-400/40 hover:bg-[#1a2e61]/70"
+          >
+            <div className="rounded-xl border border-white/10 bg-[#0f1c40] p-3 text-brand-300 group-hover:text-brand-200">
+              <History className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Development Log</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Cursor chat sessions (auto) and founder journal Mar–Nov 2025
+                (manual).
+              </p>
+            </div>
+          </Link>
           <Link
             href="/internal/brand-review"
             className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6 transition-colors hover:border-brand-400/40 hover:bg-[#1a2e61]/70"

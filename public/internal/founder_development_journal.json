@@ -1,0 +1,254 @@
+{
+  "source": "Founder manual development journal (pre–Cursor prompt log era)",
+  "time_range_start": "2025-03-09",
+  "time_range_end": "2025-11-17",
+  "entries": [
+    {
+      "date": "2025-03-09",
+      "title": "Swift Playgrounds exploration",
+      "body": "Started playing with Swift Playgrounds.",
+      "tags": ["iOS", "Learning"]
+    },
+    {
+      "date": "2025-03-23",
+      "title": "Swift Playgrounds basics complete",
+      "body": "Completed basic code exercises in Swift Playgrounds.",
+      "tags": ["iOS", "Learning"]
+    },
+    {
+      "date": "2025-04-02",
+      "title": "MacBook Air and toolchain setup",
+      "body": "Purchased MacBook Air and started working in Xcode and Cursor.",
+      "tags": ["iOS", "Tooling"]
+    },
+    {
+      "date": "2025-04-07",
+      "title": "TestFlight failure and git data loss",
+      "body": "7 am: TestFlight distribution failed validation. 2 pm: Git push caused major loss of working files. 3 pm: Recovered a previous version; one full day of work lost. Re-started building auto-detect and AR scan.",
+      "tags": ["iOS", "AR", "Release", "Incident"]
+    },
+    {
+      "date": "2025-04-08",
+      "title": "Partial recovery and AR rebuild",
+      "body": "Mostly recovered lost functions; Cursor and ChatGPT underperformed for two days. Claude 3.7 Max (paid tier) started working better. Video/photo analysis returned exaggerated ratios; adjustment factor applied. AR still causing unexpected issues. Started rebuilding AR scan mode from scratch at 10 pm.",
+      "tags": ["iOS", "AR", "AI Tools"]
+    },
+    {
+      "date": "2025-04-09",
+      "time": "12:14",
+      "title": "AR phase one complete",
+      "body": "First AR phase done; AR functioning decently.",
+      "tags": ["iOS", "AR"]
+    },
+    {
+      "date": "2025-04-09",
+      "time": "21:00",
+      "title": "Forced light mode for number visibility",
+      "body": "Applied color theme workaround using forced light mode so numbers remain visible in dark mode.",
+      "tags": ["iOS", "UI", "Dark Mode"]
+    },
+    {
+      "date": "2025-04-09",
+      "time": "22:00",
+      "title": "Numeric input format",
+      "body": "Input digit control: 3 integer digits + 1 decimal (e.g. 177.5).",
+      "tags": ["iOS", "UI"]
+    },
+    {
+      "date": "2025-04-10",
+      "time": "21:00",
+      "title": "Build 2 — dark mode fix",
+      "body": "Released Build 2 with dark mode fix. Updated UI icons.",
+      "tags": ["iOS", "Release", "Dark Mode"]
+    },
+    {
+      "date": "2025-04-12",
+      "title": "Photo gallery crash and project reorg",
+      "body": "While fixing a photo gallery access crash reported by Danny, Cursor introduced a regression and AR scan stopped working. 7:30 pm: Project structure reorganized for future expansion. 7:44 pm: AR scan still broken after file moves (Claude Sonnet 3.7). 11 pm: Began building home view.",
+      "tags": ["iOS", "AR", "Refactor", "Incident"]
+    },
+    {
+      "date": "2025-04-13",
+      "title": "Firebase to Supabase migration",
+      "body": "Installed Ruby (rbenv) and CocoaPods. After three hours of struggle, migrated from Firebase to Supabase due to gRPC issues (305.h).",
+      "tags": ["Backend", "Supabase", "Tooling"]
+    },
+    {
+      "date": "2025-04-14",
+      "title": "First home view build; onboarding simplified",
+      "body": "First successful build with home view. Onboarding caused mismatched view sequence. Decided to abolish onboarding except for profile creation.",
+      "tags": ["iOS", "Onboarding", "Home"]
+    },
+    {
+      "date": "2025-04-15",
+      "title": "Onboarding and Supabase auth fixes",
+      "body": "Spent the whole day fixing onboarding and Supabase-related authentication errors.",
+      "tags": ["iOS", "Onboarding", "Auth", "Supabase"]
+    },
+    {
+      "date": "2025-04-16",
+      "title": "Onboarding flow simplified",
+      "body": "Simplified onboarding to reduce overall flow complexity. Resolved the blocking issue.",
+      "tags": ["iOS", "Onboarding"]
+    },
+    {
+      "date": "2025-04-18",
+      "title": "Detail cards content fix",
+      "body": "Resolved first detail cards not displaying any contents.",
+      "tags": ["iOS", "UI"]
+    },
+    {
+      "date": "2025-04-19",
+      "title": "Build 3 to TestFlight",
+      "body": "Shipped Build 3 to TestFlight.",
+      "tags": ["iOS", "Release"]
+    },
+    {
+      "date": "2025-04-20",
+      "title": "Build 3.1 to TestFlight",
+      "body": "Shipped Build 3.1 to TestFlight.",
+      "tags": ["iOS", "Release"]
+    },
+    {
+      "date": "2025-04-24",
+      "title": "Supabase gear data tables",
+      "body": "Added Supabase gear data tables.",
+      "tags": ["Backend", "Gear", "Supabase"]
+    },
+    {
+      "date": "2025-04-26",
+      "title": "Major UI and result view revamp",
+      "body": "Major revamp including result view and UI cleanup.",
+      "tags": ["iOS", "UI", "Stance Calculator"]
+    },
+    {
+      "date": "2025-04-29",
+      "title": "Supabase database stabilization",
+      "body": "After three days of struggle, finally got the Supabase database up and running reliably.",
+      "tags": ["Backend", "Supabase"]
+    },
+    {
+      "date": "2025-05-13",
+      "title": "Stance setup storage split and dark mode",
+      "body": "Fixed stance setup flow between Supabase and local storage (UserDefaults) that kept overwriting profile data on each new stance save. Separated profile vs calculation storage by adding inputForCalc. Applied dark mode.",
+      "tags": ["iOS", "Stance Calculator", "Supabase", "Dark Mode"]
+    },
+    {
+      "date": "2025-05-15",
+      "title": "Community and Field Talks",
+      "body": "Created community view with Field Talks.",
+      "tags": ["iOS", "Community"]
+    },
+    {
+      "date": "2025-05-19",
+      "title": "Field Talks likes and calculation navigation",
+      "body": "Fine-tuned Field Talks like counts. Changed stance calculation sequence cards into functioning buttons so users can return to any step from any page.",
+      "tags": ["iOS", "Community", "Stance Calculator"]
+    },
+    {
+      "date": "2025-05-25",
+      "title": "Marketplace, messaging, Supabase incident",
+      "body": "Marketplace and Field Talks settled. In-app messaging done. Claude 4 accidentally wiped Supabase; restored by upgrading to Supabase Pro plan.",
+      "tags": ["iOS", "Community", "Messaging", "Backend", "Incident"]
+    },
+    {
+      "date": "2025-07-02",
+      "title": "Training hub and messaging polling",
+      "body": "Training hub activated. Messaging refresh frequency and push notifications on polling mode during development.",
+      "tags": ["iOS", "Coaching", "Messaging"]
+    },
+    {
+      "date": "2025-09-17",
+      "title": "Stance review function",
+      "body": "Built stance review function.",
+      "tags": ["iOS", "Stance Calculator"]
+    },
+    {
+      "date": "2025-09-18",
+      "title": "Domain and Google Workspace",
+      "body": "Purchased domain Stance-Pro.com. Google Workspace setup completed.",
+      "tags": ["Ops", "Marketing"]
+    },
+    {
+      "date": "2025-10-15",
+      "title": "Video feedback function",
+      "body": "Video feedback function built.",
+      "tags": ["Coaching", "Video Analysis"]
+    },
+    {
+      "date": "2025-10-17",
+      "title": "Video/audio/drawing sync research",
+      "body": "Struggling with video/audio/drawing rendering methodology. Screen capture would be easier but estimated 5–10× larger files vs timestamp-based playback/voice events.",
+      "tags": ["Coaching", "Video Analysis", "Architecture"]
+    },
+    {
+      "date": "2025-10-25",
+      "title": "Surgical pause/drawing sync",
+      "body": "After days of work, surgical sync on pause and drawing finally worked: pinpoint timestamps where drawing and video should match, check gap around that time, and re-sync.",
+      "tags": ["Coaching", "Video Analysis"]
+    },
+    {
+      "date": "2025-10-26",
+      "title": "Android port started",
+      "body": "Started building Android version. Using Cursor Ultra ($200/month).",
+      "tags": ["Android", "Tooling"]
+    },
+    {
+      "date": "2025-10-27",
+      "title": "Build 9 — annotations and export",
+      "body": "Preparing Build 9: removed timeline.json in favor of video_annotations only. Drawing strokes now progressive (previously appeared all at once). Added video export function (pending — too tricky).",
+      "tags": ["iOS", "Coaching", "Release"]
+    },
+    {
+      "date": "2025-10-30",
+      "title": "Android near completion; compliance items",
+      "body": "Android near completion. Auditing iOS to use lowercase UUID when saving to Supabase. Terms & Conditions added. Data export function added (mandatory for EU).",
+      "tags": ["Android", "iOS", "Backend", "Compliance"]
+    },
+    {
+      "date": "2025-11-05",
+      "title": "Cross-platform video and Android build 6",
+      "body": "Fixed video recording aspect ratio mismatch between Android and iOS. Messaging with image/video attachments implemented. General Android TODOs including policy buttons in Settings. Pushed Android build 6 (1.1).",
+      "tags": ["Android", "iOS", "Messaging", "Release"]
+    },
+    {
+      "date": "2025-11-06",
+      "title": "Notifications and coaching roadmap",
+      "body": "Notification system for messages. Coaching session work in progress. GPT-5 Codex deleted files without reason.",
+      "tags": ["Messaging", "Coaching", "Incident"]
+    },
+    {
+      "date": "2025-11-09",
+      "title": "Rollback since 5 November",
+      "body": "Rolled back all work since 5 November except saved coaching recording function and unread counter.",
+      "tags": ["Incident", "Coaching", "Messaging"]
+    },
+    {
+      "date": "2025-11-10",
+      "title": "Stance setup QR codes",
+      "body": "Working on QR codes for stance setups.",
+      "tags": ["iOS", "Stance Calculator"]
+    },
+    {
+      "date": "2025-11-17",
+      "title": "Realtime reverted to V1",
+      "body": "All realtime features working again after reverting to V1. V2 and broadcast modes deemed unstable and not trustworthy.",
+      "tags": ["Messaging", "Backend", "Realtime"]
+    }
+  ],
+  "open_todos": [
+    "Video export function",
+    "Training media Supabase activation",
+    "Gear catalog upload",
+    "Pro rider info upload",
+    "Voice coaching (e.g. rider says \"hey SP, I am doing the front 1\" → load coaching audio cue)",
+    "Premium coaching features to justify paid tier",
+    "3D rider / terrain / feature modeling, or rider video-based approach"
+  ],
+  "technical_notes": [
+    {
+      "topic": "Coaching video export codec",
+      "body": "Codec: H.264 (AVC). Container: .mp4. Resolution: 1080p @ 30 fps. Aspect: 16:9. Color profile: SDR (no HDR metadata)."
+    }
+  ]
+}
