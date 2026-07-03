@@ -72,13 +72,13 @@ class FeaturePoster:
 POSTERS: list[FeaturePoster] = [
     FeaturePoster(
         slug="setup",
-        headline="DIAL YOUR SETUP.",
-        subhead="Science-backed stance & gear setup in 60 seconds.",
+        headline="PRO SETUP. IN SECONDS.",
+        subhead="Stance & gear analysis at your fingertips.",
         sanitize_name=True,
         pillars=(
-            ("STANCE & GEAR CALCULATOR", "Angles, width and board length — dialled in."),
-            ("BOOT & BINDING MATCH", "Keep board, boots and bindings in sync."),
-            ("SUITABILITY ANALYSIS", "Check your combo before you hit the hill."),
+            ("STANCE & GEAR CALCULATOR", "Science-backed angles, width and board length."),
+            ("BOOT & BINDING MATCH", "Keep board, boots and bindings matched."),
+            ("SUITABILITY ANALYSIS", "Check your setup before you ride."),
         ),
         phones=(
             PhonePlacement(
@@ -100,11 +100,11 @@ POSTERS: list[FeaturePoster] = [
     FeaturePoster(
         slug="coaching",
         headline="GET COACHED ANYWHERE.",
-        subhead="AI analysis + human feedback from one clip.",
+        subhead="Pro feedback at your fingertips.",
         extra_margin_ref=20,
         pillars=(
-            ("AI VIDEO COACHING", "Movement analysis from one phone clip."),
-            ("SESSION BREAKDOWN", "Spot what to fix — strengths and improvements, frame by frame."),
+            ("VIDEO COACHING BY AI", "Movement analysis from a single clip."),
+            ("SESSION BREAKDOWN", "See your strengths and what to improve, frame by frame."),
             ("CERTIFIED COACH REVIEWS", "Improve faster with feedback from certified coaches."),
         ),
         phones=(
@@ -134,11 +134,11 @@ POSTERS: list[FeaturePoster] = [
     FeaturePoster(
         slug="ride_nav",
         headline="TRACK. NAVIGATE. RIDE.",
-        subhead="Every run. Every resort. In your pocket.",
+        subhead="The whole mountain at your fingertips.",
         pillars=(
-            ("LIVE RIDE TRACKING", "Speed, vertical, jumps, turns & calories."),
+            ("LIVE RIDE TRACKING", "Speed, vertical, jumps, turns and calories."),
             ("RESORT MAPS & NAV", "Step-by-step routing across the mountain."),
-            ("SESSION BREAKDOWN", "Elevation profiles, maps & event replay."),
+            ("RIDE REPLAY", "Elevation profiles, maps and event replay."),
         ),
         phones=(
             PhonePlacement(

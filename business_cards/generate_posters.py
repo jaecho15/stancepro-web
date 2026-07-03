@@ -129,13 +129,13 @@ VARIANTS = [
 ]
 
 # Shared copy — universal across all hero variants.
-HEADLINE = "DIAL IT IN."
+HEADLINE = "RIDE LIKE A PRO."
 SUBHEAD = "Coaching Assistant in your pocket."
 PILLARS_FOOTNOTE = "…and much more on iOS & Android."
 
 VALUE_PILLARS = [
-    ("STANCE & GEAR CALCULATOR", "Science-backed stance & gear setup in 60 seconds."),
-    ("AI VIDEO COACHING", "Movement analysis from one phone clip."),
+    ("STANCE & GEAR CALCULATOR", "Science-backed stance and gear setup in 60 seconds."),
+    ("VIDEO COACHING BY AI", "Movement analysis from a single clip."),
     ("CERTIFIED COACH REVIEWS", "Improve faster with feedback from certified coaches."),
 ]
 
@@ -601,11 +601,16 @@ def render_poster(variant: HeroVariant, width: int) -> Image.Image:
 
     # Sits directly below hero. Position is HERO_H + a small breathing gap.
     headline_y = copy_top
-    headline_font = font(FONT_AVENIR_COND, int(180 * S), AVC_HEAVY)
+    max_headline_w = int(width * 0.78) - margin_x
+    headline_size = int(148 * S)
+    headline_font = font(FONT_AVENIR_COND, headline_size, AVC_HEAVY)
+    while headline_size > int(72 * S) and draw.textlength(HEADLINE, font=headline_font) > max_headline_w:
+        headline_size -= int(4 * S)
+        headline_font = font(FONT_AVENIR_COND, headline_size, AVC_HEAVY)
     draw.text((margin_x, headline_y), HEADLINE, font=headline_font, fill=WHITE)
 
     # Subhead — universal across variants
-    subhead_y = headline_y + int(185 * S)
+    subhead_y = headline_y + int(headline_size * 1.02 + 25 * S)
     subhead_font = font(FONT_AVENIR_COND, int(58 * S), AVC_DEMI)
     draw.text(
         (margin_x, subhead_y),

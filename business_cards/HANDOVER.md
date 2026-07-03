@@ -18,9 +18,13 @@ Legacy paths (`Desktop/Apps_Dev/StancePro`, `StancePro_Docs/business_cards/`) ar
 
 ## Current poster set (5 active, resort-agnostic copy)
 
-Hero (`generate_posters.py`): **carve**, **powder** — headline `DIAL IT IN.`, subhead `Coaching Assistant in your pocket.`
+Hero (`generate_posters.py`): **carve**, **powder** — headline `RIDE LIKE A PRO.`, subhead `Coaching Assistant in your pocket.`
 
 Feature (`generate_feature_posters.py`): **setup**, **coaching**, **ride_nav**
+
+- **setup:** `PRO SETUP. IN SECONDS.` / `Stance & gear analysis at your fingertips.`
+- **coaching:** `GET COACHED ANYWHERE.` / `Pro feedback at your fingertips.`
+- **ride_nav:** `TRACK. NAVIGATE. RIDE.` / `The whole mountain at your fingertips.` (pillar: `RIDE REPLAY`)
 
 **Removed / do not regenerate:** `poster_home_hq_*` (retired "YOUR MOUNTAIN HQ." copy), `poster_cardrona_*`, `poster_remarkables_*`, `poster_ski_setup_*`, `poster_setup_coaching_*` (legacy NZ resort-specific variants).
 
