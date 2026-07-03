@@ -1,0 +1,25 @@
+StancePro Michroma Bold-inspired custom wordmark
+==========================================
+
+Recommended: v3_premium (V3 Premium)
+
+Why V3 Premium:
+- Keeps Michroma's rounded geometric language without esports/crypto heaviness
+- Offset (+22 UPM) thickens stems evenly; outer/hole contours handled separately
+- Subtle scale (1.025 x / 1.015 y) adds presence without bloating curves
+- Slight negative tracking (-1.2%) tightens the lockup for premium sports-tech use
+- Best legibility on card + poster footer at print scale
+
+Variants:
+- v1_stem_plus: conservative stem thickening (+18 UPM) — safest, closest to Regular
+- v2_structure: stronger offset (+28 UPM) — boldest, can feel slightly heavy at small sizes
+- v3_premium: balanced custom bold — recommended for brand rollout
+- v4_heavy: thicker stroke (+32 UPM) with tighter tracking — heaviest premium option
+- v5_ultra: +8% heavier than V4 (+42 UPM) — maximum custom bold weight
+
+Outputs:
+- svg/          vector wordmarks (light + dark)
+- png/          raster exports
+- compare_brand_sheet.png
+- compare_variants.png
+- mocks/        card, poster, background lockups

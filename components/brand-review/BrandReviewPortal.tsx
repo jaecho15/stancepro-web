@@ -140,6 +140,7 @@ function AssetReviewCard({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const assetComments = comments.filter((c) => c.asset_slug === asset.slug);
   const whiteMat = asset.whiteMat ?? asset.category !== "business_cards";
+  const checkerMat = asset.checkerMat ?? false;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,14 +163,16 @@ function AssetReviewCard({
           alt={asset.label}
           width={1200}
           height={800}
-          whiteMat={whiteMat}
+          whiteMat={checkerMat ? false : whiteMat}
+          checkerMat={checkerMat}
           onOpen={() => setLightboxOpen(true)}
         />
         {lightboxOpen ? (
           <ImageLightbox
             src={asset.imagePath}
             alt={asset.label}
-            whiteMat={whiteMat}
+            whiteMat={checkerMat ? false : whiteMat}
+            checkerMat={checkerMat}
             onClose={() => setLightboxOpen(false)}
           />
         ) : null}

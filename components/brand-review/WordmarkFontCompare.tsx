@@ -111,18 +111,35 @@ function WordmarkPollSection({
         {poll.options.map((option) => {
           const selected = myChoice === option.choiceSlug;
           return (
-            <button
+            <div
               key={option.choiceSlug}
-              type="button"
-              disabled={busy}
-              onClick={() => onSelect(poll.pollSlug, option.choiceSlug)}
-              className={`group rounded-xl border p-3 text-left transition-colors disabled:opacity-60 ${
+              role="button"
+              tabIndex={busy ? -1 : 0}
+              aria-pressed={selected}
+              aria-disabled={busy}
+              onClick={() => {
+                if (!busy) void onSelect(poll.pollSlug, option.choiceSlug);
+              }}
+              onKeyDown={(e) => {
+                if (busy) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  void onSelect(poll.pollSlug, option.choiceSlug);
+                }
+              }}
+              className={`group cursor-pointer rounded-xl border p-3 text-left transition-colors ${
+                busy ? "opacity-60 pointer-events-none" : ""
+              } ${
                 selected
                   ? "border-brand-400 bg-brand-600/15 ring-2 ring-brand-400/60"
                   : "border-white/10 bg-[#0f1c40]/60 hover:border-white/25"
               }`}
             >
-              <div className="relative mb-3 overflow-hidden rounded-lg bg-[#0f1c40]">
+              <div
+                className="relative mb-3 overflow-hidden rounded-lg bg-[#0f1c40]"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
                 <PreviewImageButton
                   src={option.imagePath}
                   alt={option.label}
@@ -153,7 +170,7 @@ function WordmarkPollSection({
               <p className="mt-2 text-xs font-medium text-brand-200">
                 {selected ? "Your pick" : "Tap to select"}
               </p>
-            </button>
+            </div>
           );
         })}
       </div>

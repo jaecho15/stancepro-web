@@ -6,7 +6,10 @@ import { Footer } from "@/components/Footer";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isInternal = pathname?.startsWith("/internal") || pathname?.startsWith("/brand-review");
+  const isInternal =
+    pathname?.startsWith("/internal") ||
+    pathname?.startsWith("/brand-review") ||
+    pathname?.startsWith("/posters");
 
   if (isInternal) {
     return <>{children}</>;

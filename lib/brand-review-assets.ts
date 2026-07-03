@@ -2,6 +2,7 @@ export type BrandReviewCategory =
   | "business_cards"
   | "hero_posters"
   | "feature_posters"
+  | "stickers"
   | "wordmark_compare";
 
 export type BrandReviewAsset = {
@@ -11,12 +12,15 @@ export type BrandReviewAsset = {
   imagePath: string;
   /** Light mat behind preview; defaults to true except business cards. */
   whiteMat?: boolean;
+  /** Checkerboard mat for transparent artwork (stickers, die-cut). */
+  checkerMat?: boolean;
 };
 
 export const BRAND_REVIEW_CATEGORY_LABELS: Record<BrandReviewCategory, string> = {
   business_cards: "Business cards",
   hero_posters: "Hero posters",
   feature_posters: "Feature posters",
+  stickers: "Stickers",
   wordmark_compare: "Wordmark fonts",
 };
 
@@ -70,12 +74,6 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     imagePath: "/brand-review/posters/poster_powder_preview.png",
   },
   {
-    slug: "poster_home_hq",
-    label: "Home HQ",
-    category: "feature_posters",
-    imagePath: "/brand-review/posters/poster_home_hq_preview.png",
-  },
-  {
     slug: "poster_setup",
     label: "Setup",
     category: "feature_posters",
@@ -92,5 +90,55 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     label: "Ride & Nav",
     category: "feature_posters",
     imagePath: "/brand-review/posters/poster_ride_nav_preview.png",
+  },
+  {
+    slug: "sticker_snowboard_navy",
+    label: "Snowboard — navy 6×2 in",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_snowboard_navy_6x2in_preview.png",
+  },
+  {
+    slug: "sticker_snowboard_white",
+    label: "Snowboard — white 6×2 in",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_snowboard_white_6x2in_preview.png",
+  },
+  {
+    slug: "sticker_snowboard_diecut",
+    label: "Snowboard — die-cut vinyl",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_snowboard_diecut_6x2in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_helmet_hex",
+    label: "Helmet — full-color hex",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_helmet_hex_2.5in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_helmet_white",
+    label: "Helmet — white mono",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_helmet_white_2.5in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_helmet_badge",
+    label: "Helmet — badge ring",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_helmet_badge_2.5in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_shop_qr",
+    label: "Shop counter QR 3×3 in",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_shop_qr_3x3in_preview.png",
   },
 ];
