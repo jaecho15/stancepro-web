@@ -1,4 +1,5 @@
 import type {
+  AiToolSpendSummary,
   FinanceExpenseRow,
   MonthBurn,
   StackedMonthBurn,
@@ -25,6 +26,47 @@ export function vendorSummaries(rows: FinanceExpenseRow[]): VendorSummary[] {
     map.set(vendor, entry);
   }
   return [...map.values()].sort((a, b) => b.totalSgd - a.totalSgd);
+}
+
+export function aiToolSpendSummaries(rows: FinanceExpenseRow[]): AiToolSpendSummary[] {
+  const summaries = new Map<AiToolSpendSummary["tool"], AiToolSpendSummary>();
+  for (const row of rows) {
+    const tool = aiToolName(row);
+    if (!tool) continue;
+    const entry = summaries.get(tool) ?? {
+      tool,
+      rows: 0,
+      totalSgd: 0,
+      needsReview: 0,
+    };
+    entry.rows += 1;
+    entry.totalSgd += Number(row.amount_sgd || 0);
+    if (row.status === "needs_review") entry.needsReview += 1;
+    summaries.set(tool, entry);
+  }
+  return ["Cursor", "OpenAI", "Claude"]
+    .map((tool) => summaries.get(tool as AiToolSpendSummary["tool"]))
+    .filter((summary): summary is AiToolSpendSummary => Boolean(summary));
+}
+
+function aiToolName(row: FinanceExpenseRow): AiToolSpendSummary["tool"] | null {
+  const haystack = [
+    row.vendor_name,
+    row.description ?? "",
+    row.source,
+    row.notes ?? "",
+  ].join(" ").toLowerCase();
+
+  if (haystack.includes("cursor")) return "Cursor";
+  if (haystack.includes("openai") || haystack.includes("open ai")) return "OpenAI";
+  if (
+    haystack.includes("anthropic") ||
+    haystack.includes("claude") ||
+    haystack.includes("claude code")
+  ) {
+    return "Claude";
+  }
+  return null;
 }
 
 export function monthlyBurn(rows: FinanceExpenseRow[]): MonthBurn[] {

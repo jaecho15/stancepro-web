@@ -6,6 +6,7 @@ import { ExpenseSection } from "@/components/finance/ExpenseSection";
 import { StackedBurnChart } from "@/components/finance/StackedBurnChart";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 import {
+  aiToolSpendSummaries,
   distinctFiscalYears,
   stackedMonthlyBurnByVendor,
   sumSgd,
@@ -148,6 +149,8 @@ export function FinanceDashboard() {
   const totalSgd = sumSgd(filteredRows);
   const needsReview = filteredRows.filter((r) => r.status === "needs_review").length;
   const vendorsInFy = vendorSummaries(fyRows);
+  const aiToolSpend = aiToolSpendSummaries(fyRows);
+  const aiToolSpendTotal = aiToolSpend.reduce((acc, summary) => acc + summary.totalSgd, 0);
   const stackedBurn = stackedMonthlyBurnByVendor(filteredRows, vendorColors);
 
   const avgNzdRate = useMemo(() => {
@@ -238,6 +241,49 @@ export function FinanceDashboard() {
             </li>
           </ul>
         </section>
+
+        {aiToolSpend.length > 0 ? (
+          <section className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">AI tooling spend</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Cursor, OpenAI, and Claude/Anthropic rows included in this fiscal year
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0f1c40]/70 px-4 py-3 text-right">
+                <p className="text-xs uppercase tracking-wide text-slate-400">AI total</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-white">
+                  {fmtMoney(aiToolSpendTotal, currency, avgNzdRate)}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[28rem] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 text-slate-400">
+                    <th className="pb-2 pr-4 font-medium">Tool</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Rows</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Total</th>
+                    <th className="pb-2 text-right font-medium">Review</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiToolSpend.map((summary) => (
+                    <tr key={summary.tool} className="border-b border-white/5 text-slate-200">
+                      <td className="py-2 pr-4">{summary.tool}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums">{summary.rows}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums">
+                        {fmtMoney(summary.totalSgd, currency, avgNzdRate)}
+                      </td>
+                      <td className="py-2 text-right tabular-nums">{summary.needsReview}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6">
           <h2 className="text-lg font-semibold text-white">

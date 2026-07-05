@@ -36,6 +36,9 @@ HERO_POWDER = POSTER_DIR / "poster_hero_powder.png"
 
 FONT_AVENIR = "/System/Library/Fonts/Avenir Next.ttc"
 FONT_AVENIR_COND = "/System/Library/Fonts/Avenir Next Condensed.ttc"
+FONT_GOTHIC = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+FONT_HIRAGINO = "/System/Library/Fonts/Hiragino Sans GB.ttc"
+FONT_THONBURI = "/System/Library/Fonts/Supplemental/Thonburi.ttc"
 
 # Avenir Next.ttc face indices (verified):
 AV_REG = 7
@@ -134,9 +137,10 @@ SUBHEAD = "Coaching Assistant in your pocket."
 PILLARS_FOOTNOTE = "…and much more on iOS & Android."
 
 VALUE_PILLARS = [
-    ("STANCE & GEAR CALCULATOR", "Science-backed stance and gear setup in 60 seconds."),
-    ("VIDEO COACHING BY AI", "Movement analysis from a single clip."),
-    ("CERTIFIED COACH REVIEWS", "Improve faster with feedback from certified coaches."),
+    ("STANCE CALCULATION", "Science-backed angles and width in\u00a060\u00a0seconds."),
+    ("GEAR ANALYSIS AND RECOMMENDATION", "Assist you to choose the best setup for your style."),
+    ("VIDEO ANALYSIS BY AI", "Movement analysis from a single clip, frame by frame."),
+    ("COACHING BY CERTIFIED INSTRUCTORS", "Improve with feedback from certified instructors anywhere you are."),
 ]
 
 
@@ -144,6 +148,38 @@ VALUE_PILLARS = [
 
 def font(path: str, size: int, index: int = 0) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(path, size=size, index=index)
+
+
+def font_for_language_label(label: str, size: int) -> ImageFont.FreeTypeFont:
+    """Pick a native system UI font per script; Latin stays on Avenir."""
+    if any("\u0e00" <= ch <= "\u0e7f" for ch in label):
+        return font(FONT_THONBURI, size)
+    if any("\uac00" <= ch <= "\ud7a3" for ch in label):
+        return font(FONT_GOTHIC, size)
+    if any("\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff" for ch in label):
+        return font(FONT_HIRAGINO, size)
+    return font(FONT_AVENIR, size, AV_REG)
+
+
+def draw_inline_language_list(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    labels: tuple[str, ...],
+    size: int,
+    fill,
+) -> int:
+    """Draw native language labels inline; returns x after last glyph."""
+    sep_font = font(FONT_AVENIR, size, AV_REG)
+    separator = " · "
+    for i, label in enumerate(labels):
+        if i:
+            draw.text((x, y), separator, font=sep_font, fill=fill)
+            x += int(sep_font.getlength(separator))
+        label_font = font_for_language_label(label, size)
+        draw.text((x, y), label, font=label_font, fill=fill)
+        x += int(label_font.getlength(label))
+    return x
 
 
 def make_qr(data: str, size_px: int) -> Image.Image:
@@ -278,6 +314,81 @@ def _wrap_text(text: str, fnt: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
             current = word
     lines.append(current)
     return lines
+
+
+def draw_pillars_block(
+    draw: ImageDraw.ImageDraw,
+    *,
+    pillars: tuple[tuple[str, str], ...],
+    start_y: int,
+    margin_x: int,
+    S: float,
+    compact: bool = False,
+) -> int:
+    """Draw pillar titles + single-line bodies at the default body size."""
+    if compact:
+        title_size, body_size = int(26 * S), int(22 * S)
+        rule_w = int(56 * S)
+        title_x_offset = int(20 * S)
+        rule_y_offset = int(18 * S)
+        title_y_offset = int(2 * S)
+        body_y_offset = int(40 * S)
+        title_spacing = int(3 * S)
+        body_line_gap = int(26 * S)
+        block_gap = int(12 * S)
+    else:
+        title_size, body_size = int(28 * S), int(24 * S)
+        rule_w = int(60 * S)
+        title_x_offset = int(24 * S)
+        rule_y_offset = int(20 * S)
+        title_y_offset = int(4 * S)
+        body_y_offset = int(44 * S)
+        title_spacing = int(4 * S)
+        body_line_gap = int(28 * S)
+        block_gap = int(14 * S)
+
+    rule_h = int(3 * S)
+    title_font = font(FONT_AVENIR, title_size, AV_BOLD)
+    body_font = font(FONT_AVENIR, body_size, AV_REG)
+    title_x = margin_x + rule_w + title_x_offset
+
+    y = start_y
+    body_color = (220, 228, 240)
+
+    for item in pillars:
+        title = item[0]
+        body = item[1]
+        language_labels = item[2] if len(item) > 2 else None
+        draw.rectangle(
+            (
+                margin_x,
+                y + rule_y_offset,
+                margin_x + rule_w,
+                y + rule_y_offset + rule_h,
+            ),
+            fill=BLUE_ACCENT,
+        )
+        draw_letterspaced(
+            draw,
+            (title_x, y + title_y_offset),
+            title,
+            title_font,
+            WHITE,
+            extra_spacing_px=title_spacing,
+        )
+        body_y = y + body_y_offset
+        body_font = font(FONT_AVENIR, body_size, AV_REG)
+        if language_labels:
+            prefix = f"{body} "
+            draw.text((margin_x, body_y), prefix, font=body_font, fill=body_color)
+            x = margin_x + int(body_font.getlength(prefix))
+            draw_inline_language_list(
+                draw, x, body_y, language_labels, body_size, body_color,
+            )
+        else:
+            draw.text((margin_x, body_y), body, font=body_font, fill=body_color)
+        y = body_y + body_line_gap + block_gap
+    return y
 
 
 def paste_v_centered(
@@ -619,33 +730,13 @@ def render_poster(variant: HeroVariant, width: int) -> Image.Image:
 
     # ----------------- VALUE PILLARS -----------------
     pillars_y = subhead_y + int(110 * S)
-    pillar_title_font = font(FONT_AVENIR, int(28 * S), AV_BOLD)
-    pillar_body_font = font(FONT_AVENIR, int(24 * S), AV_REG)
-    rule_h = int(3 * S)
-    rule_w = int(60 * S)
-    line_gap = int(85 * S)
-    text_max_x = int(width * TEXT_COLUMN_FRAC)
-
-    for i, (title, body) in enumerate(VALUE_PILLARS):
-        y = pillars_y + i * line_gap
-        title_x = margin_x + rule_w + int(24 * S)
-        draw.rectangle(
-            (margin_x, y + int(20 * S), margin_x + rule_w, y + int(20 * S) + rule_h),
-            fill=BLUE_ACCENT,
-        )
-        draw_letterspaced(
-            draw,
-            (title_x, y + int(4 * S)),
-            title, pillar_title_font, WHITE,
-            extra_spacing_px=int(4 * S),
-        )
-        body_lines = _wrap_text(body, pillar_body_font, text_max_x - margin_x)
-        body_y = y + int(44 * S)
-        for line in body_lines:
-            draw.text((margin_x, body_y), line, font=pillar_body_font, fill=(220, 228, 240))
-            body_y += int(30 * S)
-
-    pillars_end_y = pillars_y + 3 * line_gap + int(20 * S)
+    pillars_end_y = draw_pillars_block(
+        draw,
+        pillars=VALUE_PILLARS,
+        start_y=pillars_y,
+        margin_x=margin_x,
+        S=S,
+    )
 
     # Footnote under pillars — soft white, italic-ish via medium weight
     footnote_font = font(FONT_AVENIR, int(22 * S), AV_MED)

@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "finance:import:anthropic-receipts": "node scripts/import-anthropic-receipts.mjs",
+    "finance:import:claude": "node scripts/import-claude-costs.mjs",
+    "finance:sync:claude-code": "node scripts/sync-claude-code-costs.mjs",
+    "finance:sync:claude-max": "node scripts/sync-claude-max-subscription.mjs",
     "start": "next start",
     "lint": "next lint"
   },

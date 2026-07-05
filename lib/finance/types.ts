@@ -43,6 +43,13 @@ export type VendorSummary = {
   needsReview: number;
 };
 
+export type AiToolSpendSummary = {
+  tool: "Cursor" | "OpenAI" | "Claude";
+  rows: number;
+  totalSgd: number;
+  needsReview: number;
+};
+
 export type MonthBurn = {
   key: string;
   label: string;

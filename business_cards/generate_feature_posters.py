@@ -41,7 +41,15 @@ MUTED_WHITE = (255, 255, 255, 180)
 PHONE_BEZEL = (12, 22, 48)
 PHONE_BORDER = (80, 120, 180)
 
-SMART_DOWNLOAD_URL = "https://stance-pro.com/d"
+APP_SUPPORTED_LANGUAGE_LABELS = (
+    "English",
+    "한국어",
+    "中文",
+    "日本語",
+    "Deutsch",
+    "Français",
+    "ภาษาไทย",
+)
 PILLARS_FOOTNOTE = "…and much more on iOS & Android."
 DEMO_USER_NAME = "Scottie"
 HEADER_BG = (26, 30, 45)
@@ -62,7 +70,7 @@ class FeaturePoster:
     slug: str
     headline: str
     subhead: str
-    pillars: tuple[tuple[str, str], tuple[str, str], tuple[str, str]]
+    pillars: tuple[tuple[str, ...], ...]
     phones: tuple[PhonePlacement, ...]
     sanitize_name: bool = False
     extra_margin_ref: int = 0        # adds to margin_x throughout the poster (bleed)
@@ -76,8 +84,8 @@ POSTERS: list[FeaturePoster] = [
         subhead="Stance & gear analysis at your fingertips.",
         sanitize_name=True,
         pillars=(
-            ("STANCE & GEAR CALCULATOR", "Science-backed angles, width and board length."),
-            ("BOOT & BINDING MATCH", "Keep board, boots and bindings matched."),
+            ("STANCE CALCULATION", "Science-backed angles and width in\u00a060\u00a0seconds."),
+            ("GEAR ANALYSIS AND RECOMMENDATION", "Assist you to choose the best setup for your style."),
             ("SUITABILITY ANALYSIS", "Check your setup before you ride."),
         ),
         phones=(
@@ -103,9 +111,13 @@ POSTERS: list[FeaturePoster] = [
         subhead="Pro feedback at your fingertips.",
         extra_margin_ref=20,
         pillars=(
-            ("VIDEO COACHING BY AI", "Movement analysis from a single clip."),
-            ("SESSION BREAKDOWN", "See your strengths and what to improve, frame by frame."),
-            ("CERTIFIED COACH REVIEWS", "Improve faster with feedback from certified coaches."),
+            ("VIDEO ANALYSIS BY AI", "Movement analysis from a single clip, frame by frame."),
+            ("COACHING BY CERTIFIED INSTRUCTORS", "Improve with feedback from certified instructors anywhere you are."),
+            (
+                "MULTI LANGUAGE SUPPORT",
+                "Sessions delivered in your language.",
+                APP_SUPPORTED_LANGUAGE_LABELS,
+            ),
         ),
         phones=(
             PhonePlacement(
@@ -424,30 +436,15 @@ def render_feature_poster(spec: FeaturePoster, width: int) -> Image.Image:
     draw.text((margin_x, subhead_y), spec.subhead, font=subhead_font, fill=BLUE_ACCENT)
 
     pillars_y = subhead_y + int(95 * S)
-    pillar_title_font = fnt(FONT_AVENIR, int(26 * S), AV_BOLD)
-    pillar_body_font = fnt(FONT_AVENIR, int(22 * S), AV_REG)
-    rule_h = int(3 * S)
-    rule_w = int(56 * S)
-    line_gap = int(78 * S)
+    pillars_end_y = gp.draw_pillars_block(
+        draw,
+        pillars=spec.pillars,
+        start_y=pillars_y,
+        margin_x=margin_x,
+        S=S,
+        compact=True,
+    )
 
-    for i, (title, body) in enumerate(spec.pillars):
-        y = pillars_y + i * line_gap
-        draw.rectangle(
-            (margin_x, y + int(18 * S), margin_x + rule_w, y + int(18 * S) + rule_h),
-            fill=BLUE_ACCENT,
-        )
-        draw_letterspaced(
-            draw,
-            (margin_x + rule_w + int(20 * S), y + int(2 * S)),
-            title, pillar_title_font, WHITE,
-            extra_spacing_px=int(3 * S),
-        )
-        draw.text(
-            (margin_x, y + int(40 * S)),
-            body, font=pillar_body_font, fill=(220, 228, 240),
-        )
-
-    pillars_end_y = pillars_y + 3 * line_gap + int(16 * S)
     footnote_font = fnt(FONT_AVENIR, int(20 * S), AV_MED)
     draw.text(
         (margin_x, pillars_end_y + int(6 * S)),
