@@ -10,6 +10,7 @@ export type DayGroup = {
   founder: FounderJournalEntry[];
   evidence: TimelineEvidenceEntry[];
   cursor: DevelopmentLogSession[];
+  claude: DevelopmentLogSession[];
 };
 
 export function sessionDateKey(startedAt: string): string {
@@ -19,7 +20,8 @@ export function sessionDateKey(startedAt: string): string {
 export function mergeByDay(
   founder: FounderJournalEntry[],
   evidence: TimelineEvidenceEntry[],
-  cursor: DevelopmentLogSession[]
+  cursor: DevelopmentLogSession[],
+  claude: DevelopmentLogSession[] = []
 ): DayGroup[] {
   const map = new Map<string, DayGroup>();
 
@@ -31,6 +33,7 @@ export function mergeByDay(
         founder: [],
         evidence: [],
         cursor: [],
+        claude: [],
       });
     }
     return map.get(date)!;
@@ -51,7 +54,14 @@ export function mergeByDay(
     ensure(date).cursor.push(session);
   }
 
+  for (const session of claude) {
+    const date = sessionDateKey(session.started_at);
+    if (!date) continue;
+    ensure(date).claude.push(session);
+  }
+
   for (const group of map.values()) {
+    group.claude.sort((a, b) => a.started_at.localeCompare(b.started_at));
     group.founder.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
     group.evidence.sort((a, b) => {
       const sourceOrder = (s: string) =>

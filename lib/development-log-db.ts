@@ -30,6 +30,7 @@ export type DbDevelopmentLogSession = {
   confidence: string | null;
   workspace_path: string | null;
   source_kind: string | null;
+  raw_metadata: { topics?: string[] } | null;
   synced_at: string | null;
 };
 
@@ -47,7 +48,7 @@ export type DbDevelopmentLogSyncRun = {
 };
 
 const SESSION_SELECT =
-  "composer_id,started_at,last_updated_at,duration,month,difficulty,title,title_en,first_user_prompt,first_user_prompt_en,subtitle,subtitle_en,model,bubbles,files_changed,lines_added,lines_removed,peak_context_tokens,models_with_usage,agentic,is_subagent,confidence,workspace_path,source_kind,synced_at";
+  "composer_id,started_at,last_updated_at,duration,month,difficulty,title,title_en,first_user_prompt,first_user_prompt_en,subtitle,subtitle_en,model,bubbles,files_changed,lines_added,lines_removed,peak_context_tokens,models_with_usage,agentic,is_subagent,confidence,workspace_path,source_kind,raw_metadata,synced_at";
 
 function formatLocalTimestamp(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -79,6 +80,8 @@ export function mapDbSession(row: DbDevelopmentLogSession): DevelopmentLogSessio
     confidence: row.confidence ?? "",
     composer_id: row.composer_id,
     workspace_path: row.workspace_path ?? "",
+    source: row.source_kind ?? undefined,
+    topics: row.raw_metadata?.topics ?? undefined,
   };
 }
 

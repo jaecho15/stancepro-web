@@ -34,7 +34,15 @@ export type DevelopmentLogSession = {
   confidence: string;
   composer_id: string;
   workspace_path: string;
+  /** "claude_code" for Claude Code sessions; absent/other = Cursor. */
+  source?: string;
+  /** Topic tags (Claude Code sessions only). */
+  topics?: string[];
 };
+
+export function isClaudeSession(session: DevelopmentLogSession): boolean {
+  return session.source === "claude_code";
+}
 
 export type DevelopmentLogPayload = {
   generated_at: string;
@@ -43,6 +51,7 @@ export type DevelopmentLogPayload = {
 };
 
 export const PROMPT_LOG_PUBLIC_PATH = "/internal/prompt_log.json";
+export const CLAUDE_LOG_PUBLIC_PATH = "/internal/claude_log.json";
 export const FOUNDER_JOURNAL_PUBLIC_PATH = "/internal/founder_development_journal.json";
 export const TIMELINE_2025_PUBLIC_PATH = "/internal/development_timeline_2025.json";
 

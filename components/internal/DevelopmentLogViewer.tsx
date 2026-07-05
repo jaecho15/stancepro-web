@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpen, GitBranch, MessageSquare, RefreshCw } from "lucide-react";
+import { BookOpen, Bot, GitBranch, MessageSquare, RefreshCw } from "lucide-react";
 import { InternalChrome } from "@/components/internal/InternalChrome";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 import {
@@ -9,9 +9,11 @@ import {
   MonthlyActivityChart,
 } from "@/components/internal/DevelopmentLogCharts";
 import {
+  CLAUDE_LOG_PUBLIC_PATH,
   FOUNDER_JOURNAL_PUBLIC_PATH,
   PROMPT_LOG_PUBLIC_PATH,
   TIMELINE_2025_PUBLIC_PATH,
+  isClaudeSession,
   type DevelopmentLogPayload,
   type DevelopmentLogSession,
   type FounderJournalEntry,
@@ -102,6 +104,67 @@ function filterCursor(
   });
 }
 
+function SessionCard({
+  session,
+  variant,
+  onSelect,
+}: {
+  session: DevelopmentLogSession;
+  variant: "cursor" | "claude";
+  onSelect: (s: DevelopmentLogSession) => void;
+}) {
+  const cardClass =
+    variant === "claude"
+      ? "border-orange-500/15 bg-orange-500/5 hover:border-orange-400/30 hover:bg-orange-500/10"
+      : "border-sky-500/15 bg-sky-500/5 hover:border-sky-400/30 hover:bg-sky-500/10";
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(session)}
+      className={`w-full rounded-xl border p-3 text-left transition-colors ${cardClass}`}
+    >
+      <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+        <span>{session.started_at}</span>
+        {session.duration ? <span>· {session.duration}</span> : null}
+        <span
+          className={`rounded-full px-2 py-0.5 font-semibold uppercase ${
+            DIFFICULTY_STYLES[session.difficulty] ?? "bg-white/10 text-slate-300"
+          }`}
+        >
+          {session.difficulty}
+        </span>
+        {session.is_subagent ? (
+          <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-violet-200">
+            subagent
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 font-medium text-white">{session.title}</p>
+      {session.first_user_prompt ? (
+        <p className="mt-1 line-clamp-2 text-sm text-slate-400">
+          {truncate(session.first_user_prompt)}
+        </p>
+      ) : null}
+      {session.topics?.length ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {session.topics.slice(0, 5).map((topic) => (
+            <span
+              key={topic}
+              className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-400"
+            >
+              {topic}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <p className="mt-2 text-[10px] text-slate-500">
+        {session.model || "—"} · {session.files_changed} files · +
+        {session.lines_added}/−{session.lines_removed} lines
+      </p>
+    </button>
+  );
+}
+
 function DayTimeline({
   day,
   onSelectFounder,
@@ -117,7 +180,8 @@ function DayTimeline({
   const hasFounder = day.founder.length > 0;
   const hasEvidence = day.evidence.length > 0;
   const hasCursor = day.cursor.length > 0;
-  if (!hasFounder && !hasEvidence && !hasCursor) return null;
+  const hasClaude = day.claude.length > 0;
+  if (!hasFounder && !hasEvidence && !hasCursor && !hasClaude) return null;
 
   const evidenceLimit = 8;
   const visibleEvidence =
@@ -171,7 +235,7 @@ function DayTimeline({
 
       {hasEvidence ? (
         <section
-          className={`px-4 py-3 ${hasCursor ? "border-b border-white/5" : ""}`}
+          className={`px-4 py-3 ${hasCursor || hasClaude ? "border-b border-white/5" : ""}`}
         >
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-200/90">
             <GitBranch className="h-3.5 w-3.5" />
@@ -227,51 +291,51 @@ function DayTimeline({
         </section>
       ) : null}
 
-      {hasCursor ? (
-        <section className="px-4 py-3">
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-200/90">
-            <MessageSquare className="h-3.5 w-3.5" />
-            Cursor sessions · {day.cursor.length}
-          </div>
-          <div className="space-y-2">
-            {day.cursor.map((session) => (
-              <button
-                key={session.composer_id}
-                type="button"
-                onClick={() => onSelectCursor(session)}
-                className="w-full rounded-xl border border-sky-500/15 bg-sky-500/5 p-3 text-left transition-colors hover:border-sky-400/30 hover:bg-sky-500/10"
-              >
-                <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                  <span>{session.started_at}</span>
-                  {session.duration ? <span>· {session.duration}</span> : null}
-                  <span
-                    className={`rounded-full px-2 py-0.5 font-semibold uppercase ${
-                      DIFFICULTY_STYLES[session.difficulty] ??
-                      "bg-white/10 text-slate-300"
-                    }`}
-                  >
-                    {session.difficulty}
-                  </span>
-                  {session.is_subagent ? (
-                    <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-violet-200">
-                      subagent
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 font-medium text-white">{session.title}</p>
-                {session.first_user_prompt ? (
-                  <p className="mt-1 line-clamp-2 text-sm text-slate-400">
-                    {truncate(session.first_user_prompt)}
-                  </p>
-                ) : null}
-                <p className="mt-2 text-[10px] text-slate-500">
-                  {session.model || "—"} · {session.files_changed} files · +
-                  {session.lines_added}/−{session.lines_removed} lines
-                </p>
-              </button>
-            ))}
-          </div>
-        </section>
+      {hasCursor || hasClaude ? (
+        <div
+          className={`grid ${hasCursor && hasClaude ? "lg:grid-cols-2" : ""}`}
+        >
+          {hasCursor ? (
+            <section className="px-4 py-3">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-sky-200/90">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Cursor sessions · {day.cursor.length}
+              </div>
+              <div className="space-y-2">
+                {day.cursor.map((session) => (
+                  <SessionCard
+                    key={session.composer_id}
+                    session={session}
+                    variant="cursor"
+                    onSelect={onSelectCursor}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {hasClaude ? (
+            <section
+              className={`px-4 py-3 ${
+                hasCursor ? "border-t border-white/5 lg:border-l lg:border-t-0" : ""
+              }`}
+            >
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-orange-200/90">
+                <Bot className="h-3.5 w-3.5" />
+                Claude Code sessions · {day.claude.length}
+              </div>
+              <div className="space-y-2">
+                {day.claude.map((session) => (
+                  <SessionCard
+                    key={session.composer_id}
+                    session={session}
+                    variant="claude"
+                    onSelect={onSelectCursor}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
       ) : null}
     </article>
   );
@@ -330,7 +394,23 @@ export function DevelopmentLogViewer() {
       throw new Error(`Failed to load prompt_log.json (${promptRes.status})`);
     }
     const jsonPayload = (await promptRes.json()) as DevelopmentLogPayload;
-    setPayload(jsonPayload);
+
+    // Claude Code log is optional — merge its sessions in when present.
+    let claudeSessions: DevelopmentLogSession[] = [];
+    try {
+      const claudeRes = await fetch(`${CLAUDE_LOG_PUBLIC_PATH}${bust}`);
+      if (claudeRes.ok) {
+        const claudePayload = (await claudeRes.json()) as DevelopmentLogPayload;
+        claudeSessions = claudePayload.sessions ?? [];
+      }
+    } catch {
+      // static claude_log.json not deployed yet — Cursor-only view
+    }
+
+    setPayload({
+      ...jsonPayload,
+      sessions: [...jsonPayload.sessions, ...claudeSessions],
+    });
     setDataSource("json");
     setLastSyncedAt(jsonPayload.generated_at ?? null);
   }, []);
@@ -391,17 +471,24 @@ export function DevelopmentLogViewer() {
     [journal, q, month, tag]
   );
 
+  const cursorSessions = useMemo(
+    () => (payload?.sessions ?? []).filter((s) => !isClaudeSession(s)),
+    [payload]
+  );
+
+  const claudeSessions = useMemo(
+    () => (payload?.sessions ?? []).filter(isClaudeSession),
+    [payload]
+  );
+
   const filteredCursor = useMemo(
-    () =>
-      filterCursor(
-        payload?.sessions ?? [],
-        q,
-        month,
-        difficulty,
-        model,
-        hideSubagents
-      ),
-    [payload, q, month, difficulty, model, hideSubagents]
+    () => filterCursor(cursorSessions, q, month, difficulty, model, hideSubagents),
+    [cursorSessions, q, month, difficulty, model, hideSubagents]
+  );
+
+  const filteredClaude = useMemo(
+    () => filterCursor(claudeSessions, q, month, difficulty, model, hideSubagents),
+    [claudeSessions, q, month, difficulty, model, hideSubagents]
   );
 
   const filteredEvidence = useMemo(
@@ -417,8 +504,8 @@ export function DevelopmentLogViewer() {
   );
 
   const dayGroups = useMemo(
-    () => mergeByDay(filteredFounder, filteredEvidence, filteredCursor),
-    [filteredFounder, filteredEvidence, filteredCursor]
+    () => mergeByDay(filteredFounder, filteredEvidence, filteredCursor, filteredClaude),
+    [filteredFounder, filteredEvidence, filteredCursor, filteredClaude]
   );
 
   const monthGroups = useMemo(() => groupDaysByMonth(dayGroups), [dayGroups]);
@@ -462,11 +549,11 @@ export function DevelopmentLogViewer() {
       buildMonthlyStats(
         journal?.entries ?? [],
         timeline2025?.evidence ?? [],
-        payload?.sessions ?? [],
+        cursorSessions,
         hideSubagents,
         timeline2025?.cursor_estimates?.monthly ?? []
       ),
-    [journal, timeline2025, payload, hideSubagents]
+    [journal, timeline2025, cursorSessions, hideSubagents]
   );
 
   const difficultyCounts = useMemo(() => {
@@ -488,7 +575,7 @@ export function DevelopmentLogViewer() {
   return (
     <InternalChrome
       title="Development Log"
-      subtitle="Founder journal + git evidence + Cursor sessions"
+      subtitle="Founder journal + git evidence + Cursor & Claude Code sessions"
       email={session?.user?.email}
       onSignOut={signOut}
       backHref="/internal"
@@ -498,11 +585,11 @@ export function DevelopmentLogViewer() {
           <div className="space-y-1">
             <p className="text-sm text-slate-400">
               Unified timeline: founder notes, 2025 git/docs/migration evidence, and
-              Cursor chat sessions on the same day.
+              Cursor + Claude Code sessions on the same day.
             </p>
             {lastSyncedAt ? (
               <p className="text-xs text-slate-500">
-                Cursor sessions: {dataSource === "db" ? "Supabase" : "static JSON"}
+                Cursor/Claude sessions: {dataSource === "db" ? "Supabase" : "static JSON"}
                 {lastSyncedAt ? ` · synced ${lastSyncedAt.slice(0, 19)}` : ""}
                 {" · auto-refresh daily"}
               </p>
@@ -531,8 +618,12 @@ export function DevelopmentLogViewer() {
               ["Founder entries", formatNumber(journal?.entries.length ?? 0)],
               ["Git commits (2025)", formatNumber(timeline2025.summary.git_commits)],
               ["Evidence rows (2025)", formatNumber(timeline2025.summary.evidence_rows)],
-              ["Cursor sessions", formatNumber(summary.total_sessions)],
-              ["Human Cursor", formatNumber(summary.human_sessions)],
+              ["Cursor sessions", formatNumber(cursorSessions.length)],
+              [
+                "Human Cursor",
+                formatNumber(cursorSessions.filter((s) => !s.is_subagent).length),
+              ],
+              ["Claude Code sessions", formatNumber(claudeSessions.length)],
               [
                 "Range",
                 `${timeline2025.time_range_start.slice(0, 7)} → ${summary.time_range_end?.slice(0, 7) ?? "—"}`,
@@ -599,7 +690,7 @@ export function DevelopmentLogViewer() {
               </select>
             </label>
             <label className="block text-xs text-slate-400">
-              Difficulty (Cursor)
+              Difficulty (sessions)
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value)}
@@ -614,7 +705,7 @@ export function DevelopmentLogViewer() {
               </select>
             </label>
             <label className="block text-xs text-slate-400">
-              Model (Cursor)
+              Model (sessions)
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
@@ -685,7 +776,8 @@ export function DevelopmentLogViewer() {
             <span className="ml-auto text-xs text-slate-500">
               {formatNumber(dayGroups.length)} days · {formatNumber(filteredFounder.length)}{" "}
               founder · {formatNumber(filteredEvidence.length)} evidence ·{" "}
-              {formatNumber(filteredCursor.length)} cursor
+              {formatNumber(filteredCursor.length)} cursor ·{" "}
+              {formatNumber(filteredClaude.length)} claude
             </span>
           </div>
         </section>
@@ -832,7 +924,15 @@ export function DevelopmentLogViewer() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="border-b border-white/10 px-5 py-4">
-              <p className="text-xs text-sky-300/80">Cursor session</p>
+              <p
+                className={`text-xs ${
+                  isClaudeSession(selectedCursor)
+                    ? "text-orange-300/80"
+                    : "text-sky-300/80"
+                }`}
+              >
+                {isClaudeSession(selectedCursor) ? "Claude Code session" : "Cursor session"}
+              </p>
               <h3 className="mt-1 text-lg font-semibold text-white">
                 {selectedCursor.title}
               </h3>
@@ -840,6 +940,18 @@ export function DevelopmentLogViewer() {
                 {selectedCursor.started_at} · {selectedCursor.duration || "—"} ·{" "}
                 {selectedCursor.difficulty}
               </p>
+              {selectedCursor.topics?.length ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {selectedCursor.topics.map((topic) => (
+                    <span
+                      key={topic}
+                      className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-400"
+                    >
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap p-5 font-mono text-xs text-slate-200">
               {selectedCursor.first_user_prompt || "(empty)"}
