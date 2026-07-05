@@ -25,6 +25,7 @@ import {
   mergeByDay,
   type DayGroup,
 } from "@/lib/development-log-merge";
+import { fetchDevelopmentLogFromDb } from "@/lib/development-log-db";
 
 const DIFFICULTY_STYLES: Record<string, string> = {
   Trivial: "bg-slate-500/20 text-slate-300",
@@ -277,10 +278,12 @@ function DayTimeline({
 }
 
 export function DevelopmentLogViewer() {
-  const { session, signOut } = useInternalAuth();
+  const { session, signOut, supabase } = useInternalAuth();
   const [payload, setPayload] = useState<DevelopmentLogPayload | null>(null);
   const [journal, setJournal] = useState<FounderJournalPayload | null>(null);
   const [timeline2025, setTimeline2025] = useState<Timeline2025Payload | null>(null);
+  const [dataSource, setDataSource] = useState<"db" | "json" | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -300,44 +303,85 @@ export function DevelopmentLogViewer() {
     null
   );
 
+  const loadStaticAssets = useCallback(async (bustCache = false) => {
+    const bust = bustCache ? `?t=${Date.now()}` : "";
+    const [journalRes, timelineRes] = await Promise.all([
+      fetch(`${FOUNDER_JOURNAL_PUBLIC_PATH}${bust}`),
+      fetch(`${TIMELINE_2025_PUBLIC_PATH}${bust}`),
+    ]);
+    if (!journalRes.ok) {
+      throw new Error(
+        `Failed to load founder_development_journal.json (${journalRes.status})`
+      );
+    }
+    if (!timelineRes.ok) {
+      throw new Error(
+        `Failed to load development_timeline_2025.json (${timelineRes.status})`
+      );
+    }
+    setJournal((await journalRes.json()) as FounderJournalPayload);
+    setTimeline2025((await timelineRes.json()) as Timeline2025Payload);
+  }, []);
+
+  const loadPromptLogFromJson = useCallback(async (bustCache = false) => {
+    const bust = bustCache ? `?t=${Date.now()}` : "";
+    const promptRes = await fetch(`${PROMPT_LOG_PUBLIC_PATH}${bust}`);
+    if (!promptRes.ok) {
+      throw new Error(`Failed to load prompt_log.json (${promptRes.status})`);
+    }
+    const jsonPayload = (await promptRes.json()) as DevelopmentLogPayload;
+    setPayload(jsonPayload);
+    setDataSource("json");
+    setLastSyncedAt(jsonPayload.generated_at ?? null);
+  }, []);
+
   const load = useCallback(async (bustCache = false) => {
     setLoading(true);
     setError(null);
-    const bust = bustCache ? `?t=${Date.now()}` : "";
     try {
-      const [promptRes, journalRes, timelineRes] = await Promise.all([
-        fetch(`${PROMPT_LOG_PUBLIC_PATH}${bust}`),
-        fetch(`${FOUNDER_JOURNAL_PUBLIC_PATH}${bust}`),
-        fetch(`${TIMELINE_2025_PUBLIC_PATH}${bust}`),
-      ]);
-      if (!promptRes.ok) {
-        throw new Error(`Failed to load prompt_log.json (${promptRes.status})`);
+      await loadStaticAssets(bustCache);
+
+      if (supabase) {
+        try {
+          const dbResult = await fetchDevelopmentLogFromDb(supabase);
+          if (dbResult) {
+            setPayload(dbResult.payload);
+            setDataSource("db");
+            setLastSyncedAt(
+              dbResult.syncRun?.generated_at ??
+                dbResult.syncRun?.finished_at ??
+                dbResult.payload.generated_at
+            );
+            return;
+          }
+        } catch (dbErr) {
+          console.warn("Development log DB fetch failed; falling back to JSON", dbErr);
+        }
       }
-      if (!journalRes.ok) {
-        throw new Error(
-          `Failed to load founder_development_journal.json (${journalRes.status})`
-        );
-      }
-      if (!timelineRes.ok) {
-        throw new Error(
-          `Failed to load development_timeline_2025.json (${timelineRes.status})`
-        );
-      }
-      setPayload((await promptRes.json()) as DevelopmentLogPayload);
-      setJournal((await journalRes.json()) as FounderJournalPayload);
-      setTimeline2025((await timelineRes.json()) as Timeline2025Payload);
+
+      await loadPromptLogFromJson(bustCache);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Load failed");
       setPayload(null);
       setJournal(null);
       setTimeline2025(null);
+      setDataSource(null);
+      setLastSyncedAt(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [supabase, loadStaticAssets, loadPromptLogFromJson]);
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, dayMs);
+    return () => window.clearInterval(timer);
   }, [load]);
 
   const q = search.trim().toLowerCase();
@@ -451,10 +495,19 @@ export function DevelopmentLogViewer() {
     >
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-400">
-            Unified timeline: founder notes, 2025 git/docs/migration evidence, and
-            Cursor chat sessions on the same day.
-          </p>
+          <div className="space-y-1">
+            <p className="text-sm text-slate-400">
+              Unified timeline: founder notes, 2025 git/docs/migration evidence, and
+              Cursor chat sessions on the same day.
+            </p>
+            {lastSyncedAt ? (
+              <p className="text-xs text-slate-500">
+                Cursor sessions: {dataSource === "db" ? "Supabase" : "static JSON"}
+                {lastSyncedAt ? ` · synced ${lastSyncedAt.slice(0, 19)}` : ""}
+                {" · auto-refresh daily"}
+              </p>
+            ) : null}
+          </div>
           <button
             type="button"
             onClick={() => void load(true)}
