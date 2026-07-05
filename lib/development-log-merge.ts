@@ -95,6 +95,7 @@ export const DIFFICULTY_ORDER = [
 export type MonthlyStats = {
   month: string;
   cursorSessions: number;
+  claudeSessions: number;
   estimatedCursorSessions: number;
   founderEntries: number;
   gitCommits: number;
@@ -111,6 +112,7 @@ export function buildMonthlyStats(
   founder: FounderJournalEntry[],
   evidence: TimelineEvidenceEntry[],
   cursor: DevelopmentLogSession[],
+  claude: DevelopmentLogSession[],
   hideSubagents: boolean,
   cursorEstimates: CursorEstimateMonth[] = []
 ): MonthlyStats[] {
@@ -121,6 +123,7 @@ export function buildMonthlyStats(
       map.set(month, {
         month,
         cursorSessions: 0,
+        claudeSessions: 0,
         estimatedCursorSessions: 0,
         founderEntries: 0,
         gitCommits: 0,
@@ -150,6 +153,15 @@ export function buildMonthlyStats(
     if (!month) continue;
     const row = ensure(month);
     row.cursorSessions += 1;
+    row.linesChanged += session.lines_added + session.lines_removed;
+  }
+
+  for (const session of claude) {
+    if (hideSubagents && session.is_subagent) continue;
+    const month = session.month || sessionDateKey(session.started_at).slice(0, 7);
+    if (!month) continue;
+    const row = ensure(month);
+    row.claudeSessions += 1;
     row.linesChanged += session.lines_added + session.lines_removed;
   }
 

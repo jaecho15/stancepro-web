@@ -550,10 +550,11 @@ export function DevelopmentLogViewer() {
         journal?.entries ?? [],
         timeline2025?.evidence ?? [],
         cursorSessions,
+        claudeSessions,
         hideSubagents,
         timeline2025?.cursor_estimates?.monthly ?? []
       ),
-    [journal, timeline2025, cursorSessions, hideSubagents]
+    [journal, timeline2025, cursorSessions, claudeSessions, hideSubagents]
   );
 
   const difficultyCounts = useMemo(() => {

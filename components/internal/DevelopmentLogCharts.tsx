@@ -152,6 +152,7 @@ function monthStackTotal(row: MonthlyStats) {
     row.founderEntries +
     row.gitCommits +
     row.cursorSessions +
+    row.claudeSessions +
     row.estimatedCursorSessions
   );
 }
@@ -171,7 +172,7 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
     <div className="rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-5">
       <h2 className="text-sm font-semibold text-white">Monthly activity</h2>
       <p className="mt-1 text-xs text-slate-400">
-        Stacked columns — founder, git, logged Cursor (2026), estimated Cursor (2025).
+        Stacked columns — founder, git, Cursor, Claude Code, and estimated Cursor (2025).
       </p>
       <div className="mt-4 overflow-x-auto">
         <svg
@@ -189,13 +190,16 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
               total > 0 ? (row.founderEntries / total) * columnH : 0;
             const gitH = total > 0 ? (row.gitCommits / total) * columnH : 0;
             const cursorH = total > 0 ? (row.cursorSessions / total) * columnH : 0;
+            const claudeH =
+              total > 0 ? (row.claudeSessions / total) * columnH : 0;
             const estH =
               total > 0 ? (row.estimatedCursorSessions / total) * columnH : 0;
             const baseY = plotH;
             const founderTop = baseY - founderH;
             const gitTop = founderTop - gitH;
             const cursorTop = gitTop - cursorH;
-            const estTop = cursorTop - estH;
+            const claudeTop = cursorTop - claudeH;
+            const estTop = claudeTop - estH;
             const hasEstimate = row.estimatedCursorSessions > 0;
 
             return (
@@ -219,7 +223,7 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
                     height={gitH}
                     fill="#34d399"
                     opacity={0.92}
-                    rx={cursorH <= 0 && estH <= 0 ? 3 : 0}
+                    rx={cursorH <= 0 && claudeH <= 0 && estH <= 0 ? 3 : 0}
                   />
                 ) : null}
                 {cursorH > 0 ? (
@@ -229,6 +233,17 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
                     width={barW}
                     height={cursorH}
                     fill="#38bdf8"
+                    opacity={0.92}
+                    rx={claudeH <= 0 && estH <= 0 ? 3 : 0}
+                  />
+                ) : null}
+                {claudeH > 0 ? (
+                  <rect
+                    x={x}
+                    y={claudeTop}
+                    width={barW}
+                    height={claudeH}
+                    fill="#fb923c"
                     opacity={0.92}
                     rx={estH <= 0 ? 3 : 0}
                   />
@@ -294,6 +309,10 @@ export function MonthlyActivityChart({ stats }: MonthlyChartProps) {
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-sky-400" />
           Cursor (logged)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-sm bg-orange-400" />
+          Claude Code
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm border border-violet-300 bg-violet-400/80" />
