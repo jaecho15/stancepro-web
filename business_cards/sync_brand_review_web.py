@@ -28,7 +28,8 @@ OFFICIAL_POSTER_PREVIEWS = frozenset({
 OFFICIAL_STICKER_PREVIEWS: tuple[tuple[str, str], ...] = (
     ("sticker_snowboard_navy_6x2in_preview.png", "Snowboard — navy 6×2 in"),
     ("sticker_snowboard_white_6x2in_preview.png", "Snowboard — white 6×2 in"),
-    ("sticker_snowboard_diecut_6x2in_preview.png", "Snowboard — die-cut vinyl"),
+    ("sticker_snowboard_diecut_6x2in_preview.png", "Snowboard — die-cut vinyl (light board)"),
+    ("sticker_snowboard_diecut_dark_board_6x2in_preview.png", "Snowboard — die-cut vinyl (dark board)"),
     ("sticker_helmet_hex_2.5in_preview.png", "Helmet — full-color hex"),
     ("sticker_helmet_white_2.5in_preview.png", "Helmet — white mono"),
     ("sticker_helmet_badge_2.5in_preview.png", "Helmet — badge ring"),

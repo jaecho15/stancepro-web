@@ -68,6 +68,7 @@ BOTTOM_SECTION_RATIO = 0.16
 CONTENT_ABOVE_DIVIDER_OFFSET_REF = 50  # shift hero + copy block down (ref @ 1200px width)
 QR_SIZE_REF = 150  # 300px @ 2400 preview (S=2)
 PLAQUE_PAD_REF = 10  # 20px @ 2400 preview (S=2)
+BOTTOM_TOP_GAP_SCALE = 0.5  # halve divider-to-QR/plaque gap in the bottom band
 HEX_SIZE_REF = 145
 LOCKUP_SCALE = 0.972
 LOCKUP_SIZE_SCALE = 0.8  # logo + wordmark 20% smaller
@@ -544,6 +545,7 @@ def compute_poster_bottom_layout(
     plaque_h = qr_size + 2 * plaque_pad
     plaque_w = plaque_h
     plaque_y = plaque_bottom - plaque_h
+    plaque_y -= int(round((plaque_y - divider_y) * (1 - BOTTOM_TOP_GAP_SCALE)))
     plaque_x = width - margin_x - plaque_w
 
     # 24px ImageFont @ 2400 preview (S=2); scales as 12*S.
@@ -555,7 +557,10 @@ def compute_poster_bottom_layout(
     wm_h = hex_h  # placeholder; actual height set in draw_poster_bottom from logo metrics
     gap = int(14 * S)
     wm_center_y = lockup_center_y - int(4 * S)
-    cta_y = plaque_y - cta_gap - cta_font_size + int(cta_y_offset_ref * S)
+    cta_y = divider_y + max(
+        int(8 * S),
+        (plaque_y - divider_y - cta_font_size) // 2,
+    )
     url_y = height - bottom_pad - url_font_size
 
     return PosterBottomLayout(

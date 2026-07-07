@@ -78,6 +78,8 @@ class FeaturePoster:
     bottom_margin_extra_ref: int = 0 # adds to margin_x only on the bottom divider line
     stamp: bool = False              # "Powered by AI / Proven by instructors" badge
     stamp_anchor: str = "subhead"    # "subhead" (top-right) or "pillars" (mid-right)
+    stamp_x_frac: float = 0.80
+    stamp_scale: float = 1.0
 
 
 POSTERS: list[FeaturePoster] = [
@@ -88,6 +90,8 @@ POSTERS: list[FeaturePoster] = [
         sanitize_name=True,
         stamp=True,
         stamp_anchor="pillars",
+        stamp_x_frac=0.85,
+        stamp_scale=0.82,
         pillars=(
             ("STANCE CALCULATION", "Science-backed angles and width in\u00a060\u00a0seconds."),
             ("GEAR ANALYSIS AND RECOMMENDATIONS", "Setup assistant to suit your style."),
@@ -424,8 +428,10 @@ def draw_stamp(
     center_y: int,
     S: float,
     rotation_deg: float = -8.0,
+    scale: float = 1.0,
 ) -> None:
     """Rubber-stamp style badge: bordered rounded rect, rotated, warm-gold ink."""
+    S = S * scale
     ink = STAMP_INK + (225,)
     line_font = fnt(FONT_AVENIR_COND, int(30 * S), AVC_HEAVY)
     spacing = int(2 * S)
@@ -516,9 +522,10 @@ def render_feature_poster(spec: FeaturePoster, width: int) -> Image.Image:
             stamp_cy = subhead_y + int(30 * S)
         draw_stamp(
             canvas,
-            center_x=int(width * 0.80),
+            center_x=int(width * spec.stamp_x_frac),
             center_y=stamp_cy,
             S=S,
+            scale=spec.stamp_scale,
         )
 
     bottom = gp.compute_poster_bottom_layout(

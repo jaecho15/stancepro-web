@@ -105,9 +105,17 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut",
-    label: "Snowboard — die-cut vinyl",
+    label: "Snowboard — die-cut vinyl (light board)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_6x2in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_snowboard_diecut_dark_board",
+    label: "Snowboard — die-cut vinyl (dark board)",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_snowboard_diecut_dark_board_6x2in_preview.png",
     whiteMat: false,
     checkerMat: true,
   },

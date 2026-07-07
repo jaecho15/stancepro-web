@@ -326,14 +326,14 @@ def render_snowboard_sticker_white() -> Image.Image:
     return canvas
 
 
-def render_snowboard_sticker_diecut() -> Image.Image:
-    """Transparent background for vinyl on colored boards."""
+def render_snowboard_sticker_diecut(*, dark_board: bool = False) -> Image.Image:
+    """Transparent background for vinyl on boards; light ink variant reads on dark boards."""
     spec = SPECS["snowboard"]
     w, h = px(spec.width_in), px(spec.height_in)
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
-    paste_sticker_lockup(canvas, on_dark=False, hex_h_ratio=0.68, gap_in=0.1)
+    paste_sticker_lockup(canvas, on_dark=dark_board, hex_h_ratio=0.68, gap_in=0.1)
 
     # Cut contour hint (magenta hairline — hide when printing)
     bbox = canvas.getbbox()
@@ -525,7 +525,8 @@ def build_sticker_preview_sheet() -> Image.Image:
     items: list[tuple[str, Image.Image]] = [
         ("Snowboard — navy 6×2 in", render_snowboard_sticker_navy()),
         ("Snowboard — white 6×2 in", render_snowboard_sticker_white()),
-        ("Snowboard — die-cut vinyl", render_snowboard_sticker_diecut()),
+        ("Snowboard — die-cut vinyl (light board)", render_snowboard_sticker_diecut()),
+        ("Snowboard — die-cut vinyl (dark board)", render_snowboard_sticker_diecut(dark_board=True)),
         ("Helmet — full-color hex", render_helmet_sticker_hex()),
         ("Helmet — white mono", render_helmet_sticker_white()),
         ("Helmet — badge ring", render_helmet_sticker_badge()),
@@ -562,6 +563,7 @@ def main() -> None:
         ("sticker_snowboard_navy_6x2in_300dpi.png", render_snowboard_sticker_navy()),
         ("sticker_snowboard_white_6x2in_300dpi.png", render_snowboard_sticker_white()),
         ("sticker_snowboard_diecut_6x2in_300dpi.png", render_snowboard_sticker_diecut()),
+        ("sticker_snowboard_diecut_dark_board_6x2in_300dpi.png", render_snowboard_sticker_diecut(dark_board=True)),
         ("sticker_helmet_hex_2.5in_300dpi.png", render_helmet_sticker_hex()),
         ("sticker_helmet_white_2.5in_300dpi.png", render_helmet_sticker_white()),
         ("sticker_helmet_badge_2.5in_300dpi.png", render_helmet_sticker_badge()),
