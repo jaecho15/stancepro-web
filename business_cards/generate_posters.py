@@ -138,7 +138,7 @@ PILLARS_FOOTNOTE = "…and much more on iOS & Android."
 
 VALUE_PILLARS = [
     ("STANCE CALCULATION", "Science-backed angles and width in\u00a060\u00a0seconds."),
-    ("GEAR ANALYSIS AND RECOMMENDATION", "Assist you to choose the best setup for your style."),
+    ("GEAR ANALYSIS AND RECOMMENDATIONS", "Setup assistant to suit your style."),
     ("VIDEO ANALYSIS BY AI", "Movement analysis from a single clip, frame by frame."),
     ("COACHING BY CERTIFIED INSTRUCTORS", "Improve with feedback from certified instructors anywhere you are."),
 ]
@@ -738,11 +738,11 @@ def render_poster(variant: HeroVariant, width: int) -> Image.Image:
         S=S,
     )
 
-    # Footnote under pillars — soft white, italic-ish via medium weight
-    footnote_font = font(FONT_AVENIR, int(22 * S), AV_MED)
+    # Footnote under pillars — same font as pillar bodies
+    footnote_font = font(FONT_AVENIR, int(24 * S), AV_REG)
     draw.text(
         (margin_x, pillars_end_y + int(8 * S)),
-        PILLARS_FOOTNOTE, font=footnote_font, fill=MUTED_WHITE,
+        PILLARS_FOOTNOTE, font=footnote_font, fill=(220, 228, 240),
     )
 
     draw_side_phones(

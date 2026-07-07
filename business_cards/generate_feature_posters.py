@@ -38,6 +38,7 @@ NAVY_DEEP = (15, 28, 64)
 WHITE = (255, 255, 255)
 BLUE_ACCENT = (63, 169, 245)
 MUTED_WHITE = (255, 255, 255, 180)
+STAMP_INK = (245, 183, 74)
 PHONE_BEZEL = (12, 22, 48)
 PHONE_BORDER = (80, 120, 180)
 
@@ -75,6 +76,8 @@ class FeaturePoster:
     sanitize_name: bool = False
     extra_margin_ref: int = 0        # adds to margin_x throughout the poster (bleed)
     bottom_margin_extra_ref: int = 0 # adds to margin_x only on the bottom divider line
+    stamp: bool = False              # "Powered by AI / Proven by instructors" badge
+    stamp_anchor: str = "subhead"    # "subhead" (top-right) or "pillars" (mid-right)
 
 
 POSTERS: list[FeaturePoster] = [
@@ -83,9 +86,11 @@ POSTERS: list[FeaturePoster] = [
         headline="PRO SETUP. IN SECONDS.",
         subhead="Stance & gear analysis at your fingertips.",
         sanitize_name=True,
+        stamp=True,
+        stamp_anchor="pillars",
         pillars=(
             ("STANCE CALCULATION", "Science-backed angles and width in\u00a060\u00a0seconds."),
-            ("GEAR ANALYSIS AND RECOMMENDATION", "Assist you to choose the best setup for your style."),
+            ("GEAR ANALYSIS AND RECOMMENDATIONS", "Setup assistant to suit your style."),
             ("SUITABILITY ANALYSIS", "Check your setup before you ride."),
         ),
         phones=(
@@ -110,6 +115,7 @@ POSTERS: list[FeaturePoster] = [
         headline="GET COACHED ANYWHERE.",
         subhead="Pro feedback at your fingertips.",
         extra_margin_ref=20,
+        stamp=True,
         pillars=(
             ("VIDEO ANALYSIS BY AI", "Movement analysis from a single clip, frame by frame."),
             ("COACHING BY CERTIFIED INSTRUCTORS", "Improve with feedback from certified instructors anywhere you are."),
@@ -409,6 +415,58 @@ def render_hero_phones(
     canvas.paste(fade, (0, letterhead_h + hero_h - fade_h), fade)
 
 
+STAMP_LINES = ("POWERED BY AI.", "PROVEN BY INSTRUCTORS.")
+
+
+def draw_stamp(
+    canvas: Image.Image,
+    center_x: int,
+    center_y: int,
+    S: float,
+    rotation_deg: float = -8.0,
+) -> None:
+    """Rubber-stamp style badge: bordered rounded rect, rotated, warm-gold ink."""
+    ink = STAMP_INK + (225,)
+    line_font = fnt(FONT_AVENIR_COND, int(30 * S), AVC_HEAVY)
+    spacing = int(2 * S)
+
+    def line_w(text: str) -> int:
+        return sum(int(line_font.getlength(ch)) + spacing for ch in text) - spacing
+
+    text_w = max(line_w(t) for t in STAMP_LINES)
+    line_h = int(34 * S)
+    pad_x = int(26 * S)
+    pad_y = int(18 * S)
+    border = max(2, int(4 * S))
+    inner_gap = int(6 * S)
+
+    box_w = text_w + 2 * pad_x
+    box_h = len(STAMP_LINES) * line_h + inner_gap + 2 * pad_y
+    margin = border * 3
+    stamp = Image.new("RGBA", (box_w + 2 * margin, box_h + 2 * margin), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(stamp)
+
+    sd.rounded_rectangle(
+        (margin, margin, margin + box_w, margin + box_h),
+        radius=int(14 * S),
+        outline=ink,
+        width=border,
+    )
+    y = margin + pad_y
+    for text in STAMP_LINES:
+        x = margin + (box_w - line_w(text)) // 2
+        for ch in text:
+            sd.text((x, y), ch, font=line_font, fill=ink)
+            x += int(line_font.getlength(ch)) + spacing
+        y += line_h + inner_gap
+
+    stamp = stamp.rotate(rotation_deg, expand=True, resample=Image.BICUBIC)
+    canvas.alpha_composite(
+        stamp,
+        (center_x - stamp.width // 2, center_y - stamp.height // 2),
+    )
+
+
 def render_feature_poster(spec: FeaturePoster, width: int) -> Image.Image:
     A1_RATIO = 841 / 594
     height = int(round(width * A1_RATIO))
@@ -445,11 +503,23 @@ def render_feature_poster(spec: FeaturePoster, width: int) -> Image.Image:
         compact=True,
     )
 
-    footnote_font = fnt(FONT_AVENIR, int(20 * S), AV_MED)
+    footnote_font = fnt(FONT_AVENIR, int(22 * S), AV_REG)
     draw.text(
         (margin_x, pillars_end_y + int(6 * S)),
-        PILLARS_FOOTNOTE, font=footnote_font, fill=MUTED_WHITE,
+        PILLARS_FOOTNOTE, font=footnote_font, fill=(220, 228, 240),
     )
+
+    if spec.stamp:
+        if spec.stamp_anchor == "pillars":
+            stamp_cy = (pillars_y + pillars_end_y) // 2
+        else:
+            stamp_cy = subhead_y + int(30 * S)
+        draw_stamp(
+            canvas,
+            center_x=int(width * 0.80),
+            center_y=stamp_cy,
+            S=S,
+        )
 
     bottom = gp.compute_poster_bottom_layout(
         width, height, S,
