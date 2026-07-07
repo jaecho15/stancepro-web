@@ -368,7 +368,8 @@ def tendency_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     times = daily.get("time") or []
     members = [""] + [f"_member{index:02d}" for index in range(1, 51)]
     weekly: list[dict[str, Any]] = []
-    for week_start in range(14, 42, 7):
+    # Anchored at D17, right after the D1-16 daily horizon (no D15-16 overlap).
+    for week_start in range(16, 44, 7):
         week_end = min(week_start + 7, len(times))
         if week_end - week_start < 7:
             break
