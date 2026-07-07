@@ -6,6 +6,8 @@ const POSTERS = [
   { slug: "ride_nav", label: "Ride nav — feature" },
 ] as const;
 
+const POSTER_ASSET_VERSION = "20260707-stamp-position";
+
 export default function PostersGalleryPage() {
   return (
     <main className="min-h-screen bg-[#0f1c40] px-6 py-10 text-white">
@@ -30,13 +32,13 @@ export default function PostersGalleryPage() {
             <section key={slug} className="space-y-3">
               <h2 className="text-lg font-semibold text-slate-200">{label}</h2>
               <a
-                href={`/brand-review/posters/poster_${slug}_preview.png`}
+                href={`/brand-review/posters/poster_${slug}_preview.png?v=${POSTER_ASSET_VERSION}`}
                 target="_blank"
                 rel="noreferrer"
                 className="block overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-lg"
               >
                 <img
-                  src={`/brand-review/posters/poster_${slug}_preview.png`}
+                  src={`/brand-review/posters/poster_${slug}_preview.png?v=${POSTER_ASSET_VERSION}`}
                   alt={label}
                   className="h-auto w-full"
                   loading={slug === "carve" ? "eager" : "lazy"}

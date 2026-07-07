@@ -79,6 +79,8 @@ class FeaturePoster:
     stamp: bool = False              # "Powered by AI / Proven by instructors" badge
     stamp_anchor: str = "subhead"    # "subhead" (top-right) or "pillars" (mid-right)
     stamp_x_frac: float = 0.80
+    stamp_y_offset_ref: int = 0
+    stamp_rotation: float = -8.0
     stamp_scale: float = 1.0
 
 
@@ -90,8 +92,9 @@ POSTERS: list[FeaturePoster] = [
         sanitize_name=True,
         stamp=True,
         stamp_anchor="pillars",
-        stamp_x_frac=0.85,
-        stamp_scale=0.82,
+        stamp_x_frac=0.74,
+        stamp_y_offset_ref=42,
+        stamp_rotation=8.0,
         pillars=(
             ("STANCE CALCULATION", "Science-backed angles and width in\u00a060\u00a0seconds."),
             ("GEAR ANALYSIS AND RECOMMENDATIONS", "Setup assistant to suit your style."),
@@ -486,7 +489,8 @@ def render_feature_poster(spec: FeaturePoster, width: int) -> Image.Image:
     letterhead_h = int(gp.CONTENT_ABOVE_DIVIDER_OFFSET_REF * S)
     render_hero_phones(canvas, spec, HERO_H, width, S, letterhead_h=letterhead_h)
 
-    headline_y = letterhead_h + HERO_H + int(55 * S)
+    above_divider_shift = int(round(gp.ABOVE_DIVIDER_CONTENT_UP_REF * S))
+    headline_y = letterhead_h + HERO_H + int(55 * S) - above_divider_shift
     max_headline_w = width - margin_x * 2
     headline_size = int(148 * S)
     headline_font = fnt(FONT_AVENIR_COND, headline_size, AVC_HEAVY)
@@ -520,11 +524,13 @@ def render_feature_poster(spec: FeaturePoster, width: int) -> Image.Image:
             stamp_cy = (pillars_y + pillars_end_y) // 2
         else:
             stamp_cy = subhead_y + int(30 * S)
+        stamp_cy += int(spec.stamp_y_offset_ref * S)
         draw_stamp(
             canvas,
             center_x=int(width * spec.stamp_x_frac),
             center_y=stamp_cy,
             S=S,
+            rotation_deg=spec.stamp_rotation,
             scale=spec.stamp_scale,
         )
 

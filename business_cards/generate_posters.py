@@ -66,6 +66,7 @@ TEXT_COLUMN_FRAC = 0.54  # leave right column for side phone mockups
 
 BOTTOM_SECTION_RATIO = 0.16
 CONTENT_ABOVE_DIVIDER_OFFSET_REF = 50  # shift hero + copy block down (ref @ 1200px width)
+ABOVE_DIVIDER_CONTENT_UP_REF = 20  # move divider + content above it up (ref @ 1200px width)
 QR_SIZE_REF = 150  # 300px @ 2400 preview (S=2)
 PLAQUE_PAD_REF = 10  # 20px @ 2400 preview (S=2)
 BOTTOM_TOP_GAP_SCALE = 0.5  # halve divider-to-QR/plaque gap in the bottom band
@@ -525,7 +526,8 @@ def compute_poster_bottom_layout(
     margin_x = int(margin_x_ref * S)
     section_h = int(round(height * BOTTOM_SECTION_RATIO))
     section_top = height - section_h
-    divider_y = section_top
+    above_divider_shift = int(round(ABOVE_DIVIDER_CONTENT_UP_REF * S))
+    divider_y = section_top - above_divider_shift
 
     bottom_pad = int(max(14, round(section_h * 0.06)))
     url_font_size = int((18 if compact else 20) * S)
@@ -545,7 +547,7 @@ def compute_poster_bottom_layout(
     plaque_h = qr_size + 2 * plaque_pad
     plaque_w = plaque_h
     plaque_y = plaque_bottom - plaque_h
-    plaque_y -= int(round((plaque_y - divider_y) * (1 - BOTTOM_TOP_GAP_SCALE)))
+    plaque_y -= int(round((plaque_y - section_top) * (1 - BOTTOM_TOP_GAP_SCALE)))
     plaque_x = width - margin_x - plaque_w
 
     # 24px ImageFont @ 2400 preview (S=2); scales as 12*S.
@@ -557,9 +559,9 @@ def compute_poster_bottom_layout(
     wm_h = hex_h  # placeholder; actual height set in draw_poster_bottom from logo metrics
     gap = int(14 * S)
     wm_center_y = lockup_center_y - int(4 * S)
-    cta_y = divider_y + max(
+    cta_y = section_top + max(
         int(8 * S),
-        (plaque_y - divider_y - cta_font_size) // 2,
+        (plaque_y - section_top - cta_font_size) // 2,
     )
     url_y = plaque_y + plaque_h + url_gap
 
@@ -683,6 +685,7 @@ def render_poster(variant: HeroVariant, width: int) -> Image.Image:
     S = width / 1200.0
     margin_x = int(70 * S)
     content_y = int(CONTENT_ABOVE_DIVIDER_OFFSET_REF * S)
+    above_divider_shift = int(round(ABOVE_DIVIDER_CONTENT_UP_REF * S))
 
     canvas = Image.new("RGBA", (width, height), NAVY_DEEP + (255,))
     draw = ImageDraw.Draw(canvas)
@@ -712,7 +715,7 @@ def render_poster(variant: HeroVariant, width: int) -> Image.Image:
 
     # ----------------- HEADLINE BLOCK -----------------
     bottom = compute_poster_bottom_layout(width, height, S)
-    copy_top = content_y + HERO_H + int(70 * S)
+    copy_top = content_y + HERO_H + int(70 * S) - above_divider_shift
     copy_bottom = bottom.divider_y
 
     # Sits directly below hero. Position is HERO_H + a small breathing gap.
