@@ -561,7 +561,7 @@ def compute_poster_bottom_layout(
         int(8 * S),
         (plaque_y - divider_y - cta_font_size) // 2,
     )
-    url_y = height - bottom_pad - url_font_size
+    url_y = plaque_y + plaque_h + url_gap
 
     return PosterBottomLayout(
         margin_x=margin_x,
