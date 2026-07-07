@@ -103,6 +103,27 @@ def _rain_risk(elevation: float | None, freezing: float | None) -> bool:
     return margin is not None and margin < 0
 
 
+def _wind_aggregate(
+    samples: list[tuple[float, float, float]],
+) -> tuple[int | None, int | None, int | None]:
+    """Aggregate (speed, direction, gust) wind samples to (speed_kmh,
+    dir_deg, gust_kmh), all rounded ints; (None, None, None) if empty.
+
+    Speed is the scalar mean; gust is the max; direction is the SPEED-WEIGHTED
+    vector mean of the meteorological 'from' bearings (naive degree averaging
+    is wrong across the 0/360 seam, e.g. 350° and 10° must average to 0°, not
+    180°). Pure Python — matches fetch_short_range_snow.py exactly."""
+    if not samples:
+        return None, None, None
+    speeds = [s for s, _, _ in samples]
+    mean_speed = sum(speeds) / len(speeds)
+    u = sum(s * math.sin(math.radians(d)) for s, d, _ in samples)
+    v = sum(s * math.cos(math.radians(d)) for s, d, _ in samples)
+    mean_dir = math.degrees(math.atan2(u, v)) % 360.0
+    max_gust = max(g for _, _, g in samples)
+    return round(mean_speed), round(mean_dir) % 360, round(max_gust)
+
+
 def daily_model_names(daily: dict[str, Any]) -> list[str]:
     prefix = "precipitation_sum_"
     return sorted(k[len(prefix):] for k in daily if k.startswith(prefix))
@@ -154,10 +175,15 @@ def hourly_band_day(
     block_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
+    day_wind: list[tuple[float, float, float]] = []
+    block_wind: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
 
     for model in models:
         precip_series = hourly.get(f"precipitation_{model}") or []
         temp_series = hourly.get(f"temperature_2m_{model}") or []
+        wspd_series = hourly.get(f"wind_speed_10m_{model}") or []
+        wdir_series = hourly.get(f"wind_direction_10m_{model}") or []
+        wgst_series = hourly.get(f"wind_gusts_10m_{model}") or []
         for index, stamp in enumerate(times):
             if stamp[:10] != date:
                 continue
@@ -174,6 +200,13 @@ def hourly_band_day(
             block_snow[block_index][model] += snow_cm
             block_precip[block_index][model] += float(precip)
             block_temps[block_index][model].append(float(temp))
+            wspd = wspd_series[index] if index < len(wspd_series) else None
+            wdir = wdir_series[index] if index < len(wdir_series) else None
+            if wspd is not None and wdir is not None:
+                wgst = wgst_series[index] if index < len(wgst_series) else None
+                sample = (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
+                day_wind.append(sample)
+                block_wind[block_index].append(sample)
 
     if not day_snow:
         return [], None
@@ -189,6 +222,7 @@ def hourly_band_day(
         temp_p50 = _median(temp_means)
         _, snow_fraction = slr_and_snow_fraction(temp_p50)
         freezing = freezing_block.get((date, block_index))
+        wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(block_wind[block_index])
         blocks.append(
             {
                 "block": block_key,
@@ -204,12 +238,16 @@ def hourly_band_day(
                 "freezing_level_m": round(freezing) if freezing is not None else None,
                 "snow_level_margin_m": _snow_level_margin(band_elevation, freezing),
                 "rain_risk": _rain_risk(band_elevation, freezing),
+                "wind_kmh": wind_kmh,
+                "wind_dir_deg": wind_dir_deg,
+                "wind_gust_kmh": wind_gust_kmh,
             }
         )
 
     present = sorted(day_snow)
     p10, p50, p90 = _quantiles([day_snow[m] for m in present])
     temp_means = [sum(day_temps[m]) / len(day_temps[m]) for m in present]
+    day_wind_kmh, day_wind_dir_deg, day_wind_gust_kmh = _wind_aggregate(day_wind)
     day_agg = {
         "n_models": len(present),
         "snow_cm_p10": p10,
@@ -217,6 +255,9 @@ def hourly_band_day(
         "snow_cm_p90": p90,
         "precip_mm_p50": round(_median([day_precip[m] for m in present]), 1),
         "tmean_c_p50": round(_median(temp_means), 1),
+        "wind_kmh": day_wind_kmh,
+        "wind_dir_deg": day_wind_dir_deg,
+        "wind_gust_kmh": day_wind_gust_kmh,
     }
     return blocks, day_agg
 
@@ -257,6 +298,9 @@ def band_daily_rows(
             precip_p50 = day_agg["precip_mm_p50"]
             temp_p50 = day_agg["tmean_c_p50"]
             n_models = day_agg["n_models"]
+            wind_kmh = day_agg["wind_kmh"]
+            wind_dir_deg = day_agg["wind_dir_deg"]
+            wind_gust_kmh = day_agg["wind_gust_kmh"]
         else:
             per_model_snow: list[float] = []
             per_model_precip: list[float] = []
@@ -280,6 +324,16 @@ def band_daily_rows(
             precip_p50 = round(_median(per_model_precip), 1)
             temp_p50 = round(_median(per_model_tmean), 1)
             n_models = len(per_model_snow)
+            wind_samples: list[tuple[float, float, float]] = []
+            for model in models:
+                wspd = (daily.get(f"wind_speed_10m_max_{model}") or [None] * len(times))[index]
+                wdir = (daily.get(f"wind_direction_10m_dominant_{model}") or [None] * len(times))[index]
+                wgst = (daily.get(f"wind_gusts_10m_max_{model}") or [None] * len(times))[index]
+                if wspd is not None and wdir is not None:
+                    wind_samples.append(
+                        (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
+                    )
+            wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(wind_samples)
 
         rows.append(
             {
@@ -298,6 +352,9 @@ def band_daily_rows(
                 "freezing_level_m": round(freezing) if freezing is not None else None,
                 "snow_level_margin_m": _snow_level_margin(band_elevation, freezing),
                 "rain_risk": _rain_risk(band_elevation, freezing),
+                "wind_kmh": wind_kmh,
+                "wind_dir_deg": wind_dir_deg,
+                "wind_gust_kmh": wind_gust_kmh,
                 "time_of_day": blocks,
             }
         )
@@ -388,14 +445,15 @@ def fetch_band_forecast(
     params: dict[str, Any] = {
         "latitude": f"{float(resort['lat']):.5f}",
         "longitude": f"{float(resort['lon']):.5f}",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum",
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,"
+        "wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant",
         "models": models,
         "forecast_days": forecast_days,
         "timezone": "auto",
     }
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
-    hourly_vars = "temperature_2m,precipitation,snowfall"
+    hourly_vars = "temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
     if include_freezing_level:
         hourly_vars += ",freezing_level_height"
     params["hourly"] = hourly_vars
