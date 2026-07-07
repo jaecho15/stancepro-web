@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/short-range-snow.py": {
+      "maxDuration": 60
+    }
+  },
+  "regions": ["sin1"]
+}
