@@ -132,7 +132,7 @@ VARIANTS = [
 ]
 
 # Shared copy — universal across all hero variants.
-HEADLINE = "RIDE LIKE A PRO."
+HEADLINE = "RIDE SMARTER."
 SUBHEAD = "Coaching Assistant in your pocket."
 PILLARS_FOOTNOTE = "…and much more on iOS & Android."
 

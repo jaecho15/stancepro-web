@@ -18,7 +18,7 @@ Legacy paths (`Desktop/Apps_Dev/StancePro`, `StancePro_Docs/business_cards/`) ar
 
 ## Current poster set (5 active, resort-agnostic copy)
 
-Hero (`generate_posters.py`): **carve**, **powder** — headline `RIDE LIKE A PRO.`, subhead `Coaching Assistant in your pocket.`
+Hero (`generate_posters.py`): **carve**, **powder** — headline `RIDE SMARTER.`, subhead `Coaching Assistant in your pocket.`
 
 Feature (`generate_feature_posters.py`): **setup**, **coaching**, **ride_nav**
 
