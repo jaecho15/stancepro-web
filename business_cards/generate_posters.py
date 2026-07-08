@@ -102,14 +102,14 @@ _DEFAULT_SIDE_PHONES = (
     SidePhone(
         SCREENSHOT_DIR / "08_stance_gear_setup_1284x2778.png",
         center_y_frac=0.34,
-        height_frac=0.30,
+        height_frac=0.36,
         center_x_frac=0.80,
         rotation_deg=-6,
     ),
     SidePhone(
         SCREENSHOT_DIR / "06_pose_analysis_1284x2778.png",
         center_y_frac=0.66,
-        height_frac=0.34,
+        height_frac=0.408,
         center_x_frac=0.86,
         rotation_deg=5,
     ),
