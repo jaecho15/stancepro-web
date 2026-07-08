@@ -62,6 +62,13 @@ def _parse_iso(value: str | None) -> datetime | None:
         return None
 
 
+def _parse_float(value: str | None) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _read_cache(resort_id: str) -> dict | None:
     response = requests.get(
         f"{SUPABASE_URL}/rest/v1/{TABLE}",
@@ -109,7 +116,8 @@ def _write_cache(resort: dict, payload: dict, summary: dict) -> bool:
     return True
 
 
-def _build(resort_id: str, max_age_s: int, refresh: bool) -> tuple[int, dict]:
+def _build(resort_id: str, max_age_s: int, refresh: bool,
+           resort_override: dict | None = None) -> tuple[int, dict]:
     now = datetime.now(tz=timezone.utc)
 
     if not refresh:
@@ -131,7 +139,10 @@ def _build(resort_id: str, max_age_s: int, refresh: bool) -> tuple[int, dict]:
                     "summary": cached.get("summary"),
                 }
 
-    resort = core.fetch_resort(resort_id)
+    # An override (lat/lon supplied by the caller — e.g. the map ski-resort
+    # index's 3466 OSM resorts, which are NOT rows in snow_outlook_resorts)
+    # skips the DB lookup and computes straight from the passed coordinates.
+    resort = resort_override or core.fetch_resort(resort_id)
     if not resort:
         return 404, {"error": "resort_not_found", "resort_id": resort_id}
 
@@ -167,8 +178,26 @@ class handler(BaseHTTPRequestHandler):
             max_age_s = DEFAULT_MAX_AGE_S
         refresh = (query.get("refresh") or ["0"])[0] not in ("0", "", "false")
 
+        # Optional coordinate override: when lat+lon are supplied (the map index's
+        # OSM resorts, absent from snow_outlook_resorts), compute straight from
+        # them. resort_id-only calls keep the existing DB-lookup path (curated 314).
+        lat = _parse_float((query.get("lat") or [None])[0])
+        lon = _parse_float((query.get("lon") or [None])[0])
+        resort_override = None
+        if lat is not None and lon is not None:
+            country = (query.get("country") or [None])[0]
+            resort_override = {
+                "resort_id": resort_id,
+                "lat": lat,
+                "lon": lon,
+                "base_elevation_m": _parse_float((query.get("base_m") or [None])[0]),
+                "top_elevation_m": _parse_float((query.get("top_m") or [None])[0]),
+                "country_code": country.strip() if country else None,
+                "region_id": None,
+            }
+
         try:
-            status, body = _build(resort_id, max_age_s, refresh)
+            status, body = _build(resort_id, max_age_s, refresh, resort_override)
         except Exception as exc:  # noqa: BLE001 — surface as JSON, never 500 HTML
             return self._send(502, {"error": "compute_failed", "detail": str(exc)})
         return self._send(status, body)
