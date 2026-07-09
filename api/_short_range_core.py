@@ -458,6 +458,9 @@ def fetch_band_forecast(
     if include_freezing_level:
         hourly_vars += ",freezing_level_height"
     params["hourly"] = hourly_vars
+    # Current snowpack depth (metres) → the "current depth" layer served in the
+    # same payload (FATMAP-style live depth). Single value across models.
+    params["current"] = "snow_depth"
     return polite_get(FORECAST_URL, params)
 
 
@@ -510,6 +513,15 @@ def fetch_resort(resort_id: str) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
+def _current_depth_cm(band_payload: dict[str, Any]) -> int | None:
+    """Current snowpack depth (cm, rounded) from a band's Open-Meteo `current`
+    block. Open-Meteo returns snow_depth in metres."""
+    value = (band_payload.get("current") or {}).get("snow_depth")
+    if isinstance(value, (int, float)) and math.isfinite(value):
+        return round(float(value) * 100.0)
+    return None
+
+
 def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                      forecast_days: int = 16, with_tendency: bool = True) -> dict[str, Any]:
     """Full base-config forecast for one resort (on-demand).
@@ -537,6 +549,18 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                                           freezing_by_date, freezing_by_block, 7))
     for row in daily_rows:
         row["resort_id"] = resort["resort_id"]
+    # Current snowpack depth per band (estimate — model, not resort-measured).
+    depth = {
+        "base_cm": _current_depth_cm(band_payloads["base"]) if "base" in band_payloads else None,
+        "mid_cm": _current_depth_cm(band_payloads["mid"]) if "mid" in band_payloads else None,
+        "top_cm": _current_depth_cm(band_payloads["top"]) if "top" in band_payloads else None,
+        "asof": next(
+            (cur.get("time") for cur in ((bp.get("current") or {}) for bp in band_payloads.values())
+             if cur.get("time")),
+            None,
+        ),
+        "estimate": True,
+    }
     return {
         "resort_id": resort["resort_id"],
         "country_code": resort.get("country_code"),
@@ -547,5 +571,6 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         "models": models.split(","),
         "generated_utc": datetime.now(tz=timezone.utc).isoformat(),
         "daily": daily_rows,
+        "depth": depth,
         "tendency_weekly": tendency,
     }
