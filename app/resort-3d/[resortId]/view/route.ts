@@ -114,6 +114,16 @@ export async function GET(
   html = sub(html, "__RESORT_NAME__", name);
   html = sub(html, "__CACHE_VER__", version);
   html = sub(html, "__NEARBY__", nearby);
+  // Web-host adaptation (serve-time only; the stored engine file stays
+  // byte-identical to iOS): register the tile-caching service worker —
+  // Supabase Storage serves artifacts `no-cache`, and unlike WKWebView the
+  // browser honours it, refetching tiles on every pan/zoom (see
+  // public/resort3d-sw.js).
+  html = sub(
+    html,
+    "</body>",
+    `<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/resort3d-sw.js").catch(function(){});</script></body>`
+  );
 
   return new Response(html, {
     headers: {

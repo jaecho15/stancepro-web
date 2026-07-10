@@ -9,6 +9,11 @@ lib injection — see `Resort3DPreviewView.swift`).
 - `resort3d.html` — the 3D terrain engine page (tokens: `__RESORT_ID__`,
   `__RESORT_NAME__`, `__LANG__`, `__CACHE_VER__`, `__NEARBY__`,
   `__MAPLIBRE_CSS__`, `__MAPLIBRE_JS__`, `__THREE_JS__`)
+
+Web-host adaptation: the view route additionally appends a service-worker
+registration snippet at serve time (public/resort3d-sw.js — tile cache-first;
+Supabase Storage serves artifacts no-cache and browsers honour it, unlike
+WKWebView). The stored file here stays byte-identical to the iOS commit.
 - `maplibre-gl.js` / `maplibre-gl.css` — PINNED maplibre-gl@4.7.1
 - `three.min.js` — PINNED three@0.160.0
 
