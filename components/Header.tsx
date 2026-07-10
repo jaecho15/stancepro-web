@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BrandLogo } from "@/components/BrandLogo";
+import { HeaderAuthButton } from "@/components/auth/HeaderAuthButton";
 
 const navLinks = [
   { href: "/calculator", label: "Calculator" },
@@ -39,6 +40,7 @@ export function Header() {
                   {link.label}
                 </Link>
               ))}
+              <HeaderAuthButton />
               <Link
                 href="/download"
                 className="px-5 py-2 rounded-full bg-gradient-to-r from-brand-500 to-brand-600 text-white font-medium hover:from-brand-400 hover:to-brand-500 transition-all"

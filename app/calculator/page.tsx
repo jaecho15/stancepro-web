@@ -5,9 +5,9 @@ import { StanceCalculatorClient } from "@/components/calculator/StanceCalculator
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Free Snowboard Stance Calculator - Width, Binding Angles & Board Length | StancePro",
+  title: "Snowboard Stance Calculator - Width, Binding Angles & Board Length | StancePro",
   description:
-    "Calculate your ideal snowboard stance width, binding angles, board length and highback lean in seconds. The same science-backed engine as the StancePro app — free, no sign-up.",
+    "Calculate your ideal snowboard stance width, binding angles, board length and highback lean in seconds. The same science-backed engine as the StancePro app — free with a StancePro account.",
   keywords: [
     "snowboard stance calculator",
     "binding angle calculator",
@@ -20,9 +20,9 @@ export const metadata: Metadata = {
     canonical: "/calculator",
   },
   openGraph: {
-    title: "Free Snowboard Stance Calculator | StancePro",
+    title: "Snowboard Stance Calculator | StancePro",
     description:
-      "Dial in stance width, binding angles and board length with the StancePro engine — free, no sign-up.",
+      "Dial in stance width, binding angles and board length with the StancePro engine — free with a StancePro account.",
     url: "https://stance-pro.com/calculator",
   },
 };

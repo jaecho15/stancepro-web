@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isGatedPath, MEMBER_LOGIN_PATH } from "@/lib/member-auth";
 
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,12 +31,36 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Refresh the auth session cookie before internal routes render.
-  await supabase.auth.getUser();
+  // Refresh the auth session cookie before gated/internal routes render.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Member features require a signed-in account (any StancePro user — same
+  // Supabase auth as the app). Internal/brand-review enforcement stays in
+  // those pages (membership checks), this middleware only refreshes them.
+  const { pathname, search } = request.nextUrl;
+  if (!user && isGatedPath(pathname)) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = MEMBER_LOGIN_PATH;
+    loginUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
+    return NextResponse.redirect(loginUrl);
+  }
 
   return response;
 }
 
 export const config = {
-  matcher: ["/internal/:path*", "/brand-review/:path*"],
+  matcher: [
+    "/internal/:path*",
+    "/brand-review/:path*",
+    "/calculator/:path*",
+    "/calculator",
+    "/snow-forecast/:path*",
+    "/snow-forecast",
+    "/snow-outlook/:path*",
+    "/snow-outlook",
+    "/resort-3d/:path*",
+    "/resort-3d",
+  ],
 };
