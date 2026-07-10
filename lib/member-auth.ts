@@ -11,6 +11,10 @@ export const GATED_PREFIXES = [
 
 export const MEMBER_LOGIN_PATH = "/login";
 export const MEMBER_AUTH_CALLBACK_PATH = "/auth/callback";
+// Memoises "this user's profile row exists" so the middleware doesn't hit
+// the profiles table on every gated request. Value = the user id it was
+// verified for (guards against account switches on the same browser).
+export const ONBOARDED_COOKIE = "sp-onboarded";
 
 export function isGatedPath(pathname: string): boolean {
   return GATED_PREFIXES.some(

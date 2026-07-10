@@ -1,6 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isGatedPath, MEMBER_LOGIN_PATH } from "@/lib/member-auth";
+import { isGatedPath, MEMBER_LOGIN_PATH, ONBOARDED_COOKIE } from "@/lib/member-auth";
 
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,11 +40,37 @@ export async function middleware(request: NextRequest) {
   // Supabase auth as the app). Internal/brand-review enforcement stays in
   // those pages (membership checks), this middleware only refreshes them.
   const { pathname, search } = request.nextUrl;
-  if (!user && isGatedPath(pathname)) {
+  const isOnboarding = pathname === "/onboarding";
+  if (!user && (isGatedPath(pathname) || isOnboarding)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = MEMBER_LOGIN_PATH;
     loginUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
     return NextResponse.redirect(loginUrl);
+  }
+
+  // First sign-in on the web must complete the same profile onboarding the
+  // app has. A cookie scoped to the user id memoises "profile exists" so the
+  // profiles lookup runs once per user, not on every gated request.
+  if (user && isGatedPath(pathname)) {
+    const memo = request.cookies.get(ONBOARDED_COOKIE)?.value;
+    if (memo !== user.id) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!profile) {
+        const onboardingUrl = request.nextUrl.clone();
+        onboardingUrl.pathname = "/onboarding";
+        onboardingUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
+        return NextResponse.redirect(onboardingUrl);
+      }
+      response.cookies.set(ONBOARDED_COOKIE, user.id, {
+        maxAge: 60 * 60 * 24 * 30,
+        path: "/",
+        sameSite: "lax",
+      });
+    }
   }
 
   return response;
@@ -62,5 +88,6 @@ export const config = {
     "/snow-outlook",
     "/resort-3d/:path*",
     "/resort-3d",
+    "/onboarding",
   ],
 };
