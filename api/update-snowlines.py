@@ -205,6 +205,8 @@ def collect_tasks(token: str) -> dict:
             when = datetime.fromisoformat(str(completed).replace("Z", "+00:00"))
         except (TypeError, ValueError):
             continue
+        if when.tzinfo is None:           # AppEEARS omits the offset — it's UTC
+            when = when.replace(tzinfo=timezone.utc)
         if when >= cutoff:
             done.append(t["task_id"])
 
