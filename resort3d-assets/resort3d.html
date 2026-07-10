@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- inline empty favicon: the base origin is a fake domain (CORS anchor), so
+     the browser's automatic /favicon.ico probe would log a noisy
+     ERR_NAME_NOT_RESOLVED without this -->
+<link rel="icon" href="data:,">
+<title>3D Terrain</title>
+<!-- Libraries are VENDORED and injected inline by the native host
+     (Resort3DPreviewView.swift / Resort3DActivity.kt) from app-bundled copies —
+     NOT fetched from a CDN. This makes the 3D engine work fully offline and
+     immune to unpkg outages (which previously took the map down, and exposed
+     even online users to a third-party single point of failure).
+     Versions are PINNED — maplibre-gl@4.7.1, three@0.160.0. Do NOT bump: the
+     offline tile router + terrain unproject/queryTerrainElevation behaviour is
+     validated against 4.7.1 only. Keep the iOS/Android bytes identical. -->
+<style>__MAPLIBRE_CSS__</style>
+<script>__MAPLIBRE_JS__</script>
+<!-- Three.js — real night sky (NASA Deep Star Maps texture) + zodiac lines,
+     composited behind the transparent MapLibre canvas. -->
+<script>__THREE_JS__</script>
+<style>
+  /* Safe-area plumbing: iOS resolves env() (viewport-fit=cover above);
+     Android WebView always reports env()=0, so Resort3DActivity injects
+     real insets as inline --safe-* vars on <html> (inline wins). */
+  :root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+  }
+  html, body { margin:0; padding:0; height:100%; background:#EAF0F5; }
+  /* Sky canvas sits BEHIND the map; the map's background layer is made
+     transparent at runtime (3D only) so above-horizon shows the sky. */
+  #sky { position:absolute; inset:0; z-index:0; }
+  #map { position:absolute; inset:0; z-index:1; background:transparent; }
+  #skybtn.on { background:rgba(20,24,40,.92); color:#fff; }
+  #skybtn.day { background:rgba(240,186,70,.95); color:#3a2a00; }
+  #err { position:absolute; top:calc(var(--safe-top) + 12px); left:12px; right:12px; z-index:9;
+         font:14px -apple-system,Roboto,sans-serif; color:#B00; display:none;
+         background:rgba(255,255,255,.9); border-radius:8px; padding:10px; }
+  /* Resort title fallback chip — top-center, shown only when the summit
+     pin (preferred name placement) can't be derived from the elevation
+     artifact. Kept clear of the host close button (top-left, iOS) and
+     the zoom control (top-right). */
+  #title { position:absolute; top:calc(var(--safe-top) + 10px); left:50%;
+           transform:translateX(-50%); z-index:9; max-width:70%;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+           font:600 14px -apple-system,Roboto,sans-serif; color:#fff;
+           padding:8px 14px; border-radius:18px;
+           background:rgba(31,37,48,.82); box-shadow:0 2px 8px rgba(0,0,0,.25);
+           display:none; }
+  /* Summit pin: name chip hovering over the resort's highest point.
+     MapLibre owns the marker root's transform, so the bob animation
+     lives on an inner wrapper; the ground dot stays fixed. */
+  .peak-wrap { display:flex; flex-direction:column; align-items:center;
+               pointer-events:none; }
+  .peak-bob { display:flex; flex-direction:column; align-items:center;
+              animation:peakbob 2.6s ease-in-out infinite; }
+  .peak-chip { font:600 13px -apple-system,Roboto,sans-serif; color:#fff;
+               background:rgba(31,37,48,.86); padding:7px 12px;
+               border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,.3);
+               white-space:nowrap; max-width:72vw; overflow:hidden;
+               text-overflow:ellipsis; }
+  .peak-chip .pe { font-weight:500; font-size:11px; opacity:.75; margin-left:6px; }
+  .peak-tail { width:2px; height:16px; background:rgba(31,37,48,.65); }
+  .peak-dot { width:7px; height:7px; border-radius:50%; background:#fff;
+              border:2px solid rgba(31,37,48,.85); margin-top:1px; }
+  @keyframes peakbob { 0%,100% { transform:translateY(0); }
+                       50% { transform:translateY(-6px); } }
+  /* Control column, bottom-right, clear of the attribution chip. */
+  #ctl { position:absolute; bottom:calc(var(--safe-bottom) + 40px);
+         right:calc(var(--safe-right) + 12px); z-index:9;
+         display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  #ctl button { font:600 13px/1 -apple-system,Roboto,sans-serif;
+                padding:10px 14px; border-radius:20px; border:0; min-width:58px;
+                box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  #ctl button.on  { background:rgba(31,37,48,.82); color:#fff; }
+  #ctl button.off { background:rgba(255,255,255,.92); color:#1F2530; }
+  #bSlope.on   { background:rgba(37,99,168,.9); }
+  #bExtreme.on { background:rgba(186,26,125,.9); }
+  /* Temporary on-screen sky debug (WKWebView has no console). */
+  #dbg { position:absolute; left:8px; bottom:calc(var(--safe-bottom) + 8px); z-index:9;
+         font:11px/1.35 ui-monospace,monospace; color:#9ff; background:rgba(0,0,0,.6);
+         padding:4px 7px; border-radius:6px; max-width:82%; white-space:pre-wrap; }
+  #zbadge { position:absolute; left:8px; top:calc(var(--safe-top) + 8px); z-index:9;
+            font:12px/1.3 ui-monospace,monospace; color:#fff; background:rgba(0,0,0,.62);
+            padding:4px 8px; border-radius:6px; }
+  /* Keep MapLibre's own controls out of the status bar / rounded corners. */
+  .maplibregl-ctrl-top-right { top:var(--safe-top); right:var(--safe-right); }
+  .maplibregl-ctrl-bottom-right { bottom:var(--safe-bottom); right:var(--safe-right); }
+  .maplibregl-ctrl-bottom-left { bottom:var(--safe-bottom); left:var(--safe-left); }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div id="map"></div>
+<div id="err"></div>
+<div id="title"></div>
+<!-- Host-resolved resort display name (app language → English → native),
+     injected as element text so quotes/apostrophes in names can't break
+     the script. Unreplaced placeholder = fall back to meta.json name. -->
+<div id="hostname" style="display:none">__RESORT_NAME__</div>
+<!-- Nearby resorts (≤50 km, nearest 30) as a JSON array of
+     {n: name, la: lat, lo: lon}, names already localized by the host.
+     Same text-node trick; unreplaced placeholder = no nearby pins. -->
+<div id="nearby" style="display:none">__NEARBY__</div>
+<div id="dbg">sky: init…</div>
+<div id="zbadge">z…</div>
+<div id="ctl">
+  <button id="tbtn" class="on">2D</button>
+  <button id="skybtn" class="off" aria-label="Auto day/night">◐</button>
+  <button id="bSlope" class="off">30°+</button>
+  <button id="bExtreme" class="off">45°+</button>
+</div>
+<!-- ===== Off-piste route drawing (Stage-1). Self-contained & namespaced (op-*);
+     injects its own CSS/DOM, samples the LiDAR elev_5m artifact for the slope
+     profile (NOT queryTerrainElevation, which is exaggerated/reference-relative),
+     and posts the saved route to the native host. init(map, meta, art) is called
+     in the map load handler once terrain is set. Verified in the drawing harness
+     2026-07-09. Keep iOS/Android bytes identical. ===== -->
+<script>
+window.OffpisteDraw = (function(){
+  var map, meta, art, elevImg=null, ready=false;
+  var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
+  var flying=false, flyRAF=null, savedCam=null;
+  var pinMode=false, waypoints=[], wpMarkers=[], depthInfo=null;
+  var SRC="op-route", LYR="op-route-line";
+  var WMx=20037508.342789244;
+  var lon2mx=function(l){return l/180*WMx;}, lat2my=function(l){return Math.log(Math.tan(Math.PI/4+l*Math.PI/360))*WMx/Math.PI;};
+  var el={};
+  function byId(i){return document.getElementById(i);}
+
+  function injectCSS(){
+    var css = ""
+    + "#op-badge{position:absolute;top:calc(var(--safe-top,0px) + 40px);left:8px;z-index:10;"
+    +   "background:rgba(20,24,34,.86);color:#dfe8f2;border-radius:10px;padding:7px 10px;line-height:1.4;"
+    +   "font:12px -apple-system,Roboto,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:56%}"
+    + "#op-badge b{color:#8fe;font-weight:600}#op-badge .l{color:#6de26d}#op-badge .e{color:#ffd166}#op-badge .op-snow{color:#9fd8ff}"
+    + "#op-tools{position:absolute;top:calc(var(--safe-top,0px) + 8px);right:calc(var(--safe-right,0px) + 12px);"
+    +   "z-index:10;display:flex;flex-direction:column;gap:8px;align-items:flex-end}"
+    + ".op-btn{background:rgba(20,24,34,.86);color:#eaf;border:0;border-radius:20px;padding:10px 14px;"
+    +   "font:600 13px/1 -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);min-width:52px}"
+    + ".op-btn.on{background:#2f7dfb;color:#fff}.op-btn.op-save{background:#34c759;color:#06331a}"
+    + ".op-btn[disabled]{opacity:.4}"
+    + "#op-oob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:11;"
+    +   "background:rgba(210,60,50,.94);color:#fff;padding:9px 14px;border-radius:20px;font-weight:600;"
+    +   "opacity:0;transition:opacity .18s;pointer-events:none;font-family:-apple-system,Roboto,sans-serif}"
+    + "#op-oob.show{opacity:1}"
+    + "#op-dock{position:absolute;left:8px;right:8px;bottom:calc(var(--safe-bottom,0px) + 8px);z-index:8;"
+    +   "background:rgba(20,24,34,.9);border-radius:12px;padding:7px 10px;box-shadow:0 2px 12px rgba(0,0,0,.35);"
+    +   "font:12px -apple-system,Roboto,sans-serif;display:none}"
+    + "#op-dock.show{display:block}"
+    + "#op-summary{color:#eaf;display:flex;gap:12px;flex-wrap:wrap;align-items:baseline;margin-bottom:3px}"
+    + "#op-summary .big{font-size:15px;font-weight:700}#op-summary .g30{color:#ff9f0a}#op-summary .g45{color:#ff453a}"
+    + "#op-prof{width:100%;height:74px;display:block}"
+    + "#op-disc{color:#9fb0c2;font-size:11px;margin-top:3px}"
+    + "#op-saved-chip{position:absolute;top:calc(var(--safe-top,0px) + 98px);left:8px;z-index:10;display:none;background:rgba(20,24,34,.8);color:#7fd8ff;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px}"
+    + "#op-saved-chip.show{display:block}"
+    + "#op-hint{position:absolute;top:calc(var(--safe-top,0px) + 214px);right:calc(var(--safe-right,0px) + 12px);z-index:10;display:none;background:rgba(20,24,34,.82);color:#cfe;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px;max-width:56%;text-align:right}"
+    + "#op-hint.show{display:block}"
+    + "#op-aspect-legend{position:absolute;top:calc(var(--safe-top,0px) + 252px);right:calc(var(--safe-right,0px) + 12px);z-index:10;display:none;background:rgba(20,24,34,.82);border-radius:8px;padding:6px 8px;font:10px/1.5 -apple-system,Roboto,sans-serif;color:#cde}"
+    + "#op-aspect-legend.show{display:block}"
+    + ".op-wp{display:flex;flex-direction:column;align-items:center;pointer-events:none}"
+    + ".op-wp-pin{font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}"
+    + ".op-wp-lbl{font:600 10px -apple-system,Roboto,sans-serif;color:#fff;background:rgba(31,37,48,.86);padding:2px 6px;border-radius:8px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;margin-top:1px}"
+    + "#op-wp-input{position:absolute;top:calc(var(--safe-top,0px) + 56px);left:50%;transform:translateX(-50%);z-index:11;display:none;width:60%;max-width:280px;padding:8px 12px;border:0;border-radius:18px;background:rgba(255,255,255,.95);font:14px -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)}"
+    + "#op-wp-input.show{display:block}";
+    var s=document.createElement("style"); s.textContent=css; document.head.appendChild(s);
+  }
+  function injectDOM(){
+    var d=document.createElement("div"); d.innerHTML =
+        '<div id="op-badge">…</div>'
+      + '<div id="op-saved-chip"></div>'
+      + '<div id="op-tools">'
+      +   '<button id="op-aspect" class="op-btn" disabled>🧭 Aspect</button>'
+      +   '<button id="op-flat" class="op-btn" disabled>🟢 Flat</button>'
+      +   '<button id="op-draw" class="op-btn" disabled>✏️ Draw</button>'
+      +   '<button id="op-undo" class="op-btn" disabled>↶</button>'
+      +   '<button id="op-clear" class="op-btn" disabled>✕</button>'
+      +   '<button id="op-save" class="op-btn op-save" disabled>Save</button>'
+      +   '<button id="op-fly" class="op-btn" disabled>🎬 Fly</button>'
+      +   '<button id="op-pin" class="op-btn" disabled>📍 Pin</button>'
+      +   '<button id="op-offline" class="op-btn" disabled>⬇ Offline</button>'
+      + '</div>'
+      + '<div id="op-aspect-legend"></div>'
+      + '<div id="op-hint">1 finger: draw · 2 fingers: move map</div>'
+      + '<input id="op-wp-input" placeholder="Waypoint label — then tap the map"/>'
+      + '<div id="op-oob">Outside LiDAR coverage — no accurate slope here</div>'
+      + '<div id="op-dock">'
+      +   '<div id="op-summary"></div>'
+      +   '<svg id="op-prof" viewBox="0 0 800 74" preserveAspectRatio="none"></svg>'
+      +   '<div id="op-disc">Slope, aspect &amp; elevation reflect terrain geometry (LiDAR DEM) only — not snow conditions or avalanche risk.</div>'
+      + '</div>';
+    while(d.firstChild) document.body.appendChild(d.firstChild);
+  }
+
+  async function loadElev(){
+    try{
+      var bmp = await createImageBitmap(await (await fetch(art("elev_5m.png"))).blob());
+      var cv=document.createElement("canvas"); cv.width=bmp.width; cv.height=bmp.height;
+      var cx=cv.getContext("2d",{willReadFrequently:true}); cx.imageSmoothingEnabled=false; cx.drawImage(bmp,0,0);
+      elevImg={data:cx.getImageData(0,0,bmp.width,bmp.height).data,W:bmp.width,H:bmp.height,b:meta.bounds_3857};
+      ready=true; el.draw.disabled=false; if(el.aspect) el.aspect.disabled=false; if(el.pin) el.pin.disabled=false; if(el.flat) el.flat.disabled=false;
+      // Offline serving currently works only on Android (shouldInterceptRequest);
+      // iOS WKWebView can't intercept https+fetch, so hide the button there.
+      if(el.offline){ if(window.AndroidOffpiste && window.AndroidOffpiste.onCacheResort){ el.offline.disabled=false; } else { el.offline.style.display="none"; } }
+    }catch(e){ console.log("op elev load failed", e); }
+  }
+  function sampleElev(lng,lat){
+    if(!elevImg) return null;
+    var d=elevImg.data, W=elevImg.W, H=elevImg.H, b=elevImg.b;
+    var px=Math.round((lon2mx(lng)-b[0])/(b[2]-b[0])*(W-1));
+    var py=Math.round((b[3]-lat2my(lat))/(b[3]-b[1])*(H-1));
+    if(px<0||py<0||px>=W||py>=H) return null;
+    var p=(py*W+px)*4;
+    if(d[p+3]===0) return null;
+    return (d[p]*65536+d[p+1]*256+d[p+2])/10 - 10000;
+  }
+
+  function renderBadge(){
+    var nat = meta.native_res_m || meta.res_m || 30;    // honest source resolution
+    var lidar = nat <= 5;                                // 2.5/5m regional = LiDAR; 10m TINITALY / 30m Terrarium = est
+    var tag = lidar ? '<span class="l">LiDAR '+nat+'m</span>'
+                    : '<span class="e">'+nat+'m est · reference only</span>';
+    var depthLine = "";
+    if(depthInfo){
+      var dp=[];
+      if(depthInfo.top_cm!=null) dp.push("Top "+depthInfo.top_cm+"cm");
+      if(depthInfo.mid_cm!=null) dp.push("Mid "+depthInfo.mid_cm+"cm");
+      if(depthInfo.base_cm!=null) dp.push("Base "+depthInfo.base_cm+"cm");
+      if(dp.length) depthLine = '<br><span class="op-snow">❄ '+dp.join(" · ")+(depthInfo.estimate?' est':'')+'</span>';
+    }
+    byId("op-badge").innerHTML = '<b>'+(meta.name||"Resort")+'</b> · '+tag
+      + '<br><span style="opacity:.75">'+(meta.dem_source||"DEM")+'</span>' + depthLine;
+  }
+
+  function toggle(){
+    if(!ready) return;
+    active=!active;
+    if(active && pinMode) togglePin();   // draw and pin modes are mutually exclusive
+    el.draw.classList.toggle("on",active);
+    el.draw.textContent = active ? "✏️ Drawing" : "✏️ Draw";
+    if(el.hint) el.hint.classList.toggle("show",active);
+    if(active){ map.dragPan.disable(); map.dragRotate.disable(); }
+    else{ map.dragPan.enable(); map.dragRotate.enable(); }
+  }
+  function flashOOB(){ el.oob.classList.add("show"); clearTimeout(flashOOB._t);
+    flashOOB._t=setTimeout(function(){el.oob.classList.remove("show");},700); }
+
+  function addAt(x,y){
+    var ll=map.unproject([x,y]);
+    var e=sampleElev(ll.lng,ll.lat);
+    if(e==null){ flashOOB(); return false; }
+    pts.push([ll.lng,ll.lat,e]); return true;
+  }
+  function wire(){
+    el.draw.onclick=toggle;
+    if(el.aspect) el.aspect.onclick=toggleAspect;
+    if(el.flat) el.flat.onclick=toggleFlat;
+    if(el.fly) el.fly.onclick=toggleFly;
+    if(el.pin) el.pin.onclick=togglePin;
+    if(el.offline) el.offline.onclick=requestOfflineCache;
+    map.on("click", function(e){
+      if(!pinMode) return;
+      var lng=e.lngLat.lng, lat=e.lngLat.lat, elev=sampleElev(lng,lat);
+      var label=(el.wpInput && el.wpInput.value.trim()) || ("Waypoint "+(waypoints.length+1));
+      var wp={lng:lng,lat:lat,elev:elev,label:label};
+      waypoints.push(wp); addWpMarker(wp); saveWaypoint(wp);
+    });
+    el.undo.onclick=function(){ pts.pop(); refresh(); };
+    el.clear.onclick=function(){ pts=[]; refresh(); };
+    el.save.onclick=save;
+    var canvasEl=byId("map");
+    function rel(ev){ var r=map.getCanvas().getBoundingClientRect(); var p=ev.touches?ev.touches[0]:ev;
+      return [p.clientX-r.left, p.clientY-r.top]; }
+    var lx=0, ly=0;
+    // One finger draws. Two+ fingers are a map gesture — bail (no preventDefault) so
+    // MapLibre's touchZoomRotate handles pan/zoom/rotate even while in draw mode.
+    function down(ev){ if(!active) return; if(ev.touches && ev.touches.length!==1){ drawing=false; return; } drawing=true; var q=rel(ev); lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault(); }
+    function move(ev){ if(!active||!drawing) return; if(ev.touches && ev.touches.length!==1){ drawing=false; return; } var q=rel(ev); if(Math.hypot(q[0]-lx,q[1]-ly)<6) return; lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault(); }
+    function up(){ drawing=false; }
+    canvasEl.addEventListener("mousedown",down); window.addEventListener("mousemove",move); window.addEventListener("mouseup",up);
+    canvasEl.addEventListener("touchstart",down,{passive:false}); canvasEl.addEventListener("touchmove",move,{passive:false}); window.addEventListener("touchend",up);
+  }
+
+  function distM(a,b){ var R=6378137, dLat=(b[1]-a[1])*Math.PI/180, dLon=(b[0]-a[0])*Math.PI/180,
+    lat=(a[1]+b[1])/2*Math.PI/180; return Math.hypot(dLon*Math.cos(lat),dLat)*R; }
+  function analyse(){
+    var segs=[], profile=[], cum=0, len=0, s30=0, s45=0, maxS=0, sumS=0, zmin=1/0, zmax=-1/0;
+    for(var i=1;i<pts.length;i++){
+      var d=distM(pts[i-1],pts[i]); var dz=pts[i][2]-pts[i-1][2];
+      var slope=Math.atan2(Math.abs(dz),Math.max(d,0.5))*180/Math.PI;
+      segs.push({slope:slope,d:d}); profile.push({cum:cum,z:pts[i-1][2],slope:slope});
+      cum+=d; len+=d; sumS+=slope; maxS=Math.max(maxS,slope);
+      if(slope>=30)s30+=d; if(slope>=45)s45+=d;
+    }
+    for(var j=0;j<pts.length;j++){ zmin=Math.min(zmin,pts[j][2]); zmax=Math.max(zmax,pts[j][2]); }
+    if(pts.length) profile.push({cum:cum,z:pts[pts.length-1][2],slope:0});
+    return {segs:segs,profile:profile,stats:{len:len,drop:(zmax-zmin)||0,maxS:maxS,
+      meanS:segs.length?sumS/segs.length:0, pct30:len?s30/len*100:0, pct45:len?s45/len*100:0}};
+  }
+  function fc(features){ return {type:"FeatureCollection",features:features}; }
+  function addLayer(){
+    // Saved routes (read-only) render UNDER the active draw line, dashed cyan.
+    map.addSource("op-saved",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-saved-line",type:"line",source:"op-saved",layout:{"line-cap":"round","line-join":"round"},
+      paint:{"line-color":"#7fd8ff","line-width":3,"line-opacity":0.75,"line-dasharray":[2,1.5]}});
+    map.addSource(SRC,{type:"geojson",data:fc([])});
+    map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
+      paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
+  }
+  function refresh(){
+    var a=analyse();
+    var feats=a.segs.map(function(s,i){ return {type:"Feature",properties:{slope:s.slope},
+      geometry:{type:"LineString",coordinates:[[pts[i][0],pts[i][1]],[pts[i+1][0],pts[i+1][1]]]}}; });
+    map.getSource(SRC).setData(fc(feats));
+    el.undo.disabled = pts.length===0; el.clear.disabled = pts.length===0; el.save.disabled = pts.length<2;
+    if(el.fly && !flying) el.fly.disabled = pts.length<2;
+    el.dock.classList.toggle("show", pts.length>=2);
+    renderSummary(a.stats); renderProfile(a.profile);
+  }
+  function renderSummary(s){
+    if(pts.length<2){ el.summary.innerHTML=""; return; }
+    var asp = routeAspect();
+    el.summary.innerHTML =
+      '<span class="big">'+Math.round(s.len)+' m</span>'
+    + (asp ? '<span>faces '+asp+'</span>' : '')
+    + '<span>drop '+Math.round(s.drop)+' m</span>'
+    + '<span>max <b>'+s.maxS.toFixed(0)+'°</b> · avg '+s.meanS.toFixed(0)+'°</span>'
+    + '<span class="g30">≥30° '+s.pct30.toFixed(0)+'%</span>'
+    + (s.pct45>=1 ? '<span class="g45">≥45° '+s.pct45.toFixed(0)+'%</span>' : '');
+  }
+  function renderProfile(prof){
+    var svg=el.prof, W=800, H=74, pad=6;
+    if(prof.length<2){ svg.innerHTML=""; return; }
+    var maxC=prof[prof.length-1].cum||1;
+    var zs=prof.map(function(p){return p.z;}), zmin=Math.min.apply(null,zs), zmax=Math.max.apply(null,zs);
+    function X(c){return pad+c/maxC*(W-2*pad);} function Y(z){return H-12-(z-zmin)/Math.max(1,zmax-zmin)*(H-2*pad-12);}
+    var line=""; for(var i=0;i<prof.length;i++){ line+=(i?"L":"M")+X(prof[i].cum).toFixed(1)+","+Y(prof[i].z).toFixed(1)+" "; }
+    var band=""; for(var k=1;k<prof.length;k++){
+      var col=prof[k-1].slope>=45?"#ff453a":prof[k-1].slope>=30?"#ff9f0a":"#34c759";
+      band+='<line x1="'+X(prof[k-1].cum).toFixed(1)+'" y1="'+(H-4)+'" x2="'+X(prof[k].cum).toFixed(1)+'" y2="'+(H-4)+'" stroke="'+col+'" stroke-width="4"/>';
+    }
+    svg.innerHTML='<path d="'+line+'" fill="none" stroke="#7fd8ff" stroke-width="2"/>'+band
+      +'<text x="7" y="12" fill="#cfe" font-size="11">'+Math.round(zmax)+'m</text>'
+      +'<text x="7" y="'+(H-16)+'" fill="#cfe" font-size="11">'+Math.round(zmin)+'m</text>';
+  }
+  function save(){
+    if(pts.length<2) return;
+    var a=analyse();
+    var payload={ schema:"offpiste_route.v1", resort_id:meta.resort_id||null,
+      dem_source:meta.dem_source||null, res_m:meta.res_m||null, created_at:new Date().toISOString(),
+      geometry:{type:"LineString",coordinates:pts.map(function(p){return [+p[0].toFixed(6),+p[1].toFixed(6),Math.round(p[2])];})},
+      stats:{ length_m:Math.round(a.stats.len), drop_m:Math.round(a.stats.drop),
+        max_slope_deg:+a.stats.maxS.toFixed(1), mean_slope_deg:+a.stats.meanS.toFixed(1),
+        pct_ge30:+a.stats.pct30.toFixed(0), pct_ge45:+a.stats.pct45.toFixed(0) } };
+    try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteRoute) webkit.messageHandlers.offpisteRoute.postMessage(payload); }catch(e){}
+    try{ if(window.AndroidOffpiste&&AndroidOffpiste.onSaveRoute) AndroidOffpiste.onSaveRoute(JSON.stringify(payload)); }catch(e){}
+    console.log("ROUTE_SAVE "+JSON.stringify(payload)); window.__LAST_SAVE__=payload;
+    el.save.textContent="Saved ✓"; setTimeout(function(){el.save.textContent="Save";},1200);
+  }
+  function grabEls(){
+    el.badge=byId("op-badge"); el.draw=byId("op-draw"); el.undo=byId("op-undo");
+    el.clear=byId("op-clear"); el.save=byId("op-save"); el.oob=byId("op-oob");
+    el.dock=byId("op-dock"); el.summary=byId("op-summary"); el.prof=byId("op-prof"); el.hint=byId("op-hint");
+    el.savedChip=byId("op-saved-chip"); el.aspect=byId("op-aspect"); el.legend=byId("op-aspect-legend"); el.fly=byId("op-fly"); el.flat=byId("op-flat");
+    el.pin=byId("op-pin"); el.wpInput=byId("op-wp-input"); el.offline=byId("op-offline");
+  }
+  // ---- Waypoints (pin + note), personal, saved to Supabase ----
+  function escapeHtml(s){ return String(s).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); }
+  function addWpMarker(wp){
+    var d=document.createElement('div'); d.className='op-wp';
+    d.innerHTML='<div class="op-wp-pin">📍</div><div class="op-wp-lbl">'+escapeHtml(wp.label)+'</div>';
+    wpMarkers.push(new maplibregl.Marker({element:d, anchor:'bottom'}).setLngLat([wp.lng,wp.lat]).addTo(map));
+  }
+  function saveWaypoint(wp){
+    var payload={ schema:"offpiste_waypoint.v1", resort_id:meta.resort_id||null, label:wp.label,
+      lng:+(+wp.lng).toFixed(6), lat:+(+wp.lat).toFixed(6), elev_m:(wp.elev!=null?Math.round(wp.elev):null) };
+    try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteWaypoint) webkit.messageHandlers.offpisteWaypoint.postMessage(payload); }catch(e){}
+    try{ if(window.AndroidOffpiste&&AndroidOffpiste.onSaveWaypoint) AndroidOffpiste.onSaveWaypoint(JSON.stringify(payload)); }catch(e){}
+    console.log("WAYPOINT_SAVE "+JSON.stringify(payload)); window.__LAST_WP__=payload;
+  }
+  function togglePin(){
+    if(!ready) return;
+    pinMode=!pinMode;
+    el.pin.classList.toggle("on",pinMode);
+    el.pin.textContent = pinMode ? "📍 Tap map" : "📍 Pin";
+    if(el.wpInput) el.wpInput.classList.toggle("show",pinMode);
+    if(pinMode && active) toggle();   // leave draw mode; a single tap now places a pin
+  }
+  // Render the user's saved waypoints for this resort. Called by the native host.
+  function loadWaypoints(list){
+    (list||[]).forEach(function(w){
+      if(w.lng==null||w.lat==null) return;
+      waypoints.push({lng:w.lng,lat:w.lat,elev:w.elev_m,label:w.label||'Waypoint'});
+      addWpMarker({lng:w.lng,lat:w.lat,label:w.label||'Waypoint'});
+    });
+  }
+  // ---- 3D fly-through: animate the camera along the drawn route (FATMAP Flyover) ----
+  function bearingBetween(a,b){
+    var y=Math.sin((b[0]-a[0])*Math.PI/180)*Math.cos(b[1]*Math.PI/180);
+    var x=Math.cos(a[1]*Math.PI/180)*Math.sin(b[1]*Math.PI/180)
+        - Math.sin(a[1]*Math.PI/180)*Math.cos(b[1]*Math.PI/180)*Math.cos((b[0]-a[0])*Math.PI/180);
+    return (Math.atan2(y,x)*180/Math.PI+360)%360;
+  }
+  function pointAlong(coords,cum,dist){
+    var total=cum[cum.length-1];
+    if(dist<=0) return coords[0];
+    if(dist>=total) return coords[coords.length-1];
+    for(var i=1;i<coords.length;i++){
+      if(cum[i]>=dist){
+        var f=(dist-cum[i-1])/((cum[i]-cum[i-1])||1);
+        return [coords[i-1][0]+(coords[i][0]-coords[i-1][0])*f, coords[i-1][1]+(coords[i][1]-coords[i-1][1])*f];
+      }
+    }
+    return coords[coords.length-1];
+  }
+  function endFly(){
+    flying=false;
+    if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
+    if(el.fly){ el.fly.classList.remove("on"); el.fly.textContent="🎬 Fly"; el.fly.disabled=pts.length<2; }
+    if(savedCam){ map.easeTo({center:savedCam.center,zoom:savedCam.zoom,bearing:savedCam.bearing,pitch:savedCam.pitch,duration:1200}); savedCam=null; }
+  }
+  // Move a [lng,lat] by `m` metres along compass bearing `brg`.
+  function offsetLL(ll,brg,m){
+    var R=6378137, br=brg*Math.PI/180, lat=ll[1]*Math.PI/180;
+    return [ll[0] + (m*Math.sin(br))/(R*Math.cos(lat))*180/Math.PI,
+            ll[1] + (m*Math.cos(br))/R*180/Math.PI];
+  }
+  function toggleFly(){
+    if(flying){ endFly(); return; }
+    if(!ready || pts.length<2) return;
+    var coords=pts.slice();
+    var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
+    var total=cum[cum.length-1]; if(total<1) return;
+    savedCam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
+    flying=true; el.fly.classList.add("on"); el.fly.textContent="⏹ Stop";
+    if(active) toggle();                                   // leave draw mode during fly
+    var dur=Math.min(20000,Math.max(6000,total/15*1000)); // ~15 m/s virtual, 6–20 s
+    var t0=performance.now();
+    // Terrain-safe chase cam (MapLibre 4.7 has no FreeCameraOptions): place the
+    // camera behind + above the point at an altitude ABOVE the *exaggerated*
+    // terrain (×EXAG) so it never clips through ridges, then let MapLibre's
+    // calculateCameraOptionsFromTo aim it at the descending line ahead.
+    var EXAG=1.15, camBack=220, camClear=200;
+    function frame(now){
+      if(!flying) return;
+      var p=Math.min(1,(now-t0)/dur), d=p*total;
+      var pos=pointAlong(coords,cum,d), ahead=pointAlong(coords,cum,Math.min(total,d+90));
+      var brg=bearingBetween(pos,ahead);
+      var camLL=offsetLL(pos,(brg+180)%360,camBack);
+      var tc=sampleElev(camLL[0],camLL[1]), tp=sampleElev(pos[0],pos[1]), ta=sampleElev(ahead[0],ahead[1]);
+      var altFrom=Math.max(tc||0,tp||0)*EXAG+camClear;   // camera above the exaggerated terrain
+      var altTo=(ta!=null?ta:(tp||0))*EXAG;              // look at the surface ahead
+      var opts=map.calculateCameraOptionsFromTo(
+        new maplibregl.LngLat(camLL[0],camLL[1]), altFrom,
+        new maplibregl.LngLat(ahead[0],ahead[1]), altTo);
+      map.jumpTo(opts);
+      if(p>=1){ endFly(); return; }
+      flyRAF=requestAnimationFrame(frame);
+    }
+    flyRAF=requestAnimationFrame(frame);
+  }
+  // ---- Aspect (which way a slope faces), from the loaded LiDAR elev_5m ----
+  var mx2lon = function(x){ return x/WMx*180; };
+  var my2lat = function(y){ return (Math.atan(Math.exp(y/WMx*Math.PI))*2-Math.PI/2)*180/Math.PI; };
+  function boundsCorners(){
+    var b = elevImg ? elevImg.b : meta.bounds_3857;
+    return [[mx2lon(b[0]),my2lat(b[3])],[mx2lon(b[2]),my2lat(b[3])],[mx2lon(b[2]),my2lat(b[1])],[mx2lon(b[0]),my2lat(b[1])]];
+  }
+  // Downslope compass bearing (0=N,90=E,180=S,270=W) at a grid pixel; null if flat/off-mask.
+  function aspectAtPx(px,py){
+    if(!elevImg) return null;
+    var d=elevImg.data, W=elevImg.W, H=elevImg.H;
+    if(px<1||py<1||px>=W-1||py>=H-1) return null;
+    function E(x,y){ var p=(y*W+x)*4; if(d[p+3]===0) return null; return (d[p]*65536+d[p+1]*256+d[p+2])/10-10000; }
+    var eL=E(px-1,py),eR=E(px+1,py),eU=E(px,py-1),eD=E(px,py+1),eC=E(px,py);
+    if(eL==null||eR==null||eU==null||eD==null||eC==null) return null;
+    var cell=(meta&&meta.res_m)||5;
+    var gE=(eR-eL)/2, gN=(eU-eD)/2;                     // Δelev/px east, north (img y=south)
+    var slope=Math.atan(Math.hypot(gE,gN)/cell)*180/Math.PI;
+    if(slope<5) return {bearing:null,slope:slope};        // flat → aspect undefined
+    var brg=(Math.atan2(-gE,-gN)*180/Math.PI+360)%360;    // downslope azimuth
+    return {bearing:brg,slope:slope};
+  }
+  // FATMAP-style aspect palette (familiar to FATMAP users; encodes sun/shade):
+  // N blue (cold/shaded, holds snow) → E white → S orange (sunny) → W black,
+  // interpolated around the compass. Anchors: N NE E SE S SW W NW.
+  var ASPECT_ANCHORS=[[30,90,230],[90,170,235],[240,240,240],[250,200,120],
+                      [245,140,40],[150,90,50],[40,40,40],[20,40,120]];
+  function aspectColor(brg){
+    var seg=(((brg%360)+360)%360)/45, i=Math.floor(seg)%8, j=(i+1)%8, f=seg-Math.floor(seg);
+    var a=ASPECT_ANCHORS[i], b=ASPECT_ANCHORS[j];
+    return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)];
+  }
+  function buildAspectImage(){
+    var W=elevImg.W,H=elevImg.H;
+    var cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+    var cx=cv.getContext("2d"); var out=cx.createImageData(W,H); var o=out.data;
+    for(var y=0;y<H;y++) for(var x=0;x<W;x++){
+      var a=aspectAtPx(x,y), i=(y*W+x)*4;
+      if(!a||a.bearing==null){ o[i+3]=0; continue; }
+      var rgb=aspectColor(a.bearing);
+      o[i]=rgb[0]; o[i+1]=rgb[1]; o[i+2]=rgb[2]; o[i+3]=150;
+    }
+    cx.putImageData(out,0,0);
+    return cv.toDataURL("image/png");
+  }
+  function buildLegend(){
+    if(!el.legend) return;
+    var dirs=[["N",0],["NE",45],["E",90],["SE",135],["S",180],["SW",225],["W",270],["NW",315]];
+    el.legend.innerHTML="Aspect — slope faces"+dirs.map(function(dd){var c=aspectColor(dd[1]);
+      return '<br><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:rgb('+c[0]+','+c[1]+','+c[2]+');margin-right:5px"></span>'+dd[0];}).join("");
+  }
+  function toggleAspect(){
+    if(!ready) return;
+    aspectOn=!aspectOn;
+    el.aspect.classList.toggle("on",aspectOn);
+    if(aspectOn && !aspectBuilt){
+      try{
+        map.addSource("op-aspect",{type:"image",url:buildAspectImage(),coordinates:boundsCorners()});
+        map.addLayer({id:"op-aspect-layer",type:"raster",source:"op-aspect",paint:{"raster-opacity":0.55}},"op-saved-line");
+        buildLegend(); aspectBuilt=true;
+      }catch(e){ console.log("aspect build failed",e); aspectOn=false; el.aspect.classList.remove("on"); return; }
+    }
+    if(map.getLayer("op-aspect-layer")) map.setLayoutProperty("op-aspect-layer","visibility",aspectOn?"visible":"none");
+    if(el.legend) el.legend.classList.toggle("show",aspectOn);
+  }
+  // Dominant compass aspect of the drawn line (circular mean) → cardinal label.
+  function routeAspect(){
+    if(pts.length<2||!elevImg) return null;
+    var sx=0,sy=0,n=0,W=elevImg.W,H=elevImg.H,b=elevImg.b;
+    for(var i=0;i<pts.length;i++){
+      var px=Math.round((lon2mx(pts[i][0])-b[0])/(b[2]-b[0])*(W-1));
+      var py=Math.round((b[3]-lat2my(pts[i][1]))/(b[3]-b[1])*(H-1));
+      var a=aspectAtPx(px,py);
+      if(a&&a.bearing!=null){ sx+=Math.sin(a.bearing*Math.PI/180); sy+=Math.cos(a.bearing*Math.PI/180); n++; }
+    }
+    if(!n) return null;
+    var brg=(Math.atan2(sx,sy)*180/Math.PI+360)%360;
+    return ["N","NE","E","SE","S","SW","W","NW"][Math.round(brg/45)%8];
+  }
+  // ---- Flat zones: highlight gentle terrain (<= FLAT_MAX degrees) from elev_5m ----
+  var flatOn=false, flatBuilt=false, FLAT_MAX=22;
+  function buildFlatImage(){
+    var W=elevImg.W,H=elevImg.H;
+    var cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+    var cx=cv.getContext("2d"); var out=cx.createImageData(W,H); var o=out.data;
+    for(var y=0;y<H;y++) for(var x=0;x<W;x++){
+      var a=aspectAtPx(x,y), i=(y*W+x)*4;
+      if(!a || a.slope>FLAT_MAX){ o[i+3]=0; continue; }
+      var t=1-(a.slope/FLAT_MAX);            // 1 = dead flat, 0 = at threshold
+      o[i]=64; o[i+1]=205; o[i+2]=150; o[i+3]=Math.round(55+130*t);
+    }
+    cx.putImageData(out,0,0);
+    return cv.toDataURL("image/png");
+  }
+  function toggleFlat(){
+    if(!ready) return;
+    flatOn=!flatOn;
+    el.flat.classList.toggle("on",flatOn);
+    if(flatOn && !flatBuilt){
+      try{
+        map.addSource("op-flat",{type:"image",url:buildFlatImage(),coordinates:boundsCorners()});
+        map.addLayer({id:"op-flat-layer",type:"raster",source:"op-flat",paint:{"raster-opacity":0.7}},"op-saved-line");
+        flatBuilt=true;
+      }catch(e){ console.log("flat build failed",e); flatOn=false; el.flat.classList.remove("on"); return; }
+    }
+    if(map.getLayer("op-flat-layer")) map.setLayoutProperty("op-flat-layer","visibility",flatOn?"visible":"none");
+  }
+  // Render the user's previously-saved routes for this resort (read-only). Called
+  // by the native host after fetching from Supabase (see notifyReady).
+  function loadSaved(routes){
+    savedRoutes = routes || [];
+    var feats=[];
+    savedRoutes.forEach(function(rt){
+      var c = rt && rt.geometry && rt.geometry.coordinates;
+      if(!c || c.length<2) return;
+      feats.push({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:c.map(function(p){return [p[0],p[1]];})}});
+    });
+    if(map.getSource("op-saved")) map.getSource("op-saved").setData(fc(feats));
+    if(el.savedChip){
+      if(savedRoutes.length){ el.savedChip.textContent = savedRoutes.length+" saved route"+(savedRoutes.length>1?"s":""); el.savedChip.classList.add("show"); }
+      else el.savedChip.classList.remove("show");
+    }
+  }
+  // Tell the native host the drawing layer is live so it can push saved routes.
+  // Download-for-offline button → ask the native host to cache this resort's
+  // full package (artifacts + DEM tiles). Auto-cache-on-view is handled natively
+  // by the request interceptor; this button pre-fetches the WHOLE package.
+  function requestOfflineCache(){
+    if(!ready) return;
+    var rid = meta.resort_id || "";
+    if(!rid) return;
+    setOfflineState("caching");
+    try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteCache) webkit.messageHandlers.offpisteCache.postMessage(rid); }catch(e){}
+    try{ if(window.AndroidOffpiste&&AndroidOffpiste.onCacheResort) AndroidOffpiste.onCacheResort(rid); }catch(e){}
+  }
+  // Native host reflects offline-cache progress on the button.
+  // Native host pushes current estimated snow depth (Open-Meteo, per elevation band)
+  // from the snow-forecast pipeline; shown on the badge. Locked seam:
+  // { base_cm, mid_cm, top_cm, asof, estimate } (null band = no such elevation).
+  function setDepth(depth){ depthInfo = depth || null; if(ready) renderBadge(); }
+  function setOfflineState(state){
+    if(!el.offline) return;
+    if(state==="caching"){ el.offline.textContent="⬇ Saving…"; el.offline.classList.add("on"); }
+    else if(state==="done"){ el.offline.textContent="✓ Offline"; el.offline.classList.add("on"); }
+    else { el.offline.textContent="⬇ Offline"; el.offline.classList.remove("on"); }
+  }
+  function notifyReady(){
+    var rid = meta.resort_id || "";
+    try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteReady) webkit.messageHandlers.offpisteReady.postMessage(rid); }catch(e){}
+    try{ if(window.AndroidOffpiste&&AndroidOffpiste.onReady) AndroidOffpiste.onReady(rid); }catch(e){}
+  }
+  function init(_map,_meta,_art){
+    map=_map; meta=_meta||{}; art=_art;
+    injectCSS(); injectDOM(); grabEls(); addLayer(); wire(); renderBadge(); loadElev(); refresh(); notifyReady();
+  }
+  return { init:init, loadSaved:loadSaved, loadWaypoints:loadWaypoints, setOfflineState:setOfflineState, setDepth:setDepth,
+    _sim:function(a,b,n){ if(!ready) return "not-ready"; if(!active) toggle(); pts=[];
+      for(var i=0;i<=n;i++){ addAt(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n); } refresh(); return pts.length; },
+    _state:function(){ return {active:active,n:pts.length,ready:ready}; } };
+})();
+</script>
+<script>
+// StancePro real-3D resort preview. MapLibre GL JS renders true 3D terrain
+// (the native mobile SDKs don't yet — spike verdict 2026-07-05); the same
+// Terrarium raster-dem + every per-resort LiDAR artifact drape on top.
+// Injected by the host app:
+const RESORT_ID = "__RESORT_ID__";
+const APP_LANG = "__LANG__";   // e.g. "ko" — unresolved placeholder is harmless
+// Artifact cache version — the host injects the manifest's generated_at so
+// the WebView's HTTP cache (max-age 3600) busts exactly when the 2D raster
+// cache does. Republished artifacts used to show stale (missing safety-layer
+// areas at Kiroro etc.) for up to an hour. Fallback: hourly bucket.
+const RAW_VER = "__CACHE_VER__";
+const VER = encodeURIComponent(
+  RAW_VER && !RAW_VER.startsWith("__") ? RAW_VER : String(Math.floor(Date.now() / 3.6e6)));
+console.log("resort3d boot", RESORT_ID, APP_LANG, VER);
+const BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/terrain_offpiste_v1/" + RESORT_ID + "/";
+const art = f => BASE + f + "?v=" + VER;
+const WM = 20037508.342789244;
+const m2lon = x => x / WM * 180;
+const m2lat = y => (Math.atan(Math.exp(y / WM * Math.PI)) * 2 - Math.PI / 2) * 180 / Math.PI;
+// Forward web-mercator (lon/lat -> 3857) + a bbox helper, so a resort with no
+// LiDAR meta.json can still be framed from its OSM geometry (degraded mode).
+const lon2m = l => l / 180 * WM;
+const lat2m = l => Math.log(Math.tan(Math.PI / 4 + l * Math.PI / 360)) * WM / Math.PI;
+const geoBounds3857 = gj => {
+  let a = 1e9, b = 1e9, c = -1e9, d = -1e9, n = 0;
+  const walk = p => { if (typeof p[0] === "number") { const lo = p[0], la = p[1];
+      if (lo < a) a = lo; if (lo > c) c = lo; if (la < b) b = la; if (la > d) d = la; n++;
+    } else p.forEach(walk); };
+  (gj.features || []).forEach(f => f.geometry && f.geometry.coordinates && walk(f.geometry.coordinates));
+  if (!n) return null;
+  const pl = (c - a) * 0.08 || 0.004, pt = (d - b) * 0.08 || 0.004;   // ~8% frame margin
+  return [lon2m(a - pl), lat2m(b - pt), lon2m(c + pl), lat2m(d + pt)];
+};
+const fail = m => { const e = document.getElementById("err"); e.textContent = m; e.style.display = "block"; };
+// App language → English → raw OSM name (parity with both apps' label pick).
+const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get", "name"]];
+
+(async () => {
+  let meta, degraded = false;
+  try {
+    const r = await fetch(art("meta.json"));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    meta = await r.json();
+  } catch (e) {
+    // No LiDAR off-piste artifacts (≈half the fleet is in countries without a
+    // national-LiDAR adapter — build_offpiste_raster skips them). Degrade to an
+    // honest bare preview: the global Terrarium mesh + the OSM piste/lift lines
+    // (geometry.json exists for every catalog resort), and NO computed
+    // hillshade/slope/cliff — we never fabricate a safety overlay. Bounds come
+    // from the geometry itself since there is no LiDAR bbox.
+    degraded = true;
+    try {
+      const gj = await (await fetch(art("geometry.json"))).json();
+      const bb = geoBounds3857(gj);
+      if (!bb) throw new Error("empty geometry");
+      meta = { resort_id: RESORT_ID, name: "", bounds_3857: bb, res_m: 30,
+               attribution: "Mapzen Terrain (AWS)", dem_source: "Mapzen Terrain (AWS)",
+               safety_native: null, dem_tiles: null };
+    } catch (e2) { return fail("no terrain data: " + e2); }
+  }
+  const [minx, miny, maxx, maxy] = meta.bounds_3857;
+  const w = m2lon(minx), e_ = m2lon(maxx), s = m2lat(miny), n = m2lat(maxy);
+  const corners = [[w, n], [e_, n], [e_, s], [w, s]];   // TL TR BR BL
+
+  // Native-resolution safety layers (3.5 m WebP) when this resort was rebuilt
+  // from its native DEM; else the shipped 5 m PNGs. meta drives the filenames so
+  // batched and un-batched resorts coexist.
+  const _sln = (meta.safety_native && meta.safety_native.layers) || {};
+  const layerFile = (k, def) => _sln[k] || def;
+
+  // Resort summit from the LiDAR elevation artifact (terrain-RGB,
+  // v = (elev+10000)*10, alpha/value 0 outside the boundary+1 km mask so
+  // neighbouring off-resort peaks can never win). Downsampled with
+  // nearest-neighbour — smoothing would blend encoded values into garbage.
+  const detectSummit = async () => {
+    try {
+      const blob = await (await fetch(art("elev_5m.png"))).blob();
+      const bmp = await createImageBitmap(blob);
+      const scale = 240 / Math.max(bmp.width, bmp.height);
+      const W = Math.max(1, Math.round(bmp.width * scale));
+      const H = Math.max(1, Math.round(bmp.height * scale));
+      const cv = document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      const cx = cv.getContext("2d", { willReadFrequently: true });
+      cx.imageSmoothingEnabled = false;
+      cx.drawImage(bmp, 0, 0, W, H);
+      const d = cx.getImageData(0, 0, W, H).data;
+      let best = 0, bi = -1;
+      for (let i = 0; i < W * H; i++) {
+        const p = i * 4;
+        if (d[p + 3] === 0) continue;
+        const v = d[p] * 65536 + d[p + 1] * 256 + d[p + 2];
+        if (v > best) { best = v; bi = i; }
+      }
+      if (bi < 0) return null;
+      const px = bi % W, py = (bi / W) | 0;
+      const mx = minx + (px + 0.5) / W * (maxx - minx);
+      const my = maxy - (py + 0.5) / H * (maxy - miny);   // image y is down
+      return { lon: m2lon(mx), lat: m2lat(my), elev: best / 10 - 10000 };
+    } catch (err) {
+      console.log("summit detect failed", err);
+      return null;
+    }
+  };
+
+  // Neighbouring resorts — dot + name so the rider can orient the 3D scene
+  // against the area they know (host injects the localized catalog slice).
+  let nearby = [];
+  try {
+    const t = (document.getElementById("nearby").textContent || "").trim();
+    if (t && !t.startsWith("__")) nearby = JSON.parse(t);
+  } catch (err) { console.log("nearby parse failed", err); }
+  const nearbyGeo = { type: "FeatureCollection", features: nearby.map(r => ({
+    type: "Feature", properties: { name: r.n, id: r.id },
+    geometry: { type: "Point", coordinates: [r.lo, r.la] } })) };
+
+  // 5 m DEM router (client-side, no tile server): z14–15 tiles inside THIS
+  // resort's LiDAR extent are rewritten to our core tile tree (Terrarium-
+  // encoded, 0.25 m quantised); everything else — lower zooms, off-resort,
+  // the whole horizon — falls through to AWS Terrarium UNCHANGED. So the
+  // backdrop is byte-identical to before (zero regression) while the resort
+  // itself gets the sharp 5 m mesh. Only runs when the resort actually has
+  // core tiles (meta.dem_tiles); otherwise every request stays Terrarium.
+  const CORE_BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/"
+                    + (meta.dem_tiles && meta.dem_tiles.tree ? meta.dem_tiles.tree : "terrain_dem_core_v1") + "/";
+  const hasCore = !!(meta.dem_tiles);
+  // Core regions the z14–15 router rewrites to the 5 m tree: the focused resort
+  // PLUS any neighbour loaded on-demand (all share the one global core tree).
+  // Each region is the resort's REAL-data extent (resort+1 km), NOT the padded
+  // bbox — the ~150 m fetch margin stays Terrarium (no fake fill). The TILE-
+  // CENTRE test mirrors emit_core_tiles exactly, so every routed tile exists.
+  const coreRegions = [];
+  if (meta.dem_tiles && meta.dem_tiles.core_bounds) coreRegions.push(meta.dem_tiles.core_bounds);
+  const coreHasTile = (z, x, y) => {
+    if (z < 14 || z > 15 || !coreRegions.length) return false;
+    const sp = 2 * WM / (2 ** z);
+    const cx = -WM + (x + 0.5) * sp, cy = WM - (y + 0.5) * sp;   // tile centre
+    for (const cb of coreRegions)
+      if (cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]) return true;
+    return false;
+  };
+  const routeDem = (url) => {
+    const m = url.match(/terrarium\/(\d+)\/(\d+)\/(\d+)\.png/);
+    if (m) {
+      const z = +m[1], x = +m[2], y = +m[3];
+      if (coreHasTile(z, x, y)) return { url: CORE_BASE + z + "/" + x + "/" + y + ".png?v=" + VER };
+    }
+    // Drape (hill/slope/extreme) edge ring: tiles whose CENTRE is outside the
+    // resort's extent were never emitted — answer with a transparent 1×1 PNG
+    // instead of letting them 400-retry forever (see drapeExtents note).
+    const d = url.match(/terrain_offpiste_v1\/([^/]+)\/[^?]*?\/(?:hill|slope|extreme)\/(\d+)\/(\d+)\/(\d+)\.webp/);
+    if (d) {
+      const cb = drapeExtents[d[1]];
+      if (cb) {
+        const z = +d[2], x = +d[3], y = +d[4];
+        const sp = 2 * WM / (2 ** z);
+        const cx = -WM + (x + 0.5) * sp, cy = WM - (y + 0.5) * sp;
+        if (!(cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]))
+          return { url: TRANSPARENT_TILE };
+      }
+    }
+    return { url };
+  };
+
+  // Drape (hillshade/slope/cliff) sources + layers for a resort.
+  //  • hillshade → an XYZ RasterTileSource (meta.safety_native.hillshade_tiles):
+  //    MapLibre loads only the visible tiles (LOD → less memory/download) and no
+  //    single texture ever exceeds the GPU limit (fixes the clip on big resorts).
+  //  • slope/cliff → a single image, or PIECES (meta.safety_native.split) for the
+  //    few oversized resorts (opt-in layers, so tiling them isn't worth it).
+  //  • legacy fallback: no hillshade_tiles → single hillshade image.
+  // tag="" = focused resort (bare ids "hill"/"slope"/"extreme"); "__<id>" = a
+  // neighbour. Piece/neighbour ids carry "__" so applyKindVis/applyHillNight
+  // (prefix match) toggle/dim them like the singles.
+  const DRAPE_KINDS = [["hill", "hillshade", "hillshade_5m.png", 0.9, "visible"],
+                       ["slope", "slope", "slope_5m.png", 0.72, "none"],
+                       ["extreme", "extreme", "extreme_5m.png", 0.72, "none"]];
+  // Per-resort drape-tile extents for the request router: the tiles/{hill,slope,
+  // extreme} trees are emitted with a tile-CENTRE-in-bounds test, but MapLibre
+  // requests every tile INTERSECTING the source bounds — the edge ring (centre
+  // outside, extent overlapping) 400s and MapLibre re-requests it on every
+  // move: log spam, battery, and map.loaded() never settles. The router below
+  // answers those ring tiles with a transparent 1×1 PNG instead.
+  const drapeExtents = {};   // rid -> bounds_3857
+  const TRANSPARENT_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
+  function drapeSpec(tag, m, b, baseUrl) {
+    const sln = (m.safety_native && m.safety_native.layers) || {};
+    const tiles = m.safety_native && m.safety_native.tiles;   // {minzoom,maxzoom,tree,bounds}
+    const artFn = f => baseUrl + f + "?v=" + VER;
+    const sources = {}, layers = [];
+    const mkLayer = (id, vis, op) => ({ id, type: "raster", source: id,
+      ...(vis === "none" ? { layout: { visibility: "none" } } : {}), paint: { "raster-opacity": op } });
+    const box = (x0, x1, y0, y1) => { const w = m2lon(x0), e = m2lon(x1), n = m2lat(y1), s = m2lat(y0);
+      return [[w, n], [e, n], [e, s], [w, s]]; };
+    if (tiles) {
+      // The drape tiler emits tiles whose CENTRE lies in the tight real-data
+      // extent (dem_tiles.core_bounds); the padded grid bbox (bounds_3857) is
+      // ~100 m looser and lets edge-ring requests through to 400s.
+      const ext = (m.dem_tiles && m.dem_tiles.core_bounds) || b;
+      const rm = baseUrl.match(/terrain_offpiste_v1\/([^/]+)\//);
+      if (rm && ext) drapeExtents[rm[1]] = ext;
+    }
+    DRAPE_KINDS.forEach(([kind, key, def, op, vis]) => {
+      const id0 = tag ? kind + tag : kind;
+      if (tiles) {   // hillshade + slope + cliff all as XYZ RasterTileSources (LOD, no clip)
+        // bounds cut most off-coverage requests (meta value, else the resort's
+        // own extent); the transformRequest router catches the edge ring.
+        const srcBounds = tiles.bounds || (b ? [m2lon(b[0]), m2lat(b[1]), m2lon(b[2]), m2lat(b[3])] : null);
+        sources[id0] = { type: "raster", tileSize: 256,
+          tiles: [baseUrl + (tiles.tree || "tiles") + "/" + kind + "/{z}/{x}/{y}.webp?v=" + VER],
+          minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, ...(srcBounds ? { bounds: srcBounds } : {}) };
+      } else {       // legacy fallback: single image
+        sources[id0] = { type: "image", url: artFn(sln[key] || def), coordinates: box(b[0], b[2], b[1], b[3]) };
+      }
+      layers.push(mkLayer(id0, vis, op));
+    });
+    return { sources, layers };
+  }
+  // Degraded (no LiDAR): no hillshade/slope/cliff drape at all — the mesh +
+  // OSM lines carry the preview; we deliberately show no computed overlay.
+  const focDrape = degraded ? { sources: {}, layers: [] }
+                            : drapeSpec("", meta, meta.bounds_3857, BASE);
+
+  const map = new maplibregl.Map({
+    container: "map",
+    transformRequest: routeDem,
+    center: [(w + e_) / 2, (s + n) / 2],
+    zoom: 12.6, pitch: 66, bearing: 15,
+    maxPitch: 85, attributionControl: true,   // 85 = MapLibre's hard ceiling for looking up
+    // CJK slope/lift names render from the device font — the glyph server
+    // only has to cover Latin/Cyrillic ranges.
+    localIdeographFontFamily: "sans-serif",
+    style: {
+      version: 8,
+      glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+      sources: {
+        dem: { type: "raster-dem",
+               tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+               tileSize: 256, encoding: "terrarium", maxzoom: 15,
+               attribution: "Mapzen Terrain (AWS) · " + (meta.attribution || "") },
+        // Same keyless vector source the Android 2D basemap uses — here
+        // only for water so sea/river/lake read against the snow palette.
+        ofm: { type: "vector", url: "https://tiles.openfreemap.org/planet",
+               attribution: "© OpenStreetMap contributors · OpenFreeMap" },
+        ...focDrape.sources,   // hillshade/slope/cliff — single image, or pieces if oversized
+        contours:{ type: "geojson", data: art("contours.json") },   // exists for non-LiDAR too (Terrarium-baked, reference-only)
+        geometry:{ type: "geojson", data: { type: "FeatureCollection", features: [] } },
+        nearby:  { type: "geojson", data: nearbyGeo }
+      },
+      layers: [
+        { id: "bg", type: "background", paint: { "background-color": "#EAF0F5" } },
+        { id: "demshade", type: "hillshade", source: "dem",
+          paint: { "hillshade-exaggeration": 0.35, "hillshade-shadow-color": "#3F5168",
+                   "hillshade-highlight-color": "#FFFFFF" } },
+        { id: "water", type: "fill", source: "ofm", "source-layer": "water",
+          paint: { "fill-color": "#3F86B0", "fill-opacity": 0.85 } },
+        { id: "waterway", type: "line", source: "ofm", "source-layer": "waterway",
+          paint: { "line-color": "#3F86B0", "line-opacity": 0.9,
+                   "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1, 15, 3] } },
+        ...focDrape.layers,   // hill visible; slope/cliff opt-in OFF (single image or pieces)
+        { id: "c100", type: "line", source: "contours",
+          filter: ["==", ["get", "cls"], "major"],
+          paint: { "line-color": "#38485C", "line-width": 1.2, "line-opacity": 0.45 } },
+        { id: "c50", type: "line", source: "contours", minzoom: 13,
+          filter: ["==", ["get", "cls"], "mid"],
+          paint: { "line-color": "#38485C", "line-width": 0.9, "line-opacity": 0.35 } },
+        { id: "lifts", type: "line", source: "geometry",
+          filter: ["has", "aerialway"],
+          paint: { "line-color": "#2A2F38", "line-width": 2, "line-dasharray": [1.5, 1.5] } },
+        { id: "pistes", type: "line", source: "geometry",
+          filter: ["any", ["has", "piste:type"], ["has", "piste:difficulty"]],
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": ["match", ["string", ["get", "piste:difficulty"], ""],
+              "novice", "#2BAA52", "easy", "#2870C9", "intermediate", "#D72D27",
+              "advanced", "#1F2530", "expert", "#05070A", "#8A94A0"],
+            "line-width": 2.4, "line-opacity": 0.95 } },
+        { id: "piste-labels", type: "symbol", source: "geometry", minzoom: 12.5,
+          filter: ["all", ["has", "name"],
+                          ["any", ["has", "piste:type"], ["has", "piste:difficulty"]]],
+          // "line" (not line-center): the name repeats along the run every
+          // symbol-spacing px, so wherever you pan/zoom a label stays on screen —
+          // line-center pins a single label to the midpoint, which scrolls off
+          // when zoomed in. Viewport-aligned so each repeat is a billboard that
+          // faces the camera and stays upright instead of lying flat along the
+          // pitched run. MapLibre lifts symbols onto the terrain surface under 3D
+          // terrain, so no explicit elevation is needed.
+          layout: { "symbol-placement": "line", "symbol-spacing": 220,
+                    "text-field": NAME,
+                    "text-font": ["Noto Sans Bold"], "text-size": 11, "text-padding": 4,
+                    "text-rotation-alignment": "viewport", "text-pitch-alignment": "viewport" },
+          paint: { "text-color": "#1F2937", "text-halo-color": "#FFFFFF",
+                   "text-halo-width": 1.5 } },
+        { id: "lift-labels", type: "symbol", source: "geometry", minzoom: 12,
+          filter: ["all", ["has", "name"], ["has", "aerialway"]],
+          // "line" repeats along the lift so a label stays on screen when zoomed
+          // in; viewport-aligned billboards face the camera and stay upright.
+          layout: { "symbol-placement": "line", "symbol-spacing": 240,
+                    "text-field": NAME,
+                    "text-font": ["Noto Sans Regular"], "text-size": 10.5,
+                    "text-offset": [0, -0.9], "text-padding": 4,
+                    "text-rotation-alignment": "viewport", "text-pitch-alignment": "viewport" },
+          paint: { "text-color": "#2A2F38", "text-halo-color": "#FFFFFF",
+                   "text-halo-width": 1.4 } },
+        { id: "nearby-dots", type: "circle", source: "nearby",
+          paint: { "circle-radius": 4, "circle-color": "#FFFFFF",
+                   "circle-stroke-color": "#1F6FA8", "circle-stroke-width": 2 } },
+        { id: "nearby-names", type: "symbol", source: "nearby",
+          layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Bold"],
+                    "text-size": 12, "text-anchor": "top",
+                    "text-offset": [0, 0.6], "text-padding": 4 },
+          paint: { "text-color": "#1F6FA8", "text-halo-color": "#FFFFFF",
+                   "text-halo-width": 1.6 } }
+      ]
+    }
+  });
+  // 2D compass: visualizePitch OFF so the needle stays flat (bearing only) and
+  // readable. visualizePitch:true tilts the compass back with the camera pitch,
+  // making it lie down and hard to read in 3D.
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }));
+  map.on("error", ev => {
+    if (ev && ev.error) console.log("map error", ev.error.message || String(ev.error));
+  });
+
+  // Resort name: preferred placement is a pin hovering over the summit
+  // (markers are terrain-aware, so it rides the 3D surface); the static
+  // top-center chip is only the fallback when detection fails. The name
+  // itself prefers the host-resolved localized pick (app language →
+  // English → native) over meta.json's catalog name.
+  (async () => {
+    const hostRaw = (document.getElementById("hostname").textContent || "").trim();
+    const displayName = (hostRaw && !hostRaw.startsWith("__") ? hostRaw : meta.name) || "";
+    if (!displayName) return;
+    const summit = degraded ? null : await detectSummit();   // no elev_5m in degraded → top-center title chip
+    if (!summit) {
+      const t = document.getElementById("title");
+      t.textContent = displayName;
+      t.style.display = "block";
+      return;
+    }
+    const el = document.createElement("div");
+    el.className = "peak-wrap";
+    const bob = document.createElement("div");
+    bob.className = "peak-bob";
+    const chip = document.createElement("div");
+    chip.className = "peak-chip";
+    chip.textContent = displayName;
+    const pe = document.createElement("span");
+    pe.className = "pe";
+    pe.textContent = Math.round(summit.elev) + " m";
+    chip.appendChild(pe);
+    const tail = document.createElement("div");
+    tail.className = "peak-tail";
+    bob.appendChild(chip);
+    bob.appendChild(tail);
+    const dot = document.createElement("div");
+    dot.className = "peak-dot";
+    el.appendChild(bob);
+    el.appendChild(dot);
+    new maplibregl.Marker({ element: el, anchor: "bottom" })
+      .setLngLat([summit.lon, summit.lat])
+      .addTo(map);
+    console.log("summit pin", summit.lon.toFixed(5), summit.lat.toFixed(5),
+                Math.round(summit.elev) + "m");
+  })();
+
+  // 2D/3D toggle — flattening the terrain helps reading dense trail networks.
+  let terrainOn = true;
+
+  // Terrain uses MapLibre's DEFAULT 128×128 tile mesh. We previously poked the
+  // internal `meshSize`/`_mesh` fields to 256 for a sharper mesh, but that hack
+  // doesn't regenerate MapLibre's tile-edge stitching → visible MESH CRACKS /
+  // seams at tile boundaries (worse than the roundness it fixed). The 5 m core
+  // DEM tiles still make the terrain sharper than the old 30 m source; the mesh
+  // just samples them at 128/tile (≈13.5 m at overview, ≈6.8 m zoomed to z15).
+  const tbtn = document.getElementById("tbtn");
+  tbtn.onclick = () => {
+    terrainOn = !terrainOn;
+    map.setTerrain(terrainOn ? { source: "dem", exaggeration: 1.15 } : null);
+    map.easeTo({ pitch: terrainOn ? 64 : 0, duration: 400 });
+    tbtn.textContent = terrainOn ? "2D" : "3D";
+    map.triggerRepaint();
+  };
+
+  // Zoom badge — the 5 m core DEM is z14–15 only; below that the terrain DEM
+  // comes from Terrarium (30 m). Shows live zoom/pitch + which DEM source feeds
+  // the (default 128) mesh, so the sharpness can be verified against the zoom.
+  const zbadge = document.getElementById("zbadge");
+  const updZBadge = () => {
+    if (!zbadge) return;
+    const z = map.getZoom();
+    // "5m" iff the CAMERA CENTRE is inside any registered core region (focused
+    // OR an on-demand-loaded neighbour) — the old focused-only `hasCore` check
+    // said "5m" over unloaded neighbours and "30m" over loaded ones.
+    const c = map.getCenter();
+    const cx = c.lng / 180 * WM;
+    const cy = Math.log(Math.tan(Math.PI / 4 + c.lat * Math.PI / 360)) / Math.PI * WM;
+    const inCore = coreRegions.some(cb => cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]);
+    zbadge.textContent = "z " + z.toFixed(1) + "  p " + Math.round(map.getPitch())
+      + "°  dem " + (inCore && z >= 13.5 ? "5m" : "30m");
+  };
+  map.on("move", updZBadge);
+  map.on("zoom", updZBadge);
+  updZBadge();
+
+  // Layer chips — both safety overlays default OFF (clean map first, 2D-map
+  // parity): blue 30°+ slope ramp and magenta ≥45° cliff warning are opt-in.
+  // Shared by the focused resort AND on-demand neighbours: a chip toggles ALL
+  // matching layers ("slope" + "slope__<neighbourId>", etc.), and newly-loaded
+  // neighbours adopt the current state (see kindVis in loadNeighbor).
+  const kindVis = { slope: false, extreme: false };
+  function applyKindVis(kind) {
+    const on = kindVis[kind];
+    map.getStyle().layers.forEach(L => {
+      if (L.id === kind || L.id.indexOf(kind + "__") === 0)
+        map.setLayoutProperty(L.id, "visibility", on ? "visible" : "none");
+    });
+  }
+  const bindLayerToggle = (btnID, kind) => {
+    const btn = document.getElementById(btnID);
+    btn.onclick = () => {
+      kindVis[kind] = !kindVis[kind];
+      applyKindVis(kind);
+      btn.className = kindVis[kind] ? "on" : "off";
+    };
+  };
+  bindLayerToggle("bSlope", "slope");
+  bindLayerToggle("bExtreme", "extreme");
+
+  // ===================== Real sky (night stars + day sun) =====================
+  // NASA Deep Star Maps texture (equirectangular, equatorial) on a Three.js
+  // sphere behind the transparent MapLibre canvas, oriented for this resort's
+  // latitude/longitude and the current time; zodiac constellation lines drawn
+  // in the SAME coordinate frame so they always sit on their texture stars.
+  //
+  // Sky placement + camera BOTH derive from the same alt/az transform, so the
+  // sky can't be mirrored or spun relative to the view — no orientation knobs
+  // needed. Only the camera framing vs the terrain may want a nudge:
+  //   PITCH_OFFSET_DEG / FOV_SCALE — align the sky horizon/zoom to the terrain.
+  const PITCH_OFFSET_DEG = 0, FOV_SCALE = 1.0, SKY_R = 500;
+  // DEPTH-OCCLUSION PROBE (verified true on device 2026-07-07): a depth-tested
+  // sphere as a custom 3D layer got occluded by ridges → custom layers share
+  // the terrain depth buffer, so the real sky is built the same way
+  // (initSkyLayer). Flip to true to re-run the bare probe sphere.
+  const PROBE_MODE = false;
+  // TWO SEPARATE LAYERS now: a starless Milky-Way GLOW texture, and crisp
+  // point STARS from a real catalog — so each is controlled independently and
+  // the stars are pin-sharp (not limited by texture resolution).
+  //
+  // Milky-Way tone: the glow texture is dim (max lum ~0.15), so a big gain
+  // lifts the core, then a power-curve mask (MW_POW) drops the faint wings into
+  // darkness while a core boost keeps the bright band — verified render:
+  // gain 6 / pow 1.5 / boost 0.6 / final 2.5. Raise MW_POW to shrink the band.
+  const MW_BLACK = 0.03, MW_GAIN = 4.0, MW_POW = 1.6, MW_BOOST = 0.6, MW_FGAIN = 2.0;
+  // Sky vertical compression (anisotropic projection). The sky is projected with
+  // the SAME matrix/FOV as the terrain, so azimuth (horizontal) magnification
+  // matches the ground exactly and the sky rotation LOCKS to the terrain — no more
+  // stars sliding past the ridge silhouette when you rotate. Only the ALTITUDE is
+  // remapped, non-linearly: alt' = atan(alt·SKY_VC)/SKY_VC — slope 1 at the horizon
+  // (stars just above a ridge keep true 1:1 proportion, the only place the eye can
+  // compare against terrain) and progressively squashed toward the top, so a taller
+  // slice of sky (the Milky-Way band) still fits. Higher SKY_VC = more band fits +
+  // more top squash; SKY_VC→0 = no compression (pure terrain-locked 37°).
+  const SKY_VC = 3.0;
+  const STAR_SIZE = 0.9, STAR_MAG_LIMIT = 6.6;   // point-star sizing knobs
+  const OBS_LAT = (s + n) / 2, OBS_LON = (w + e_) / 2;
+  const MILKYWAY = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/sky/milkyway_4k.jpg";
+  const STARS_URL = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/sky/stars.json";
+
+  // 12 zodiac constellations: id -> [RA hours, Dec deg]; line pairs.
+  const ZODIAC = [
+    ["Aries",{a:[2.119,23.46],b:[1.911,20.81],g:[1.892,19.29]},[["a","b"],["b","g"]]],
+    ["Taurus",{al:[4.599,16.51],be:[5.438,28.61],ga:[4.330,15.63],de:[4.382,17.54],ep:[4.477,19.18],la:[4.011,12.49],ze:[5.627,21.14]},[["la","ep"],["ep","de"],["de","ga"],["ga","al"],["al","ze"],["ze","be"]]],
+    ["Gemini",{a:[7.577,31.89],b:[7.755,28.03],g:[6.629,16.40],mu:[6.383,22.51],ep:[6.732,25.13],ze:[7.068,20.57],de:[7.335,21.98],la:[7.431,16.54]},[["a","ep"],["ep","mu"],["mu","g"],["a","b"],["b","de"],["de","ze"],["ze","la"],["ep","de"]]],
+    ["Cancer",{b:[8.275,9.19],d:[8.745,18.15],g:[8.721,21.47],a:[8.975,11.86],i:[8.778,28.76]},[["a","d"],["d","g"],["d","b"],["g","i"]]],
+    ["Leo",{a:[10.139,11.97],b:[11.818,14.57],g:[10.333,19.84],d:[11.235,20.52],e:[9.764,23.77],z:[10.278,23.42],h:[10.122,16.76],t:[11.237,15.43]},[["a","h"],["h","g"],["g","z"],["z","e"],["g","d"],["d","b"],["b","t"],["t","a"]]],
+    ["Virgo",{a:[13.420,-11.16],b:[11.845,1.76],g:[12.694,-1.45],d:[12.926,3.40],e:[13.036,10.96],z:[13.578,-0.60]},[["e","d"],["d","g"],["g","b"],["g","z"],["z","a"]]],
+    ["Libra",{a:[14.848,-16.04],b:[15.283,-9.38],g:[15.592,-14.79],s:[15.067,-25.28]},[["a","b"],["b","g"],["g","a"],["a","s"]]],
+    ["Scorpius",{b:[16.09,-19.81],d:[16.00,-22.62],pi:[15.98,-26.11],a:[16.49,-26.43],s:[16.35,-25.59],t:[16.60,-28.22],e:[16.84,-34.29],mu:[16.87,-38.05],z:[16.91,-42.36],et:[17.20,-43.24],th:[17.62,-42.99],i:[17.79,-40.13],k:[17.71,-39.03],l:[17.56,-37.10],u:[17.51,-37.30]},[["b","d"],["d","pi"],["d","a"],["a","s"],["s","t"],["t","e"],["e","mu"],["mu","z"],["z","et"],["et","th"],["th","i"],["i","k"],["k","l"],["l","u"]]],
+    ["Sagittarius",{g:[18.10,-30.42],d:[18.35,-29.83],e:[18.40,-34.38],l:[18.47,-25.42],ph:[18.76,-26.99],si:[18.92,-26.30],ze:[19.04,-29.88],ta:[19.11,-27.67]},[["g","d"],["d","e"],["e","ze"],["ze","si"],["si","ph"],["ph","d"],["d","l"],["l","ph"],["si","ta"]]],
+    ["Capricornus",{a:[20.30,-12.51],b:[20.35,-14.78],ps:[20.77,-25.27],om:[20.86,-26.92],z:[21.44,-22.41],g:[21.67,-16.66],d:[21.78,-16.13]},[["a","b"],["b","om"],["om","ps"],["ps","z"],["z","d"],["d","g"],["g","z"],["a","d"]]],
+    ["Aquarius",{b:[21.526,-5.57],a:[22.096,-0.32],g:[22.361,-1.39],z:[22.481,-0.02],h:[22.585,-0.12],la:[22.877,-7.58],d:[22.911,-15.82]},[["b","a"],["a","g"],["g","z"],["z","h"],["a","la"],["la","d"]]],
+    ["Pisces",{a:[2.033,2.76],et:[1.524,15.35],ga:[23.286,3.28],io:[23.666,5.63],om:[23.985,6.86],la:[23.699,1.78]},[["a","io"],["io","om"],["om","la"],["la","ga"],["a","et"]]]
+  ];
+
+  const D2R = Math.PI / 180;
+  const jdUTC = d => d.getTime() / 86400000 + 2440587.5;
+  const gmstDeg = d => (((280.46061837 + 360.98564736629 * (jdUTC(d) - 2451545.0)) % 360) + 360) % 360;
+  function sunEq(d) {                             // low-precision solar RA/Dec (deg)
+    const t = jdUTC(d) - 2451545.0;
+    const g = (357.529 + 0.98560028 * t) * D2R;
+    const q = 280.459 + 0.98564736 * t;
+    const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
+    const e = 23.439 * D2R;
+    return { ra: ((Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)) / D2R) + 360) % 360,
+             dec: Math.asin(Math.sin(e) * Math.sin(L)) / D2R };
+  }
+  function eqToAltAz(raDeg, decDeg, lstDeg) {      // -> {alt,az} deg
+    const ha = ((lstDeg - raDeg) % 360) * D2R, dec = decDeg * D2R, lat = OBS_LAT * D2R;
+    const alt = Math.asin(Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha));
+    const az = Math.atan2(-Math.cos(dec) * Math.sin(ha),
+                          Math.sin(dec) * Math.cos(lat) - Math.cos(dec) * Math.sin(lat) * Math.cos(ha));
+    return { alt: alt / D2R, az: ((az / D2R) + 360) % 360 };
+  }
+  // Horizontal (alt/az) -> world vector. THREE Y-up; north=-Z, east=+X.
+  function altAzVec(alt, az, r) {
+    const a = alt * D2R, z = az * D2R, ca = Math.cos(a);
+    return new THREE.Vector3(Math.sin(z) * ca, Math.sin(a), -Math.cos(z) * ca).multiplyScalar(r || 1);
+  }
+  // Equatorial (RA/Dec) -> WORLD horizontal vector for THIS resort + build time.
+  // The texture-sphere vertices AND the constellation stars are placed with this
+  // SAME transform, and the camera looks along horizontal (alt/az) too — so the
+  // sky physically cannot be mirrored ("outside the dome" / reversed) relative to
+  // the view. Baked once at load (LST drifts only ~15°/hr — fine for a preview).
+  let SKY_LST = 0;
+  function skyVec(raDeg, decDeg, r) {
+    const p = eqToAltAz(raDeg, decDeg, SKY_LST);
+    return altAzVec(p.alt, p.az, r);
+  }
+
+  // Auto day→night threshold: sun must be this far BELOW the horizon before the
+  // sky reads as night (stars + darkened terrain). −6° = civil dusk (sky
+  // genuinely darkening); the old +2° fired at sunset while it was still bright,
+  // so stars showed in the evening/"day". Manual moon (forceNight) overrides.
+  const NIGHT_ALT = -6;
+  let forceNight = false, forceDay = false;   // sky override: cycle auto → night → day
+  const setDbg = t => { const e = document.getElementById("dbg"); if (e) e.textContent = "sky: " + t; };
+  // ENU direction (mercator-aligned: +x East, -y North [mercator y grows
+  // south], +z Up) for a star at RA/Dec, using the baked sidereal time.
+  function skyDir(raDeg, decDeg) {
+    const p = eqToAltAz(raDeg, decDeg, SKY_LST);
+    const a = p.alt * D2R, z = p.az * D2R, ca = Math.cos(a);
+    return [Math.sin(z) * ca, -Math.cos(z) * ca, Math.sin(a)];
+  }
+
+  // Star colour from B-V colour index (ci): blue (hot) → white → yellow →
+  // orange (cool). A rough but pleasing blackbody-ish gradient.
+  const CI_STOPS = [[-0.4, [0.62, 0.72, 1.0]], [0.0, [0.82, 0.88, 1.0]],
+    [0.4, [1.0, 1.0, 1.0]], [0.8, [1.0, 0.94, 0.82]],
+    [1.4, [1.0, 0.82, 0.62]], [2.0, [1.0, 0.72, 0.52]]];
+  function ciColor(ci) {
+    if (ci <= CI_STOPS[0][0]) return CI_STOPS[0][1];
+    for (let i = 0; i < CI_STOPS.length - 1; i++) {
+      if (ci <= CI_STOPS[i + 1][0]) {
+        const f = (ci - CI_STOPS[i][0]) / (CI_STOPS[i + 1][0] - CI_STOPS[i][0]);
+        const a = CI_STOPS[i][1], b = CI_STOPS[i + 1][1];
+        return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+      }
+    }
+    return CI_STOPS[CI_STOPS.length - 1][1];
+  }
+
+  function isNightNow() {
+    const now = new Date(), lst = (gmstDeg(now) + OBS_LON) % 360;
+    const su = sunEq(now), sp = eqToAltAz(su.ra, su.dec, lst);
+    return forceNight || (!forceDay && sp.alt < NIGHT_ALT);
+  }
+
+  // Darken the basemap (sky bg, water, terrain relief) at night so the scene
+  // reads as one coherent night instead of daylit snow under a starfield.
+  function applyHillNight(night) {   // every hillshade drape: focused "hill" + "hill__<neighbour>"
+    map.getStyle().layers.forEach(L => {
+      if (L.id === "hill" || L.id.indexOf("hill__") === 0) {
+        map.setPaintProperty(L.id, "raster-opacity", night ? 0.6 : 0.9);
+        map.setPaintProperty(L.id, "raster-brightness-max", night ? 0.9 : 1.0);
+      }
+    });
+  }
+  let _nightStyle = null;
+  function applyNightStyle() {
+    const night = isNightNow();
+    if (_nightStyle === night) return;
+    _nightStyle = night;
+    const P = (layer, prop, val) => { if (map.getLayer(layer)) map.setPaintProperty(layer, prop, val); };
+    if (night) {
+      P("bg", "background-color", "#1a2636");
+      P("water", "fill-color", "#1c3450");
+      P("waterway", "line-color", "#1c3450");
+      P("demshade", "hillshade-shadow-color", "#243545");
+      P("demshade", "hillshade-highlight-color", "#7089a8");   // brighter moonlit snow
+    } else {
+      P("bg", "background-color", "#EAF0F5");
+      P("water", "fill-color", "#3F86B0");
+      P("waterway", "line-color", "#3F86B0");
+      P("demshade", "hillshade-shadow-color", "#3F5168");
+      P("demshade", "hillshade-highlight-color", "#FFFFFF");
+    }
+    applyHillNight(night);   // dims ALL hillshade drapes (focused + neighbours)
+  }
+
+  // Night sky as a MapLibre custom 3D layer (the probe proved custom layers
+  // share the terrain depth buffer). The star sphere + zodiac are drawn in
+  // MapLibre's OWN GL context with its OWN camera matrix as a TRUE infinite
+  // skybox (vertices are directions at infinity, w=0, so translation drops
+  // out — correct at any position/zoom, no camera lookup), forced to the far
+  // depth plane (gl_Position.xyww) so ridges occlude them.
+  function initSkyLayer() {
+    SKY_LST = (gmstDeg(new Date()) + OBS_LON) % 360;
+    const NLAT = 48, NLON = 96, sdir = [], suv = [], sidx = [];
+    for (let i = 0; i <= NLAT; i++) {
+      const dec = 90 - (i / NLAT) * 180;
+      for (let j = 0; j <= NLON; j++) {
+        const ra = (j / NLON) * 360, d = skyDir(ra, dec);
+        sdir.push(d[0], d[1], d[2]); suv.push(ra / 360, (dec + 90) / 180);
+      }
+    }
+    for (let i = 0; i < NLAT; i++) for (let j = 0; j < NLON; j++) {
+      const a = i * (NLON + 1) + j, b = a + NLON + 1;
+      sidx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const ldir = [], pdir = [];
+    ZODIAC.forEach(([name, stars, lines]) => {
+      const dm = {};
+      for (const id in stars) { const d = skyDir(stars[id][0] * 15, stars[id][1]); dm[id] = d; pdir.push(d[0], d[1], d[2]); }
+      lines.forEach(([x, y]) => { if (dm[x] && dm[y]) ldir.push(dm[x][0], dm[x][1], dm[x][2], dm[y][0], dm[y][1], dm[y][2]); });
+    });
+
+    const layer = {
+      id: "night-sky", type: "custom", renderingMode: "3d",
+      onAdd(m, gl) {
+        // True infinite skybox: vec4(dir, 0.0) is a point at infinity, so the
+        // matrix's translation drops out — sky depends ONLY on camera rotation.
+        // skyRemap: shared altitude compression (anisotropic sky projection).
+        // Azimuth is passed straight through so the sky sweeps with the terrain
+        // when you rotate (horizontal lock); altitude is squashed toward the top
+        // (see SKY_VC). Everything projects with the terrain matrix + xyww so
+        // ridges still occlude the sky at the far plane.
+        const SKY_REMAP =
+          "vec3 skyRemap(vec3 d, float vc){" +
+          " float alt = asin(clamp(d.z, -1.0, 1.0)); float az = atan(d.x, -d.y);" +
+          " float a2 = (vc > 0.001) ? atan(alt * vc) / vc : alt; float ca = cos(a2);" +
+          " return vec3(sin(az) * ca, -cos(az) * ca, sin(a2)); }";
+        const vsTex =
+          "attribute vec3 a_dir; attribute vec2 a_uv; uniform mat4 u_matrix; uniform float u_vc;" +
+          SKY_REMAP +
+          "varying vec2 v_uv; void main(){ v_uv = a_uv; vec4 p = u_matrix * vec4(skyRemap(a_dir, u_vc), 0.0); gl_Position = p.xyww; }";
+        // Milky-Way glow: lift the dim texture, then a power-curve mask drops
+        // the faint wings into darkness while a core boost keeps the bright
+        // band (approach 1+2); warm core / cool outer tint (approach 4).
+        const fsTex =
+          "precision mediump float; uniform sampler2D u_tex; uniform float u_black,u_gain,u_pow,u_boost,u_fgain; varying vec2 v_uv;" +
+          "void main(){ vec3 c = texture2D(u_tex, v_uv).rgb;" +
+          " c = clamp((c-u_black)/(1.0-u_black),0.0,1.0)*u_gain;" +
+          " float lum = dot(c, vec3(0.299,0.587,0.114));" +
+          " float mask = pow(clamp(lum,0.0,1.0), u_pow) + smoothstep(0.4,0.8,lum)*u_boost;" +
+          " c = c * mask * u_fgain;" +
+          " c *= mix(vec3(0.85,0.93,1.12), vec3(1.1,1.0,0.82), smoothstep(0.1,0.5,lum));" +
+          " gl_FragColor = vec4(clamp(c,0.0,1.0),1.0); }";
+        const vsFlat =
+          "attribute vec3 a_dir; uniform mat4 u_matrix; uniform float u_vc, u_size;" +
+          SKY_REMAP +
+          "void main(){ vec4 p = u_matrix * vec4(skyRemap(a_dir, u_vc), 0.0); gl_Position = p.xyww; gl_PointSize = u_size; }";
+        const fsFlat =
+          "precision mediump float; uniform vec4 u_color; uniform float u_round;" +
+          "void main(){ if (u_round > 0.5) { vec2 q = gl_PointCoord - 0.5; if (dot(q,q) > 0.25) discard; } gl_FragColor = u_color; }";
+        // Catalogue stars: per-vertex size (by magnitude) + colour (by B-V),
+        // round soft points, additive so they glow and never look flat.
+        const vsStar =
+          "attribute vec3 a_dir; attribute float a_size; attribute vec3 a_col; uniform mat4 u_matrix; uniform float u_vc, u_ps;" +
+          SKY_REMAP +
+          "varying vec3 v_col; void main(){ vec4 p = u_matrix * vec4(skyRemap(a_dir, u_vc), 0.0); gl_Position = p.xyww; gl_PointSize = a_size * u_ps; v_col = a_col; }";
+        const fsStar =
+          "precision mediump float; varying vec3 v_col; void main(){ vec2 q = gl_PointCoord - 0.5; float d = dot(q,q); if (d > 0.25) discard; float a = smoothstep(0.25, 0.0, d); gl_FragColor = vec4(v_col * a, a); }";
+        // Day sky: a gradient dome (deep-blue zenith → pale horizon, warm near
+        // the sun) coloured per fragment by altitude (a_dir.z = sin(alt)) and the
+        // angle to the sun. u_day dims/warms it through twilight. Same infinite-
+        // skybox vertices as the night sphere, so ridges occlude it identically.
+        const vsDay =
+          "attribute vec3 a_dir; uniform mat4 u_matrix; uniform float u_vc;" +
+          SKY_REMAP +
+          "varying vec3 v_dir; void main(){ v_dir = a_dir; vec4 p = u_matrix * vec4(skyRemap(a_dir, u_vc), 0.0); gl_Position = p.xyww; }";
+        const fsDay =
+          "precision mediump float; uniform vec3 u_sun; uniform float u_day; varying vec3 v_dir;" +
+          "void main(){ vec3 d = normalize(v_dir); float up = clamp(d.z, 0.0, 1.0);" +
+          " vec3 zen = mix(vec3(0.10,0.16,0.34), vec3(0.24,0.49,0.84), u_day);" +
+          " vec3 hor = mix(vec3(0.42,0.36,0.40), vec3(0.80,0.88,0.96), u_day);" +
+          " vec3 sky = mix(hor, zen, pow(up, 0.5)); float c = max(dot(d, u_sun), 0.0);" +
+          " sky += vec3(1.0,0.85,0.60) * pow(c, 8.0) * (0.30 + (1.0 - u_day) * 0.55);" +
+          " sky = mix(sky, vec3(1.0,0.96,0.86), pow(c, 200.0) * 0.85);" +
+          " gl_FragColor = vec4(clamp(sky, 0.0, 1.0), 1.0); }";
+        const cs = (t, s) => { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.log("sky shader", gl.getShaderInfoLog(sh)); return sh; };
+        const prog = (v, f) => { const p = gl.createProgram(); gl.attachShader(p, cs(gl.VERTEX_SHADER, v)); gl.attachShader(p, cs(gl.FRAGMENT_SHADER, f)); gl.linkProgram(p); return p; };
+        this.pTex = prog(vsTex, fsTex); this.pFlat = prog(vsFlat, fsFlat); this.pStar = prog(vsStar, fsStar);
+        this.pDay = prog(vsDay, fsDay);
+        const buf = (arr, tp) => { const b = gl.createBuffer(); gl.bindBuffer(tp || gl.ARRAY_BUFFER, b); gl.bufferData(tp || gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW); return b; };
+        this.sDir = buf(new Float32Array(sdir)); this.sUv = buf(new Float32Array(suv));
+        this.sIdx = buf(new Uint16Array(sidx), gl.ELEMENT_ARRAY_BUFFER); this.sCount = sidx.length;
+        this.lDir = buf(new Float32Array(ldir)); this.lCount = ldir.length / 3;
+        this.pPts = buf(new Float32Array(pdir)); this.pCount = pdir.length / 3;
+        this.tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([8, 10, 18, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const img = new Image(); img.crossOrigin = "anonymous";
+        img.onload = () => { gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); this._texReady = true; map.triggerRepaint(); };
+        img.onerror = () => { this._texErr = true; setDbg("TEXTURE LOAD FAILED (CORS?)"); };
+        img.src = MILKYWAY;
+        this.T = { m: gl.getUniformLocation(this.pTex, "u_matrix"), sc: gl.getUniformLocation(this.pTex, "u_vc"), tx: gl.getUniformLocation(this.pTex, "u_tex"), bk: gl.getUniformLocation(this.pTex, "u_black"), gn: gl.getUniformLocation(this.pTex, "u_gain"), pw: gl.getUniformLocation(this.pTex, "u_pow"), bo: gl.getUniformLocation(this.pTex, "u_boost"), fg: gl.getUniformLocation(this.pTex, "u_fgain"), dir: gl.getAttribLocation(this.pTex, "a_dir"), uv: gl.getAttribLocation(this.pTex, "a_uv") };
+        this.F = { m: gl.getUniformLocation(this.pFlat, "u_matrix"), sc: gl.getUniformLocation(this.pFlat, "u_vc"), col: gl.getUniformLocation(this.pFlat, "u_color"), sz: gl.getUniformLocation(this.pFlat, "u_size"), rd: gl.getUniformLocation(this.pFlat, "u_round"), dir: gl.getAttribLocation(this.pFlat, "a_dir") };
+        this.S = { m: gl.getUniformLocation(this.pStar, "u_matrix"), sc: gl.getUniformLocation(this.pStar, "u_vc"), ps: gl.getUniformLocation(this.pStar, "u_ps"), dir: gl.getAttribLocation(this.pStar, "a_dir"), size: gl.getAttribLocation(this.pStar, "a_size"), col: gl.getAttribLocation(this.pStar, "a_col") };
+        this.D = { m: gl.getUniformLocation(this.pDay, "u_matrix"), sc: gl.getUniformLocation(this.pDay, "u_vc"), sun: gl.getUniformLocation(this.pDay, "u_sun"), day: gl.getUniformLocation(this.pDay, "u_day"), dir: gl.getAttribLocation(this.pDay, "a_dir") };
+        // Fetch the star catalogue and build an interleaved point buffer
+        // [dir.xyz, size, col.rgb] (stride 7 floats). Size/brightness by
+        // magnitude, colour by B-V index. Crisp points, independent of texture.
+        fetch(STARS_URL).then(r => r.json()).then(cat => {
+          const arr = [];
+          (cat.stars || []).forEach(st => {
+            const d = skyDir(st[0], st[1]);
+            const mag = st[2], ci = st[3] || 0;
+            const size = Math.max(1.0, (STAR_MAG_LIMIT - mag) * STAR_SIZE + 1.0);
+            const inten = Math.max(0.25, Math.min(1, (STAR_MAG_LIMIT + 0.3 - mag) / (STAR_MAG_LIMIT + 2)));
+            const col = ciColor(ci);
+            arr.push(d[0], d[1], d[2], size, col[0] * inten, col[1] * inten, col[2] * inten);
+          });
+          this.starVbo = buf(new Float32Array(arr));
+          this.starCount = (cat.stars || []).length;
+          this._starsReady = true;
+          map.triggerRepaint();
+        }).catch(e => setDbg("stars load failed"));
+      },
+      render(gl, matrix) {
+        const mat = (matrix && matrix.length) ? matrix
+          : (matrix && ((matrix.defaultProjectionData && matrix.defaultProjectionData.mainMatrix) || matrix.mainMatrix || matrix.modelViewProjectionMatrix)) || matrix;
+        const now = new Date(), lst = (gmstDeg(now) + OBS_LON) % 360;
+        const su = sunEq(now), sp = eqToAltAz(su.ra, su.dec, lst);
+        const sunAlt = forceNight ? -18 : forceDay ? 25 : sp.alt;
+        this._f = (this._f || 0) + 1;
+        setDbg("night=" + (sunAlt < NIGHT_ALT ? "Y" : "N") + " mw=" +
+          (this._texReady ? "Y" : (this._texErr ? "ERR" : "…")) +
+          " stars=" + (this._starsReady ? this.starCount : "…") +
+          " sun=" + sunAlt.toFixed(0) + "° f=" + this._f + (mat && mat.length ? "" : " MAT!"));
+        if (!terrainOn) return;                           // 2D (terrain off) → no sky layer
+        // Sky shares the terrain's matrix/FOV (azimuth locked to the ground); only
+        // altitude is compressed in the shader via SKY_VC (see the SKY_VC comment).
+        if (sunAlt >= NIGHT_ALT) {
+          // ---------- DAYTIME: gradient sky dome + astronomically placed sun ----------
+          // Same infinite skybox as the stars (dir at w=0, forced to the far
+          // plane) so terrain occludes the horizon. The dome fills the sky above
+          // the ridgeline; the sun disc is a round point at the real solar alt/az.
+          gl.disable(gl.CULL_FACE);
+          gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false); gl.disable(gl.BLEND);
+          const dayF = Math.max(0, Math.min(1, (sunAlt + 6) / 12));   // twilight dim/warm 0..1
+          const sd = skyDir(su.ra, su.dec);                            // sun direction, same frame
+          gl.useProgram(this.pDay);
+          gl.uniformMatrix4fv(this.D.m, false, mat); gl.uniform1f(this.D.sc, SKY_VC);
+          gl.uniform3f(this.D.sun, sd[0], sd[1], sd[2]); gl.uniform1f(this.D.day, dayF);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.sDir); gl.enableVertexAttribArray(this.D.dir); gl.vertexAttribPointer(this.D.dir, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.sIdx); gl.drawElements(gl.TRIANGLES, this.sCount, gl.UNSIGNED_SHORT, 0);
+          if (sp.alt > -0.5) {   // sun disc only when it's above the horizon
+            gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.useProgram(this.pFlat);
+            gl.uniformMatrix4fv(this.F.m, false, mat); gl.uniform1f(this.F.sc, SKY_VC);
+            gl.uniform1f(this.F.rd, 1.0); gl.uniform1f(this.F.sz, Math.min(24 * (window.devicePixelRatio || 1), 56));
+            gl.uniform4f(this.F.col, 1.0, 0.95, 0.82, 1.0);
+            gl.disableVertexAttribArray(this.F.dir); gl.vertexAttrib3f(this.F.dir, sd[0], sd[1], sd[2]);
+            gl.drawArrays(gl.POINTS, 0, 1);
+            gl.disable(gl.BLEND);
+          }
+          return;
+        }
+        gl.disable(gl.CULL_FACE);
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false); gl.disable(gl.BLEND);
+        // Star sphere: NASA texture once loaded, else a solid fill so we can
+        // still see the sphere draws (isolates texture issues from geometry).
+        if (this._texReady) {
+          gl.useProgram(this.pTex);
+          gl.uniformMatrix4fv(this.T.m, false, mat); gl.uniform1f(this.T.sc, SKY_VC);
+          gl.uniform1f(this.T.bk, MW_BLACK); gl.uniform1f(this.T.gn, MW_GAIN); gl.uniform1f(this.T.pw, MW_POW); gl.uniform1f(this.T.bo, MW_BOOST); gl.uniform1f(this.T.fg, MW_FGAIN);
+          gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.uniform1i(this.T.tx, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.sDir); gl.enableVertexAttribArray(this.T.dir); gl.vertexAttribPointer(this.T.dir, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.sUv); gl.enableVertexAttribArray(this.T.uv); gl.vertexAttribPointer(this.T.uv, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.sIdx); gl.drawElements(gl.TRIANGLES, this.sCount, gl.UNSIGNED_SHORT, 0);
+        } else {
+          gl.useProgram(this.pFlat);
+          gl.uniformMatrix4fv(this.F.m, false, mat); gl.uniform1f(this.F.sc, SKY_VC);
+          gl.uniform1f(this.F.rd, 0.0); gl.uniform1f(this.F.sz, 1.0); gl.uniform4f(this.F.col, 0.04, 0.06, 0.12, 1.0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.sDir); gl.enableVertexAttribArray(this.F.dir); gl.vertexAttribPointer(this.F.dir, 3, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.sIdx); gl.drawElements(gl.TRIANGLES, this.sCount, gl.UNSIGNED_SHORT, 0);
+        }
+        // Catalogue stars — crisp round points, additive so they glow. Drawn
+        // over the Milky-Way glow; the terrain still occludes them (z far).
+        if (this._starsReady) {
+          gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+          gl.useProgram(this.pStar);
+          gl.uniformMatrix4fv(this.S.m, false, mat); gl.uniform1f(this.S.sc, SKY_VC);
+          gl.uniform1f(this.S.ps, window.devicePixelRatio || 1);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.starVbo);
+          gl.enableVertexAttribArray(this.S.dir); gl.vertexAttribPointer(this.S.dir, 3, gl.FLOAT, false, 28, 0);
+          gl.enableVertexAttribArray(this.S.size); gl.vertexAttribPointer(this.S.size, 1, gl.FLOAT, false, 28, 12);
+          gl.enableVertexAttribArray(this.S.col); gl.vertexAttribPointer(this.S.col, 3, gl.FLOAT, false, 28, 16);
+          gl.drawArrays(gl.POINTS, 0, this.starCount);
+        }
+        // Zodiac constellation lines (alpha-blended, over the stars).
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.useProgram(this.pFlat);
+        gl.uniformMatrix4fv(this.F.m, false, mat); gl.uniform1f(this.F.sc, SKY_VC);
+        gl.uniform1f(this.F.rd, 0.0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.lDir); gl.enableVertexAttribArray(this.F.dir); gl.vertexAttribPointer(this.F.dir, 3, gl.FLOAT, false, 0, 0);
+        gl.uniform4f(this.F.col, 0.45, 0.58, 0.85, 0.5); gl.uniform1f(this.F.sz, 1.0); gl.drawArrays(gl.LINES, 0, this.lCount);
+        gl.disable(gl.BLEND);
+      }
+    };
+    map.addLayer(layer); map.triggerRepaint();
+  }
+
+  function buildStarSphere(tex) {
+    const NLAT = 48, NLON = 96, pos = [], uv = [], idx = [];
+    for (let i = 0; i <= NLAT; i++) {
+      const dec = 90 - (i / NLAT) * 180;
+      for (let j = 0; j <= NLON; j++) {
+        const ra = (j / NLON) * 360, v = skyVec(ra, dec, SKY_R);
+        pos.push(v.x, v.y, v.z); uv.push(ra / 360, (dec + 90) / 180);
+      }
+    }
+    for (let i = 0; i < NLAT; i++) for (let j = 0; j < NLON; j++) {
+      const a = i * (NLON + 1) + j, b = a + NLON + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    // Black-point + gain + gamma so the background reads as night sky, not
+    // washed grey. MeshBasicMaterial can only multiply, so use a tiny shader.
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { map: { value: tex }, uBlack: { value: SKY_BLACK },
+                  uGain: { value: SKY_GAIN }, uGamma: { value: SKY_GAMMA } },
+      side: THREE.DoubleSide, depthWrite: false,
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform sampler2D map; uniform float uBlack, uGain, uGamma; varying vec2 vUv;" +
+        "void main(){ vec3 c = texture2D(map, vUv).rgb; c = clamp((c - uBlack) / (1.0 - uBlack), 0.0, 1.0) * uGain;" +
+        " c = pow(clamp(c, 0.0, 1.0), vec3(1.0 / uGamma)); gl_FragColor = vec4(c, 1.0); }"
+    });
+    return new THREE.Mesh(g, mat);
+  }
+
+  function makeLabel(text) {
+    const c = document.createElement("canvas"), pad = 8;
+    const ctx = c.getContext("2d");
+    ctx.font = "600 30px -apple-system,Roboto,sans-serif";
+    c.width = Math.ceil(ctx.measureText(text).width) + pad * 2; c.height = 44;
+    ctx.font = "600 30px -apple-system,Roboto,sans-serif";   // reset after resize
+    ctx.fillStyle = "rgba(150,180,225,0.9)"; ctx.textBaseline = "middle";
+    ctx.fillText(text, pad, c.height / 2);
+    const tex = new THREE.CanvasTexture(c);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    sp.scale.set(c.width / c.height * 26, 26, 1);
+    return sp;
+  }
+
+  function buildConstellations() {
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x5a78b0, transparent: true, opacity: 0.7, depthTest: false });
+    const dotGeom = [], segs = [];
+    ZODIAC.forEach(([name, stars, lines]) => {
+      const pos = {};
+      for (const id in stars) {
+        const p = skyVec(stars[id][0] * 15, stars[id][1], SKY_R * 0.995);
+        pos[id] = p; dotGeom.push(p.x, p.y, p.z);
+      }
+      lines.forEach(([x, y]) => { if (pos[x] && pos[y]) segs.push(pos[x].x, pos[x].y, pos[x].z, pos[y].x, pos[y].y, pos[y].z); });
+      const ids = Object.keys(pos);
+      const cx = ids.reduce((a, id) => a + pos[id].x, 0) / ids.length;
+      const cy = ids.reduce((a, id) => a + pos[id].y, 0) / ids.length;
+      const cz = ids.reduce((a, id) => a + pos[id].z, 0) / ids.length;
+      const lbl = makeLabel(name);
+      lbl.position.set(cx, cy, cz).multiplyScalar(SKY_R * 0.9 / Math.hypot(cx, cy, cz));
+      skyGroup.add(lbl);
+    });
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute("position", new THREE.Float32BufferAttribute(segs, 3));
+    skyGroup.add(new THREE.LineSegments(lg, lineMat));
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute("position", new THREE.Float32BufferAttribute(dotGeom, 3));
+    skyGroup.add(new THREE.Points(dg, new THREE.PointsMaterial({ color: 0xffffff, size: 3.4, sizeAttenuation: false, depthTest: false })));
+  }
+
+  function makeSun() {
+    const c = document.createElement("canvas"); c.width = c.height = 128;
+    const ctx = c.getContext("2d");
+    const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+    g.addColorStop(0, "rgba(255,250,225,1)"); g.addColorStop(0.18, "rgba(255,240,190,0.95)");
+    g.addColorStop(0.5, "rgba(255,220,150,0.35)"); g.addColorStop(1, "rgba(255,220,150,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
+    sp.scale.set(90, 90, 1); sp.visible = false;
+    return sp;
+  }
+
+  function skyBg(sunAlt) {                         // background colour by sun altitude
+    const day = new THREE.Color(0x7fb4e6), night = new THREE.Color(0x05070f);
+    const t = Math.max(0, Math.min(1, (sunAlt + 6) / 12));   // -6..+6 twilight ramp
+    return night.clone().lerp(day, t);
+  }
+
+  function syncCam() {
+    const b = map.getBearing(), p = map.getPitch();
+    const el = (p - 90) + PITCH_OFFSET_DEG;        // view-centre altitude
+    cam.position.set(0, 0, 0); cam.up.set(0, 1, 0);
+    cam.lookAt(altAzVec(el, b, 1));
+    let fov = 37;
+    if (map.transform && map.transform.fov) fov = map.transform.fov / D2R;
+    cam.fov = fov * FOV_SCALE; cam.updateProjectionMatrix();
+    renderer.render(scene, cam);
+  }
+
+  function applyMode() {
+    if (PROBE_MODE) return;   // probe run — leave the map untouched
+    const now = new Date();
+    const lst = (gmstDeg(now) + OBS_LON) % 360;
+    const su = sunEq(now), sp = eqToAltAz(su.ra, su.dec, lst);
+    const sunAlt = forceNight ? -18 : sp.alt;
+    const showStars = sunAlt < 4;                  // stars during night + late twilight
+    skyGroup.visible = showStars;
+    scene.background = skyBg(sunAlt);
+    if (sunSprite) {
+      sunSprite.visible = !forceNight && sp.alt > -3;
+      if (sunSprite.visible) sunSprite.position.copy(altAzVec(sp.alt, sp.az, SKY_R * 0.94));
+    }
+    // Reveal the sky canvas only in 3D (terrain hides the ground half).
+    const reveal = terrainOn;
+    if (map.getLayer && map.getLayer("bg")) map.setPaintProperty("bg", "background-opacity", reveal ? 0 : 1);
+    skyCanvas.style.opacity = reveal ? 1 : 0;
+    syncCam();
+  }
+
+  function initSky() {
+    SKY_LST = (gmstDeg(new Date()) + OBS_LON) % 360;   // bake sky for load time
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin("anonymous");
+    sunSprite = makeSun(); scene.add(sunSprite);
+    buildConstellations();
+    loader.load(STARMAP, tex => {
+      if (tex.colorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+      starMesh = buildStarSphere(tex);
+      skyGroup.add(starMesh);
+      applyMode();
+    }, undefined, err => { console.log("starmap load failed", err); applyMode(); });
+    map.on("render", syncCam);
+    window.addEventListener("resize", () => {
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      cam.aspect = window.innerWidth / window.innerHeight; cam.updateProjectionMatrix();
+      syncCam();
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  }
+
+  // ---- Depth-occlusion probe (MapLibre custom 3D layer) -------------------
+  function unitSphere(nlat, nlon) {
+    const off = [], idx = [];
+    for (let i = 0; i <= nlat; i++) {
+      const th = i / nlat * Math.PI;
+      for (let j = 0; j <= nlon; j++) {
+        const ph = j / nlon * 2 * Math.PI;
+        off.push(Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph), Math.cos(th));
+      }
+    }
+    for (let i = 0; i < nlat; i++) for (let j = 0; j < nlon; j++) {
+      const a = i * (nlon + 1) + j, b = a + nlon + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    return { off, idx };
+  }
+
+  function initProbe() {
+    const lon = OBS_LON, lat = OBS_LAT, RADIUS_M = 400;
+    const sph = unitSphere(24, 48);
+    const layer = {
+      id: "depth-probe", type: "custom", renderingMode: "3d",
+      onAdd(m, gl) {
+        const vs = "attribute vec3 a_off; uniform mat4 u_matrix; uniform vec3 u_center; uniform float u_r;" +
+          "varying vec3 v_n; void main(){ v_n = a_off; gl_Position = u_matrix * vec4(u_center + a_off * u_r, 1.0); }";
+        const fs = "precision mediump float; varying vec3 v_n;" +
+          "void main(){ float d = max(0.25, dot(normalize(v_n), normalize(vec3(0.4,0.5,0.75))));" +
+          " gl_FragColor = vec4(vec3(1.0,0.55,0.15) * d, 1.0); }";
+        const cs = (t, s) => { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh);
+          if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.log("probe shader err", gl.getShaderInfoLog(sh)); return sh; };
+        this.prog = gl.createProgram();
+        gl.attachShader(this.prog, cs(gl.VERTEX_SHADER, vs));
+        gl.attachShader(this.prog, cs(gl.FRAGMENT_SHADER, fs));
+        gl.linkProgram(this.prog);
+        this.aOff = gl.getAttribLocation(this.prog, "a_off");
+        this.uMatrix = gl.getUniformLocation(this.prog, "u_matrix");
+        this.uCenter = gl.getUniformLocation(this.prog, "u_center");
+        this.uR = gl.getUniformLocation(this.prog, "u_r");
+        this.vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sph.off), gl.STATIC_DRAW);
+        this.ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sph.idx), gl.STATIC_DRAW);
+        this.count = sph.idx.length; this._logged = false;
+      },
+      render(gl, matrix) {
+        // The 2nd arg is a 16-float matrix in older MapLibre and an options
+        // object in v4+. Handle both, and log the shape once so we KNOW.
+        const mat = (matrix && matrix.length) ? matrix
+          : (matrix && (
+              (matrix.defaultProjectionData && matrix.defaultProjectionData.mainMatrix) ||
+              matrix.mainMatrix || matrix.modelViewProjectionMatrix || matrix.projMatrix))
+          || matrix;
+        if (!this._logged) {
+          console.log("probe render — arg:",
+            matrix && matrix.length ? "float[" + matrix.length + "]"
+              : "object keys=" + (matrix ? Object.keys(matrix).join(",") : "null"),
+            "| mat len=", mat && mat.length);
+          this._logged = true;
+        }
+        let elev = 0;
+        try { const e = map.queryTerrainElevation([lon, lat]); if (e != null) elev = e; } catch (x) {}
+        if (!elev) elev = 900;
+        const mc = maplibregl.MercatorCoordinate.fromLngLat([lon, lat], elev);
+        const scale = mc.meterInMercatorCoordinateUnits();
+        gl.useProgram(this.prog);
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+        gl.enableVertexAttribArray(this.aOff);
+        gl.vertexAttribPointer(this.aOff, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+        gl.uniformMatrix4fv(this.uMatrix, false, mat);
+        gl.uniform3f(this.uCenter, mc.x, mc.y, mc.z);
+        gl.uniform1f(this.uR, RADIUS_M * scale);
+        gl.drawElements(gl.TRIANGLES, this.count, gl.UNSIGNED_SHORT, 0);
+      }
+    };
+    map.addLayer(layer);
+    map.triggerRepaint();
+    console.log("depth probe added at", lon.toFixed(4), lat.toFixed(4), "r=" + RADIUS_M + "m");
+  }
+
+  // Night-sky chip: force the star sky on regardless of the actual sun time so
+  // the rider can preview the constellations any time of day.
+  // Widen the camera field of view in night mode so a whole swath of sky is
+  // visible at once — a 37° view sits INSIDE the Milky Way with no edges; ~55°
+  // shows the band flanked by darker sky. MapLibre clamps fov to ≤60°.
+  let _dayFov = null;
+  function setFov(deg) {
+    try {
+      const t = map.transform;
+      if (!t) return;
+      if (_dayFov === null && typeof t.fov === "number") _dayFov = t.fov;
+      try { t.fov = deg; } catch (e) {}                   // public setter (often read-only)
+      if (typeof t._fov === "number") t._fov = deg * Math.PI / 180;   // poke the private field
+      map.resize();                                       // forces matrices to recompute from _fov
+      map.triggerRepaint();
+    } catch (e) {}
+  }
+
+  document.getElementById("skybtn").onclick = function () {
+    // Cycle auto → night → day → auto. Auto follows the real sun (which can be
+    // night at the resort even when it's daytime where you are — e.g. testing a
+    // US resort from Asia), so an explicit day/night override is needed to
+    // preview each look on demand.
+    if (!forceNight && !forceDay) { forceNight = true; forceDay = false; }
+    else if (forceNight) { forceNight = false; forceDay = true; }
+    else { forceNight = false; forceDay = false; }
+    this.className = forceNight ? "on" : (forceDay ? "day" : "off");
+    this.textContent = forceNight ? "☾" : (forceDay ? "☀" : "◐");
+    this.setAttribute("aria-label", forceNight ? "Night" : (forceDay ? "Day" : "Auto day/night"));
+    applyNightStyle();       // instant: paint-property tint (bg/water/terrain)
+    // Tilt UP toward the sky at night so it feels like standing on the summit
+    // under a big sky. Snappy (250 ms) so the day/night flip feels immediate.
+    // NO setFov() here: the FOV poke was a no-op on device (read-only) that still
+    // forced a full map.resize() → tile re-layout hitch, which was the main cause
+    // of the slow transition. The anisotropic sky already locks to the terrain
+    // FOV, so widening the map FOV at night is no longer needed.
+    if (terrainOn) map.easeTo({ pitch: forceNight ? 82 : 64, duration: 250 });
+    map.triggerRepaint();
+  };
+
+  map.on("load", () => {
+    // Fit BEFORE enabling terrain: an instant fitBounds while terrain is
+    // active can drop the camera below the surface → blank screen.
+    map.fitBounds([[w, s], [e_, n]], { padding: 40, duration: 0 });
+    map.setPitch(64); map.setBearing(15);
+    map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
+    // Off-piste route drawing overlay — never let a feature fault break the map.
+    try { OffpisteDraw.init(map, meta, art); } catch (e) { console.log("op init failed", e); }
+    // Clip piste/lift geometry to this resort's terrain extent [w..e_, s..n].
+    // geometry.json over-includes the whole valley; lines beyond the loaded z15
+    // terrain drape at elevation 0 → stretched lines (esp. iOS WKWebView, which
+    // loads fewer far tiles). Drop features with no vertex inside the extent —
+    // neighbouring resorts arrive via the on-demand nbgeo loader instead.
+    (async () => {
+      try {
+        const gj = await (await fetch(art("geometry.json"))).json();
+        const inExtent = (a) => {
+          if (!a) return false;
+          if (typeof a[0] === "number") return a[0] >= w && a[0] <= e_ && a[1] >= s && a[1] <= n;
+          for (let i = 0; i < a.length; i++) if (inExtent(a[i])) return true;
+          return false;
+        };
+        const feats = (gj.features || []).filter((f) => inExtent(f.geometry && f.geometry.coordinates));
+        if (map.getSource("geometry")) {
+          map.getSource("geometry").setData({ type: "FeatureCollection", features: feats });
+        }
+      } catch (e) { console.log("geometry clip failed", e); }
+    })();
+    map.once("idle", () => console.log("rendered: first idle frame"));
+    if (PROBE_MODE) { initProbe(); } else { initSkyLayer(); applyNightStyle(); }
+
+    // ---------- Neighbouring resorts: full data on-demand as they pan into view ----------
+    // The focused resort is loaded inline (above). Each neighbour (id + centroid
+    // from the host) is fetched LAZILY the first time its centre enters the
+    // viewport: runs/lifts/names into a shared geometry source, hillshade/slope/
+    // cliff draped over its bbox (adopting the current chip + night state), and
+    // its 5 m core_bounds registered with the DEM router. Capped so an
+    // interconnected valley loads what you actually look at, not all 30 at once.
+    const NB_BASE = id => "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/terrain_offpiste_v1/" + id + "/";
+    const NB_MAX = 10;
+    const nbLoaded = {};
+    let nbCount = 0;
+    const nbGeoData = { type: "FeatureCollection", features: [] };
+    const nbContourData = { type: "FeatureCollection", features: [] };
+    function nbInitGeo() {
+      if (map.getSource("nbgeo")) return;
+      map.addSource("nbgeo", { type: "geojson", data: nbGeoData });
+      map.addLayer({ id: "nb-lifts", type: "line", source: "nbgeo", filter: ["has", "aerialway"],
+        paint: { "line-color": "#2A2F38", "line-width": 2, "line-dasharray": [1.5, 1.5] } }, "nearby-dots");
+      map.addLayer({ id: "nb-pistes", type: "line", source: "nbgeo",
+        filter: ["any", ["has", "piste:type"], ["has", "piste:difficulty"]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": ["match", ["string", ["get", "piste:difficulty"], ""],
+          "novice", "#2BAA52", "easy", "#2870C9", "intermediate", "#D72D27",
+          "advanced", "#1F2530", "expert", "#05070A", "#8A94A0"],
+          "line-width": 2.4, "line-opacity": 0.95 } }, "nearby-dots");
+      map.addLayer({ id: "nb-piste-labels", type: "symbol", source: "nbgeo", minzoom: 12.5,
+        filter: ["all", ["has", "name"], ["any", ["has", "piste:type"], ["has", "piste:difficulty"]]],
+        layout: { "symbol-placement": "line", "symbol-spacing": 220, "text-field": NAME,
+          "text-font": ["Noto Sans Bold"], "text-size": 11, "text-padding": 4,
+          "text-rotation-alignment": "viewport", "text-pitch-alignment": "viewport" },
+        paint: { "text-color": "#1F2937", "text-halo-color": "#FFFFFF", "text-halo-width": 1.5 } }, "nearby-dots");
+      map.addLayer({ id: "nb-lift-labels", type: "symbol", source: "nbgeo", minzoom: 12,
+        filter: ["all", ["has", "name"], ["has", "aerialway"]],
+        layout: { "symbol-placement": "line", "symbol-spacing": 240, "text-field": NAME,
+          "text-font": ["Noto Sans Regular"], "text-size": 10.5, "text-offset": [0, -0.9], "text-padding": 4,
+          "text-rotation-alignment": "viewport", "text-pitch-alignment": "viewport" },
+        paint: { "text-color": "#2A2F38", "text-halo-color": "#FFFFFF", "text-halo-width": 1.4 } }, "nearby-dots");
+    }
+    // A neighbour's core_bounds lands AFTER the DEM tiles for that area were
+    // already fetched as 30 m Terrarium (the loader fires on idle — i.e. while
+    // that very viewport is rendered), and MapLibre never re-requests a loaded
+    // tile, so the neighbour 5 m mesh silently never appeared (verified: last
+    // z14 request at t=51.28s vs neighbour meta at t=51.9s — routeDem rewrites
+    // fine when asked again). setTiles() with the SAME url forces a source
+    // reload through routeDem with the now-populated coreRegions; debounced so
+    // one reload covers a whole neighbour batch.
+    let demReloadTimer = null;
+    function scheduleDemReload() {
+      clearTimeout(demReloadTimer);
+      demReloadTimer = setTimeout(() => {
+        try {
+          const s = map.getSource("dem");
+          if (s && s.setTiles) s.setTiles(["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"]);
+        } catch (e) { console.log("dem reload failed", e); }
+      }, 700);
+    }
+    async function loadNeighbor(nb) {
+      if (!nb.id || nbLoaded[nb.id] || nbCount >= NB_MAX) return;
+      nbLoaded[nb.id] = true; nbCount++;
+      try {
+        const base = NB_BASE(nb.id);
+        const nm = await (await fetch(base + "meta.json?v=" + VER)).json();
+        const b = nm.bounds_3857; if (!b) throw new Error("no bounds");
+        nbInitGeo();
+        // hillshade/slope/cliff draped over this neighbour's bbox (single image,
+        // or pieces if oversized), then synced to the current chip + night state.
+        const nd = drapeSpec("__" + nb.id, nm, b, base);
+        Object.keys(nd.sources).forEach(id => { if (!map.getSource(id)) map.addSource(id, nd.sources[id]); });
+        nd.layers.forEach(L => { if (!map.getLayer(L.id)) map.addLayer(L, "c100"); });
+        applyHillNight(isNightNow());          // dim the new neighbour hill(s) at night
+        applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
+        if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); scheduleDemReload(); }
+        const geo = await (await fetch(base + "geometry.json?v=" + VER)).json();
+        // Clip the neighbour's runs to ITS OWN terrain extent before adding —
+        // the same guard the focused resort gets. nbgeo has no other clip, so a
+        // neighbour whose geometry.json still over-includes (stale pre-clip
+        // cache, or its own valley) would drape past its loaded terrain →
+        // stretched lines the moment you pan onto it. b = nm.bounds_3857.
+        const nbW = m2lon(b[0]), nbE = m2lon(b[2]), nbS = m2lat(b[1]), nbN = m2lat(b[3]);
+        const inNb = (a) => {
+          if (!a) return false;
+          if (typeof a[0] === "number") return a[0] >= nbW && a[0] <= nbE && a[1] >= nbS && a[1] <= nbN;
+          for (let i = 0; i < a.length; i++) if (inNb(a[i])) return true;
+          return false;
+        };
+        (geo.features || []).forEach(f => { if (inNb(f.geometry && f.geometry.coordinates)) nbGeoData.features.push(f); });
+        if (map.getSource("nbgeo")) map.getSource("nbgeo").setData(nbGeoData);
+        // Contours too — an interconnect member reached by panning (aggregate
+        // degraded view → member zoom-in, e.g. Dolomiti Superski → Val Gardena)
+        // should read like a focused resort. Same styling as c100/c50; only the
+        // rendered classes are merged to keep the shared source lean.
+        try {
+          const cj = await (await fetch(base + "contours.json?v=" + VER)).json();
+          if (!map.getSource("nbcontours")) {
+            map.addSource("nbcontours", { type: "geojson", data: nbContourData });
+            const before = map.getLayer("nb-lifts") ? "nb-lifts" : "nearby-dots";
+            map.addLayer({ id: "nb-c100", type: "line", source: "nbcontours",
+              filter: ["==", ["get", "cls"], "major"],
+              paint: { "line-color": "#38485C", "line-width": 1.2, "line-opacity": 0.45 } }, before);
+            map.addLayer({ id: "nb-c50", type: "line", source: "nbcontours", minzoom: 13,
+              filter: ["==", ["get", "cls"], "mid"],
+              paint: { "line-color": "#38485C", "line-width": 0.9, "line-opacity": 0.35 } }, before);
+          }
+          (cj.features || []).forEach(f => {
+            const cls = f.properties && f.properties.cls;
+            if (cls === "major" || cls === "mid") nbContourData.features.push(f);
+          });
+          map.getSource("nbcontours").setData(nbContourData);
+        } catch (e) { console.log("neighbour contours skipped", nb.id, e); }
+      } catch (e) {
+        console.log("neighbour load failed", nb.id, e);
+        nbLoaded[nb.id] = false; nbCount--;   // isolated failure; allow a retry
+      }
+    }
+    function loadVisibleNeighbors() {
+      if (nbCount >= NB_MAX || !nearby.length) return;
+      const vb = map.getBounds();
+      for (const r of nearby) {
+        if (nbCount >= NB_MAX) break;
+        if (r.id && !nbLoaded[r.id] && vb.contains([r.lo, r.la])) loadNeighbor(r);
+      }
+    }
+    map.on("idle", loadVisibleNeighbors);
+    loadVisibleNeighbors();
+
+    // Defensive: if the container measured 0 at init, resize once settled.
+    setTimeout(() => { map.resize(); }, 300);
+  });
+})();
+</script>
+</body>
+</html>
