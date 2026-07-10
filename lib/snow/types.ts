@@ -49,6 +49,9 @@ export interface DailyRow {
   wind_dir_deg: number | null;
   precip_mm_p50: number | null;
   freezing_level_m: number | null;
+  // Metres of headroom between the band and the rain–snow line; negative =
+  // the line sits above this band (mixed precip). Drives the precip icon.
+  snow_level_margin_m?: number | null;
   time_of_day?: TimeBlock[];
 }
 
@@ -72,6 +75,22 @@ export interface SnowDepth {
   mid_cm: number | null;
   top_cm: number | null;
   estimate: boolean;
+  // Provenance (additive; older cached rows lack them): what anchored the
+  // absolute level, and the latest satellite snow-cover read used for gating.
+  source?: "model" | "station";
+  station?: {
+    id?: string;
+    name?: string;
+    network?: string;
+    distance_km?: number;
+    elevation_m?: number;
+    asof?: string;
+  } | null;
+  snowline?: {
+    status?: string;
+    snowline_m?: number | null;
+    obs_date?: string;
+  } | null;
 }
 
 export interface ForecastPayload {
