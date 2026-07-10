@@ -48,7 +48,13 @@ export default async function SnowOutlookPage() {
           ) : (
             <div className="grid md:grid-cols-2 gap-6">
               {rows.map((row) => (
-                <SeasonalOutlookCard key={row.climate_region} row={row} />
+                <div
+                  key={row.climate_region}
+                  id={row.climate_region}
+                  className="scroll-mt-24"
+                >
+                  <SeasonalOutlookCard row={row} />
+                </div>
               ))}
             </div>
           )}

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { fetchResortIndex } from "@/lib/snow/fetch";
+import { fetchResortIndex, fetchSeasonalOutlooks } from "@/lib/snow/fetch";
 import { ResortSearchList } from "@/components/snow/ResortSearchList";
+import { SeasonalTilesSection } from "@/components/snow/SeasonalTilesSection";
 
 export const revalidate = 21600; // resort list changes rarely
 
@@ -19,7 +20,10 @@ export const metadata: Metadata = {
 };
 
 export default async function SnowForecastIndexPage() {
-  const resorts = await fetchResortIndex();
+  const [resorts, seasonalRows] = await Promise.all([
+    fetchResortIndex(),
+    fetchSeasonalOutlooks(),
+  ]);
 
   return (
     <div className="relative overflow-hidden">
@@ -45,6 +49,8 @@ export default async function SnowForecastIndexPage() {
               </Link>
             </p>
           </div>
+
+          <SeasonalTilesSection rows={seasonalRows} />
 
           {resorts.length === 0 ? (
             <p className="text-center text-slate-400">

@@ -77,21 +77,20 @@ export default async function ResortForecastPage({ params }: Params) {
             </p>
           </div>
 
-          <ForecastView resort={resort} />
-
+          {/* Season outlook first — same "discoverable, not buried" placement
+              as the app's forecast screen. */}
           {seasonal && (
-            <div className="mt-10">
-              <h2 className="text-lg font-semibold text-white mb-3">
-                Season outlook — {seasonal.label}
-              </h2>
+            <div className="mb-6">
               <SeasonalOutlookCard row={seasonal} compact />
-              <p className="text-sm text-slate-500 mt-2">
+              <p className="text-xs text-slate-500 mt-2 text-right">
                 <Link href="/snow-outlook" className="text-brand-400 hover:text-brand-300">
-                  See all regions →
+                  All regions →
                 </Link>
               </p>
             </div>
           )}
+
+          <ForecastView resort={resort} />
         </div>
       </section>
     </div>
