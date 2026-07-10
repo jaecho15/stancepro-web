@@ -522,6 +522,80 @@ def _current_depth_cm(band_payload: dict[str, Any]) -> int | None:
     return None
 
 
+# --- Per-band depth estimate -------------------------------------------------
+# Open-Meteo's `snow_depth` is a grid-cell state: it does NOT respond to the
+# `elevation` downscaling parameter, so fetching it per band returns the same
+# number three times. Temperature DOES downscale (past days included), so we
+# build the elevation structure ourselves: a season-to-date snow budget per band
+# (precip falls as snow when the band's daily mean is cold, minus degree-day
+# melt) and use the budgets only as RATIOS to distribute the trusted grid
+# snow_depth across bands. Absolute level stays anchored to the model analysis;
+# only the vertical gradient comes from the budget. Crude by design (fixed SLR,
+# fixed melt factor, no settling/wind) — ratios cancel most of that, and the
+# payload already carries estimate=true.
+
+HISTORY_PAST_DAYS = 92          # Open-Meteo max; covers a season half from mid-season
+BUDGET_SNOW_TMEAN_C = 1.0       # daily mean at/below this → precip counted as snow
+BUDGET_SLR = 10.0               # fresh-snow ratio: 1 mm water → 1 cm snow
+BUDGET_MELT_CM_PER_DEGDAY = 1.5 # depth melt per positive degree-day
+BUDGET_MIN_REF_CM = 3.0         # denominator floor: below this, ratios are noise
+BUDGET_MAX_RATIO = 25.0         # sanity cap for valley-cell anchors
+
+
+def fetch_band_history(resort: dict[str, Any], elevation_m: float | None) -> dict[str, Any]:
+    """Small daily-only fetch of the past HISTORY_PAST_DAYS: precip + the band's
+    downscaled daily mean temperature. Single model — the budget feeds a depth
+    estimate, not a quantile forecast. When elevation_m is None the grid's own
+    (native) elevation is used — that run anchors the ratios."""
+    params: dict[str, Any] = {
+        "latitude": f"{float(resort['lat']):.5f}",
+        "longitude": f"{float(resort['lon']):.5f}",
+        "daily": "precipitation_sum,temperature_2m_mean",
+        "models": "ecmwf_ifs025",
+        "past_days": HISTORY_PAST_DAYS,
+        "forecast_days": 1,
+        "timezone": "auto",
+    }
+    if elevation_m is not None and math.isfinite(elevation_m):
+        params["elevation"] = f"{elevation_m:.0f}"
+    return polite_get(FORECAST_URL, params)
+
+
+def _season_budget_cm(history_payload: dict[str, Any]) -> float:
+    """Season-to-date snowpack budget (cm) from a band's daily history: run the
+    days in order, add snow when the band is cold, melt by positive degree-days,
+    floor at zero (bare ground can't go negative)."""
+    daily = history_payload.get("daily") or {}
+    precip = daily.get("precipitation_sum") or []
+    tmean = daily.get("temperature_2m_mean") or []
+    depth = 0.0
+    for rain_mm, t_c in zip(precip, tmean):
+        if t_c is None:
+            continue
+        snow_cm = float(rain_mm or 0.0) * BUDGET_SLR / 10.0 if t_c <= BUDGET_SNOW_TMEAN_C else 0.0
+        melt_cm = BUDGET_MELT_CM_PER_DEGDAY * max(float(t_c), 0.0)
+        depth = max(0.0, depth + snow_cm - melt_cm)
+    return depth
+
+
+def _banded_depth_cm(grid_depth_cm: int | None,
+                     band_budgets: dict[str, float],
+                     ref_budget: float) -> dict[str, int | None]:
+    """Distribute the grid snow_depth across bands by budget ratio. Falls back to
+    the uniform grid value when the reference budget is too small to divide by
+    (ratios would be noise)."""
+    out: dict[str, int | None] = {}
+    for band, budget in band_budgets.items():
+        if grid_depth_cm is None:
+            out[band] = None
+        elif ref_budget >= BUDGET_MIN_REF_CM:
+            ratio = min(budget / ref_budget, BUDGET_MAX_RATIO)
+            out[band] = round(grid_depth_cm * ratio)
+        else:
+            out[band] = grid_depth_cm
+    return out
+
+
 def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                      forecast_days: int = 16, with_tendency: bool = True) -> dict[str, Any]:
     """Full base-config forecast for one resort (on-demand).
@@ -532,15 +606,27 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
     the freezing source for every band's rain-risk, so aggregation waits for all
     fetches, then runs (fast, CPU-only)."""
     bands = elevation_bands(resort)
-    with ThreadPoolExecutor(max_workers=len(bands) + 1) as pool:
+    multi_band = len(bands) > 1
+    with ThreadPoolExecutor(max_workers=2 * len(bands) + 2) as pool:
         band_futures = {
             band: pool.submit(fetch_band_forecast, resort, bands[band], models,
                               forecast_days, band == "mid")
             for band in bands
         }
         tendency_future = pool.submit(fetch_tendency, resort, bands.get("mid")) if with_tendency else None
+        # Per-band depth needs the season-budget history per band + one run at
+        # the grid's native elevation (no elevation param) as the anchor. Only
+        # worth the calls when there is more than one band to differentiate.
+        history_futures = (
+            {band: pool.submit(fetch_band_history, resort, bands[band]) for band in bands}
+            if multi_band else {}
+        )
+        ref_history_future = pool.submit(fetch_band_history, resort, None) if multi_band else None
         band_payloads = {band: future.result() for band, future in band_futures.items()}
         tendency = tendency_future.result() if tendency_future else []
+        band_budgets = {band: _season_budget_cm(future.result())
+                        for band, future in history_futures.items()}
+        ref_budget = _season_budget_cm(ref_history_future.result()) if ref_history_future else 0.0
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
@@ -550,10 +636,20 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
     for row in daily_rows:
         row["resort_id"] = resort["resort_id"]
     # Current snowpack depth per band (estimate — model, not resort-measured).
+    # The grid value is identical across bands (snow_depth ignores elevation
+    # downscaling), so multi-band resorts distribute it by season-budget ratio.
+    grid_depth_cm = next(
+        (cm for cm in (_current_depth_cm(bp) for bp in band_payloads.values()) if cm is not None),
+        None,
+    )
+    if multi_band:
+        banded = _banded_depth_cm(grid_depth_cm, band_budgets, ref_budget)
+    else:
+        banded = {band: grid_depth_cm for band in band_payloads}
     depth = {
-        "base_cm": _current_depth_cm(band_payloads["base"]) if "base" in band_payloads else None,
-        "mid_cm": _current_depth_cm(band_payloads["mid"]) if "mid" in band_payloads else None,
-        "top_cm": _current_depth_cm(band_payloads["top"]) if "top" in band_payloads else None,
+        "base_cm": banded.get("base"),
+        "mid_cm": banded.get("mid"),
+        "top_cm": banded.get("top"),
         "asof": next(
             (cur.get("time") for cur in ((bp.get("current") or {}) for bp in band_payloads.values())
              if cur.get("time")),
