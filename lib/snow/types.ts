@@ -164,12 +164,30 @@ export interface SeasonalWatchFactor {
   note: string;
 }
 
+// Southern-hemisphere in-progress winters serve OBSERVED season status
+// instead of a forecast (payload.mode === "in_season_status"). Contract from
+// the climate session (in_season_status_v1): honest observations only.
+export interface SeasonalStatus {
+  season: string;
+  asof: string;
+  season_to_date_cm: number;
+  climatology_median_cm: number;
+  percentile: number; // rank among 35 winters, 0–100
+  last14d_cm: number;
+  last14d_median_cm: number;
+  tendency: "above" | "near" | "below";
+  points: number;
+  snow_cover?: { covered: number; partial: number; bare: number } | null;
+}
+
 export interface SeasonalPayload {
   region: string;
   label: string;
   trend: SeasonalTrend;
   signal: SeasonalSignal | null;
   watch: SeasonalWatchFactor[];
+  mode?: string; // "in_season_status" for observed SH rows; absent on forecasts
+  status?: SeasonalStatus | null;
 }
 
 export interface SeasonalOutlookRow {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight, Snowflake } from "lucide-react";
 import { regionContext } from "@/lib/snow/region-context";
+import { isSeasonStatus, ordinal, statusLean } from "@/lib/snow/season-status";
 import type { SeasonalOutlookRow } from "@/lib/snow/types";
 
 // "This winter's outlook" strip on the snow-forecast landing — web counterpart
@@ -43,7 +44,9 @@ function driverText(rows: SeasonalOutlookRow[]): string | null {
 
 export function SeasonalTilesSection({ rows }: { rows: SeasonalOutlookRow[] }) {
   const signalRows = rows.filter((row) => row.payload.signal);
-  if (signalRows.length === 0) return null;
+  const statusRows = rows.filter(isSeasonStatus);
+  const tiles = [...signalRows, ...statusRows];
+  if (tiles.length === 0) return null;
   const driver = driverText(signalRows);
 
   return (
@@ -58,8 +61,9 @@ export function SeasonalTilesSection({ rows }: { rows: SeasonalOutlookRow[] }) {
         </p>
       )}
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
-        {signalRows.map((row) => {
-          const lean = row.payload.signal!.lean;
+        {tiles.map((row) => {
+          const status = isSeasonStatus(row) ? row.payload.status! : null;
+          const lean = status ? statusLean(status) : row.payload.signal!.lean;
           return (
             <Link
               key={row.climate_region}
@@ -76,17 +80,22 @@ export function SeasonalTilesSection({ rows }: { rows: SeasonalOutlookRow[] }) {
               <span
                 className={`self-start text-[11px] font-medium px-2 py-0.5 rounded-full ${LEAN_STYLE[lean]}`}
               >
-                {LEAN_TEXT[lean]}
+                {status
+                  ? `${ordinal(status.percentile)} pctile so far`
+                  : LEAN_TEXT[lean]}
               </span>
               <span className="text-[11px] text-slate-500">
-                {row.payload.signal!.confidence} confidence
+                {status
+                  ? "season in progress · observed"
+                  : `${row.payload.signal!.confidence} confidence`}
               </span>
             </Link>
           );
         })}
       </div>
       <p className="text-xs text-slate-500 mt-2">
-        Other regions have no validated signal this winter —{" "}
+        Northern regions show the validated winter outlook; southern regions
+        show the season so far —{" "}
         <Link href="/snow-outlook" className="text-brand-400 hover:text-brand-300">
           full seasonal outlook →
         </Link>

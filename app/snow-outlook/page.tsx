@@ -21,7 +21,12 @@ export const metadata: Metadata = {
 };
 
 export default async function SnowOutlookPage() {
-  const rows = await fetchSeasonalOutlooks();
+  const allRows = await fetchSeasonalOutlooks();
+  // Northern-hemisphere validated forecasts first, then southern-hemisphere
+  // in-progress season status — numbering runs across both to match the map.
+  const forecastRows = allRows.filter((row) => row.payload.mode !== "in_season_status");
+  const statusRows = allRows.filter((row) => row.payload.mode === "in_season_status");
+  const rows = [...forecastRows, ...statusRows];
 
   return (
     <div className="relative overflow-hidden">
@@ -52,18 +57,53 @@ export default async function SnowOutlookPage() {
               <div className="mb-8">
                 <WorldOutlookHero rows={rows} />
               </div>
-              <div className="grid md:grid-cols-2 gap-6">
-                {rows.map((row, i) => (
-                  <div
-                    key={row.climate_region}
-                    id={row.climate_region}
-                    data-outlook-card={row.climate_region}
-                    className="scroll-mt-24"
-                  >
-                    <SeasonalOutlookCard row={row} index={i + 1} />
+
+              {forecastRows.length > 0 && (
+                <>
+                  <h2 className="text-lg font-semibold text-white mb-4">
+                    Northern hemisphere — {forecastRows[0].target_season} outlook
+                  </h2>
+                  <div className="grid md:grid-cols-2 gap-6 mb-10">
+                    {forecastRows.map((row, i) => (
+                      <div
+                        key={row.climate_region}
+                        id={row.climate_region}
+                        data-outlook-card={row.climate_region}
+                        className="scroll-mt-24"
+                      >
+                        <SeasonalOutlookCard row={row} index={i + 1} />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
+
+              {statusRows.length > 0 && (
+                <>
+                  <h2 className="text-lg font-semibold text-white mb-1">
+                    Southern hemisphere — winter in progress
+                  </h2>
+                  <p className="text-sm text-slate-400 mb-4">
+                    Observed season-to-date conditions ({statusRows[0].target_season}),
+                    updated daily — not a forecast.
+                  </p>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {statusRows.map((row, i) => (
+                      <div
+                        key={row.climate_region}
+                        id={row.climate_region}
+                        data-outlook-card={row.climate_region}
+                        className="scroll-mt-24"
+                      >
+                        <SeasonalOutlookCard
+                          row={row}
+                          index={forecastRows.length + i + 1}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
               <OutlookHeroSync />
             </>
           )}

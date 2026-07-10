@@ -4,6 +4,7 @@ import {
   WORLD_PATHS,
   WORLD_VIEWBOX,
 } from "@/lib/snow/region-context";
+import { isSeasonStatus, statusLean } from "@/lib/snow/season-status";
 import type { SeasonalOutlookRow } from "@/lib/snow/types";
 
 // World hero map for /snow-outlook: baked Natural Earth silhouette with every
@@ -33,11 +34,22 @@ const PIN_NUDGE: Record<string, [number, number]> = {
   NA_pacific_nw: [-12, -6],
   NA_northern_rockies: [4, -11],
   Sierra: [-8, 5],
+  // Andes/Patagonia share one longitude band — fan the pins out.
+  cl_central_andes: [-11, -3],
+  ar_mendoza: [10, -5],
+  cl_southern_andes: [-11, 6],
+  ar_northern_patagonia: [10, 5],
+  ar_southern_patagonia: [1, 13],
+  // NZ sits at the antimeridian edge — pull pins inward.
+  nz_north_island: [-2, -8],
+  nz_south_island: [-11, 6],
 };
 
 export function WorldOutlookHero({ rows }: { rows: SeasonalOutlookRow[] }) {
   const zones = rows.map((row, i) => {
-    const lean = row.payload.signal?.lean ?? "near";
+    const lean =
+      row.payload.signal?.lean ??
+      (isSeasonStatus(row) ? statusLean(row.payload.status!) : "near");
     const rect = regionHighlightRect(row.region_ids);
     const cx = rect ? rect.x + rect.w / 2 : null;
     const cy = rect ? rect.y + rect.h / 2 : null;

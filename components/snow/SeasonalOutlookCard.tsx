@@ -5,7 +5,12 @@ import {
   FlaskConical,
 } from "lucide-react";
 import { regionContext } from "@/lib/snow/region-context";
-import type { SeasonalOutlookRow, SeasonalSignal } from "@/lib/snow/types";
+import { ordinal, statusHeadline, statusLean } from "@/lib/snow/season-status";
+import type {
+  SeasonalOutlookRow,
+  SeasonalSignal,
+  SeasonalStatus,
+} from "@/lib/snow/types";
 
 // 4-layer seasonal card — web counterpart of the app's SeasonalOutlookCard
 // (trend / ENSO signal + tercile bar / analog years / experimental watch),
@@ -134,6 +139,60 @@ function Analogs({ signal, enso }: { signal: SeasonalSignal; enso: string }) {
 
 const Divider = () => <div className="border-t border-slate-700/50" />;
 
+// Observed season-so-far block for southern-hemisphere in-progress winters:
+// percentile gauge, season-to-date vs climatology, recent-two-week tendency,
+// satellite snow cover. Facts only — no probabilities.
+function StatusSection({ status }: { status: SeasonalStatus }) {
+  const lean = statusLean(status);
+  const tendencyColor = LEAN[status.tendency].text;
+  const cover = status.snow_cover;
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="relative h-2.5 rounded-full overflow-hidden bg-slate-800">
+          <div className="absolute inset-y-0 left-0 w-1/3 bg-amber-500/25" />
+          <div className="absolute inset-y-0 left-1/3 w-1/3 bg-slate-600/40" />
+          <div className="absolute inset-y-0 left-2/3 w-1/3 bg-sky-500/25" />
+          <div
+            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full border-2 border-slate-950 ${LEAN[lean].dot}`}
+            style={{ left: `${Math.min(Math.max(status.percentile, 2), 98)}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-[11px] text-slate-600 mt-1">
+          <span>Drier winters</span>
+          <span className={`${LEAN[lean].text} font-medium`}>
+            {ordinal(status.percentile)} percentile of 35 winters
+          </span>
+          <span>Snowier winters</span>
+        </div>
+      </div>
+
+      <p className="text-sm text-slate-200">
+        {status.season_to_date_cm} cm since June 1
+        <span className="text-slate-500"> · median by this date {status.climatology_median_cm} cm</span>
+      </p>
+
+      <p className="text-sm text-slate-300">
+        Last 14 days: {status.last14d_cm} cm vs {status.last14d_median_cm} cm typical —{" "}
+        <span className={`font-medium ${tendencyColor}`}>
+          {status.tendency === "above"
+            ? "trending snowier"
+            : status.tendency === "below"
+              ? "trending drier"
+              : "about typical"}
+        </span>
+      </p>
+
+      {cover && cover.covered + cover.partial + cover.bare > 0 && (
+        <p className="text-xs text-slate-500">
+          Satellite snow cover: {cover.covered} covered · {cover.partial} partial ·{" "}
+          {cover.bare} bare
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function SeasonalOutlookCard({
   row,
   compact = false,
@@ -145,8 +204,10 @@ export function SeasonalOutlookCard({
 }) {
   const { payload, enso_state } = row;
   const signal = payload.signal;
-  const lean: LeanKey = signal?.lean ?? "near";
-  const ensoName = ENSO_LABEL[enso_state.state] ?? enso_state.state;
+  const status =
+    payload.mode === "in_season_status" && payload.status ? payload.status : null;
+  const lean: LeanKey = signal?.lean ?? (status ? statusLean(status) : "near");
+  const ensoName = enso_state ? (ENSO_LABEL[enso_state.state] ?? enso_state.state) : "";
   const context = regionContext(row.climate_region, row.region_ids);
 
   return (
@@ -157,7 +218,7 @@ export function SeasonalOutlookCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-slate-500">
-            Seasonal outlook · Winter {row.target_season}
+            {status ? "Season status" : "Seasonal outlook"} · Winter {row.target_season}
           </p>
           <h3 className="text-xl font-bold text-white mt-0.5 flex items-center gap-2">
             {index !== undefined && (
@@ -178,12 +239,20 @@ export function SeasonalOutlookCard({
           )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <span className={`text-sm font-semibold ${LEAN[lean].text}`}>
-              {signal ? LEAN[lean].sentence : "Near normal expected"}
+              {status
+                ? statusHeadline(status)
+                : signal
+                  ? LEAN[lean].sentence
+                  : "Near normal expected"}
             </span>
             <span
               className={`text-[11px] px-2 py-0.5 rounded-full ${LEAN[lean].tint} ${LEAN[lean].text}`}
             >
-              {signal ? `${signal.confidence} confidence` : "trend only"}
+              {status
+                ? "observed · in progress"
+                : signal
+                  ? `${signal.confidence} confidence`
+                  : "trend only"}
             </span>
           </div>
         </div>
@@ -192,7 +261,17 @@ export function SeasonalOutlookCard({
       <Divider />
       <TrendRow row={row} />
 
-      {signal ? (
+      {status ? (
+        <>
+          <Divider />
+          <StatusSection status={status} />
+          <p className="text-[11px] text-slate-600">
+            Observed conditions, not a forecast — reanalysis snowfall averaged
+            over {status.points} sample resort{status.points === 1 ? "" : "s"},
+            as of {status.asof}.
+          </p>
+        </>
+      ) : signal ? (
         <>
           <Divider />
           <TercileBar signal={signal} />
@@ -235,11 +314,17 @@ export function SeasonalOutlookCard({
         ))}
 
       <p className="text-[11px] text-slate-600">
-        Niño3.4 {enso_state.nino34 > 0 ? "+" : ""}
-        {enso_state.nino34.toFixed(2)} · {ensoName}
-        {enso_state.strength !== "none" ? ` (${enso_state.strength})` : ""}
-        {enso_state.latest_season ? ` · as of ${enso_state.latest_season}` : ""}
-        {row.generated_at ? ` · updated ${row.generated_at.slice(0, 10)}` : ""}
+        {enso_state && typeof enso_state.nino34 === "number" && !status && (
+          <>
+            Niño3.4 {enso_state.nino34 > 0 ? "+" : ""}
+            {enso_state.nino34.toFixed(2)} · {ensoName}
+            {enso_state.strength !== "none" ? ` (${enso_state.strength})` : ""}
+            {enso_state.latest_season ? ` · as of ${enso_state.latest_season}` : ""}
+          </>
+        )}
+        {row.generated_at
+          ? `${!status && enso_state && typeof enso_state.nino34 === "number" ? " · " : ""}updated ${row.generated_at.slice(0, 10)}`
+          : ""}
       </p>
     </div>
   );
