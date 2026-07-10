@@ -7,8 +7,8 @@ type BrandLogoProps = {
   className?: string;
 };
 
-const WORDMARK_ASPECT_RATIO = 2611 / 259;
-const WORDMARK_ASSET_VERSION = "20260710-geometric-proportional-v6-tuck40";
+const WORDMARK_ASPECT_RATIO = 2612 / 250;
+const WORDMARK_ASSET_VERSION = "20260710-geometric-proportional-v7-3x";
 
 export function BrandLogo({
   iconOnly = false,

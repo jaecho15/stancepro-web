@@ -51,8 +51,8 @@ GEO = {"S": RS.stroke(RS.S_centerline()), "C": RS.stroke(RS.C_centerline())}
 Y0, Y1 = -120, 1640
 SS = 3
 
-TARGET_GAP = 190.0        # target optical facing distance between adjacent letters (2x)
-BOX_GAP = 90.0            # min clearance between bounding boxes, no-tuck (2x)
+TARGET_GAP = 285.0        # target optical facing distance between adjacent letters (3x)
+BOX_GAP = 135.0          # min clearance between bounding boxes, no-tuck (3x)
 TUCK_DEPTH = 0.40         # T-A style tuck: 0=cleared, 1=full optical tuck
 YLO, YHI, YSTEP = 0, 1578, 12
 
