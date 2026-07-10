@@ -1064,12 +1064,14 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         const dy = summit.lat - bLat;
         if (!dx && !dy) return;
         const target = Math.atan2(dx, dy) * 180 / Math.PI;
-        // One cinematic 360° sweep over the resort, easing out INTO the
-        // trail-map bearing. rAF-driven so a user touch cancels mid-flight
-        // (the once-listeners above flip userMoved, checked every frame).
+        // Shortest-path swing into the trail-map bearing (user spec 2026-07-11:
+        // "최단 경로" — signed delta in (−180,180], never more than a half turn;
+        // the earlier 360° pre-roll could reach ~715° and read as two spins).
+        // rAF-driven so a user touch cancels mid-flight (userMoved, per frame).
         const start = map.getBearing();
-        const total = 360 + (((target - start) % 360) + 360) % 360;   // full turn, land on target
-        const T = 7000, t0 = performance.now();
+        const total = ((((target - start) % 360) + 540) % 360) - 180;   // (−180,180]
+        if (Math.abs(total) < 1) return;                                 // already facing it
+        const T = 1200 + Math.abs(total) * 12, t0 = performance.now();   // ~1.2–3.4 s by arc
         const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         const spin = now => {
           if (userMoved) return;
@@ -1151,6 +1153,101 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     } catch (e) {}
   }
   map.on("idle", markFrozenTarns);
+
+  // ---------- Forest v2: near-field billboard trees (canopy_10m.webp) ----------
+  // User-approved look: minimal snow-capped fir. Far field keeps the v1 tint;
+  // billboards spawn only within ~2 km of the camera (LOD, cap 5k) and are ONE
+  // BODY with the 🌲 forest toggle (layer id "forest__trees" rides the same
+  // kindVis prefix). Data: R=canopy height (0..250 ⇒ /5 m), G=density (25 m
+  // window), A=inside mask — lossless webp baked per resort (meta.canopy).
+  let canopyGrid = null;   // { d: Uint8ClampedArray, W, H, b: bounds_3857 }
+  const treeState = { lastKey: "" };
+  function treeSprite() {
+    const c = document.createElement("canvas"); c.width = 48; c.height = 64;
+    const t = c.getContext("2d");
+    const tri = (cx, ay, w, h, col) => { t.fillStyle = col; t.beginPath();
+      t.moveTo(cx, ay); t.lineTo(cx + w, ay + h); t.lineTo(cx - w, ay + h);
+      t.closePath(); t.fill(); };
+    tri(24, 6, 19, 46, "#336042");        // green body
+    tri(24, 6, 10.5, 25, "#F2F7FB");      // snow cap (top ~54%)
+    t.fillStyle = "#4a3826"; t.fillRect(21.2, 51, 5.6, 9);   // trunk
+    return t.getImageData(0, 0, 48, 64);
+  }
+  async function loadCanopy() {
+    if (canopyGrid !== null || !meta.canopy || degraded) return;
+    canopyGrid = false;                    // in-flight / failed marker
+    try {
+      const blob = await (await fetch(art(meta.canopy.file || "canopy_10m.webp"))).blob();
+      const bmp = await createImageBitmap(blob);
+      const cv = document.createElement("canvas");
+      cv.width = bmp.width; cv.height = bmp.height;
+      const cx = cv.getContext("2d", { willReadFrequently: true });
+      cx.imageSmoothingEnabled = false;    // data texture — never resample
+      cx.drawImage(bmp, 0, 0);
+      canopyGrid = { d: cx.getImageData(0, 0, bmp.width, bmp.height).data,
+                     W: bmp.width, H: bmp.height, b: meta.bounds_3857 };
+      regenTrees();
+    } catch (e) { console.log("canopy skipped", e); }
+  }
+  function regenTrees() {
+    if (!canopyGrid || canopyGrid === false) return;
+    const z = map.getZoom();
+    const key = z < 13 ? "off"
+      : [map.getCenter().lng.toFixed(3), map.getCenter().lat.toFixed(3), (z | 0)].join("|");
+    if (key === treeState.lastKey) return;
+    treeState.lastKey = key;
+    const fc = { type: "FeatureCollection", features: [] };
+    if (key !== "off") {
+      const { d, W, H, b } = canopyGrid;
+      const sx = (b[2] - b[0]) / W, sy = (b[3] - b[1]) / H;
+      const c0 = map.getCenter();
+      const cmx = lon2m(c0.lng), cmy = lat2m(c0.lat), R2 = 2000;
+      const cA = Math.max(0, Math.floor((cmx - R2 - b[0]) / sx));
+      const cB = Math.min(W - 1, Math.ceil((cmx + R2 - b[0]) / sx));
+      const rA = Math.max(0, Math.floor((b[3] - (cmy + R2)) / sy));
+      const rB = Math.min(H - 1, Math.ceil((b[3] - (cmy - R2)) / sy));
+      outer:
+      for (let r = rA; r <= rB; r++) {
+        for (let c = cA; c <= cB; c++) {
+          const o = (r * W + c) * 4;
+          const hR = d[o];                       // canopy height 0..250
+          if (hR === 0 || d[o + 3] === 0) continue;
+          const dens = d[o + 1] / 255;
+          const j = ((c * 7919 + r * 104729) % 1000) / 1000;
+          if (j > dens * 0.55 + 0.03) continue;  // isolated big trees survive
+          const j2 = ((c * 31337 + r * 271) % 1000) / 1000;
+          const mx = b[0] + (c + 0.2 + j2 * 0.6) * sx;
+          const my = b[3] - (r + 0.2 + j * 0.6) * sy;
+          fc.features.push({ type: "Feature",
+            properties: { s: 0.22 + (hR / 5 / 30) * 1.05 },
+            geometry: { type: "Point", coordinates: [m2lon(mx), m2lat(my)] } });
+          if (fc.features.length >= 5000) break outer;   // hard LOD cap
+        }
+      }
+    }
+    if (!map.getSource("forest__trees")) {
+      map.addImage("forest-tree", treeSprite(), { pixelRatio: 2 });
+      map.addSource("forest__trees", { type: "geojson", data: fc });
+      // ⚠ icon-size zoom expression MUST be the top-level interpolate —
+      // nesting it inside ["*"] makes MapLibre silently drop the layer
+      // (measured by the accuracy session, no error raised).
+      map.addLayer({ id: "forest__trees", type: "symbol", source: "forest__trees",
+        minzoom: 13,
+        layout: {
+          "icon-image": "forest-tree", "icon-anchor": "bottom",
+          "icon-pitch-alignment": "viewport", "icon-rotation-alignment": "viewport",
+          "icon-allow-overlap": true, "icon-ignore-placement": true,
+          "icon-size": ["interpolate", ["linear"], ["zoom"],
+                        13, ["*", ["get", "s"], 0.35],
+                        15, ["*", ["get", "s"], 0.8],
+                        16.5, ["*", ["get", "s"], 1.6]],
+          "visibility": kindVis.forest ? "visible" : "none"
+        } });
+    } else {
+      map.getSource("forest__trees").setData(fc);
+    }
+  }
+  map.on("idle", () => { loadCanopy(); regenTrees(); });
 
   // 2D/3D toggle — flattening the terrain helps reading dense trail networks.
   let terrainOn = true;
@@ -1353,10 +1450,15 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         map.setPaintProperty(L.id, "raster-opacity", night ? 0.6 : 0.9);
         map.setPaintProperty(L.id, "raster-brightness-max", night ? 0.9 : 1.0);
       }
-      // Forest canopy tint dims harder at night — moonlit forest reads as a
-      // shadow, not a green wash (same focused+neighbour prefix convention).
+      // Forest canopy dims harder at night — moonlit forest reads as a shadow,
+      // not a green wash (same focused+neighbour prefix convention). The v2
+      // billboard layer is a SYMBOL, so it dims via icon-opacity instead.
       if (L.id === "forest" || L.id.indexOf("forest__") === 0) {
-        map.setPaintProperty(L.id, "raster-opacity", night ? 0.25 : 0.55);
+        if (L.type === "raster") {
+          map.setPaintProperty(L.id, "raster-opacity", night ? 0.25 : 0.55);
+        } else if (L.type === "symbol") {
+          map.setPaintProperty(L.id, "icon-opacity", night ? 0.65 : 1.0);
+        }
       }
     });
   }

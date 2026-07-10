@@ -31,8 +31,9 @@ was clean). To sync:
       > resort3d-assets/resort3d.html   # (repeat for the three lib files)
 
 then verify each file's md5 equals `git show HEAD:...` — not the checkout.
-Current snapshot: commit fffacada (frozen alpine tarns — icy fill +
-thin-ice caution; includes the face-the-mountain intro orbit). Hash
-history: the iOS repo's history was rewritten twice on 2026-07-10/11 to
-purge oversized files, remapping this commit 3a5efdc6 → fffacada — all
-four files re-verified md5-identical against the current hash.
+Current snapshot: commit 65fcba2f "Resort 3D: face-the-mountain uses
+shortest-path rotation (≤180°)" — cumulative: intro orbit (user-capped at
+one turn or less; implemented as shortest path) + frozen alpine tarns.
+Note: pin the commit SUBJECT together with the hash — this repo's history
+was rewritten three times on 2026-07-10/11 to purge oversized files, and
+subjects survive remaps.
