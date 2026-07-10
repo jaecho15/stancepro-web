@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { BrandLogo } from "@/components/BrandLogo";
 
 const navLinks = [
+  { href: "/calculator", label: "Calculator" },
   { href: "/features", label: "Features" },
   { href: "/download", label: "Download" },
   { href: "/support", label: "Support" },
@@ -31,7 +32,9 @@ export function Header() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="text-slate-300 hover:text-white transition-colors"
+                  className={`text-slate-300 hover:text-white transition-colors ${
+                    link.href === "/calculator" ? "hidden lg:block" : ""
+                  }`}
                 >
                   {link.label}
                 </Link>
