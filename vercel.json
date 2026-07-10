@@ -5,12 +5,19 @@
     },
     "api/update-snow-stations.py": {
       "maxDuration": 60
+    },
+    "api/update-snowlines.py": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/update-snow-stations",
       "schedule": "20 5 * * *"
+    },
+    {
+      "path": "/api/update-snowlines",
+      "schedule": "40 5 * * *"
     }
   ],
   "regions": ["sin1"]

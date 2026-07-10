@@ -551,6 +551,15 @@ STATION_MAX_DISTANCE_KM = 15.0
 STATION_MAX_AGE_H = 48.0
 STATION_ELEV_MARGIN_M = 250.0   # station must sit within [base-250, top+250]
 
+# Satellite snowline gating: the snow_snowlines table (VIIRS 375 m NDSI,
+# elevation-regressed by the daily update-snowlines cron) tells us where snow
+# actually exists. Bands clearly below the observed snowline serve depth 0 —
+# the budget model's biggest failure mode (imagining base snow that melted or
+# fell as rain) gets corrected by observation. Applies to multi-band resorts
+# only (single-band carries no elevation to compare).
+SNOWLINE_MAX_AGE_DAYS = 5       # older reads are stale — don't gate
+SNOWLINE_MARGIN_M = 100.0       # band must sit this far below the line to zero
+
 
 def fetch_band_history(resort: dict[str, Any], elevation_m: float | None) -> dict[str, Any]:
     """Small daily-only fetch of the past HISTORY_PAST_DAYS: precip + the band's
@@ -647,6 +656,56 @@ def fetch_nearby_station(resort: dict[str, Any],
     return best
 
 
+def fetch_snowline(resort: dict[str, Any]) -> dict[str, Any] | None:
+    """The resort's latest confident satellite snowline read, or None. Fresh
+    (≤ SNOWLINE_MAX_AGE_DAYS) rows only. Best-effort — gating is an upgrade,
+    never a dependency."""
+    try:
+        response = requests.get(
+            f"{DEFAULT_SUPABASE_URL}/rest/v1/snow_snowlines",
+            params={"resort_id": f"eq.{resort['resort_id']}",
+                    "select": "status,snowline_m,sampled_max_m,obs_date", "limit": 1},
+            headers={"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+                     "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        rows = response.json()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    row = rows[0]
+    try:
+        obs = datetime.strptime(str(row.get("obs_date")), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+    if (datetime.now(tz=timezone.utc) - obs).days > SNOWLINE_MAX_AGE_DAYS:
+        return None
+    return row
+
+
+def _apply_snowline_gate(banded: dict[str, int | None],
+                         bands: dict[str, float | None],
+                         snowline: dict[str, Any]) -> dict[str, int | None]:
+    """Zero the depth of bands the satellite saw as bare. `all_bare` only zeros
+    bands inside the elevation span the grid actually sampled — never
+    extrapolates above it."""
+    status = snowline.get("status")
+    out = dict(banded)
+    for band, depth_cm in banded.items():
+        elevation = bands.get(band)
+        if depth_cm is None or not isinstance(elevation, (int, float)):
+            continue
+        if status == "snowline" and isinstance(snowline.get("snowline_m"), (int, float)):
+            if elevation < float(snowline["snowline_m"]) - SNOWLINE_MARGIN_M:
+                out[band] = 0
+        elif status == "all_bare" and isinstance(snowline.get("sampled_max_m"), (int, float)):
+            if elevation <= float(snowline["sampled_max_m"]):
+                out[band] = 0
+    return out
+
+
 def _budget_at_elevation(band_budgets: dict[str, float],
                          bands: dict[str, float | None],
                          elevation_m: float) -> float | None:
@@ -715,12 +774,14 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         )
         ref_history_future = pool.submit(fetch_band_history, resort, None) if multi_band else None
         station_future = pool.submit(fetch_nearby_station, resort, bands) if multi_band else None
+        snowline_future = pool.submit(fetch_snowline, resort) if multi_band else None
         band_payloads = {band: future.result() for band, future in band_futures.items()}
         tendency = tendency_future.result() if tendency_future else []
         band_budgets = {band: _season_budget_cm(future.result())
                         for band, future in history_futures.items()}
         ref_budget = _season_budget_cm(ref_history_future.result()) if ref_history_future else 0.0
         station = station_future.result() if station_future else None
+        snowline = snowline_future.result() if snowline_future else None
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
@@ -749,6 +810,8 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             depth_source = "station"
     if multi_band:
         banded = _banded_depth_cm(anchor_depth_cm, band_budgets, anchor_budget)
+        if snowline is not None:
+            banded = _apply_snowline_gate(banded, bands, snowline)
     else:
         banded = {band: anchor_depth_cm for band in band_payloads}
     depth = {
@@ -771,6 +834,13 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             "distance_km": station.get("distance_km"),
             "elevation_m": station.get("elevation_m"),
             "asof": station.get("asof"),
+        }
+    if snowline is not None:
+        # transparency: what the satellite saw, even when nothing was gated
+        depth["snowline"] = {
+            "status": snowline.get("status"),
+            "snowline_m": snowline.get("snowline_m"),
+            "obs_date": snowline.get("obs_date"),
         }
     return {
         "resort_id": resort["resort_id"],
