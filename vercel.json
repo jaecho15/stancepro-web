@@ -2,7 +2,16 @@
   "functions": {
     "api/short-range-snow.py": {
       "maxDuration": 60
+    },
+    "api/update-snow-stations.py": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 5 * * *"
+    }
+  ],
   "regions": ["sin1"]
 }

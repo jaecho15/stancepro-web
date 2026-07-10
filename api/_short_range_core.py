@@ -541,6 +541,16 @@ BUDGET_MELT_CM_PER_DEGDAY = 1.5 # depth melt per positive degree-day
 BUDGET_MIN_REF_CM = 3.0         # denominator floor: below this, ratios are noise
 BUDGET_MAX_RATIO = 25.0         # sanity cap for valley-cell anchors
 
+# Measured anchor: when a public snow station (snow_stations table — SNOTEL /
+# SLF IMIS / JMA AMeDAS, cron-synced daily) sits close enough to the resort,
+# its measured depth replaces the model grid value as the anchor. The band
+# ratios still come from the season budget — only the absolute level changes.
+# Multi-band resorts only: single-band resorts carry no elevations, so a
+# station can't be matched vertically and the grid value stays.
+STATION_MAX_DISTANCE_KM = 15.0
+STATION_MAX_AGE_H = 48.0
+STATION_ELEV_MARGIN_M = 250.0   # station must sit within [base-250, top+250]
+
 
 def fetch_band_history(resort: dict[str, Any], elevation_m: float | None) -> dict[str, Any]:
     """Small daily-only fetch of the past HISTORY_PAST_DAYS: precip + the band's
@@ -576,6 +586,88 @@ def _season_budget_cm(history_payload: dict[str, Any]) -> float:
         melt_cm = BUDGET_MELT_CM_PER_DEGDAY * max(float(t_c), 0.0)
         depth = max(0.0, depth + snow_cm - melt_cm)
     return depth
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    rlat1, rlat2 = math.radians(lat1), math.radians(lat2)
+    dlat = rlat2 - rlat1
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(a))
+
+
+def fetch_nearby_station(resort: dict[str, Any],
+                         bands: dict[str, float | None]) -> dict[str, Any] | None:
+    """Nearest fresh measured-depth station usable as the depth anchor, or None.
+    Best-effort: the measured anchor is an upgrade, never a dependency — any
+    failure just keeps the model grid anchor."""
+    elevations = [e for e in bands.values() if isinstance(e, (int, float))]
+    if len(elevations) < 2:
+        return None                       # single-band: no vertical match possible
+    lat, lon = float(resort["lat"]), float(resort["lon"])
+    dlat = 0.2                            # ~22 km; haversine below trims to 15
+    dlon = 0.2 / max(math.cos(math.radians(lat)), 0.2)
+    try:
+        response = requests.get(
+            f"{DEFAULT_SUPABASE_URL}/rest/v1/snow_stations",
+            params=[
+                ("select", "station_id,source,name,lat,lon,elevation_m,depth_cm,asof"),
+                ("lat", f"gte.{lat - dlat}"), ("lat", f"lte.{lat + dlat}"),
+                ("lon", f"gte.{lon - dlon}"), ("lon", f"lte.{lon + dlon}"),
+                ("depth_cm", "not.is.null"),
+            ],
+            headers={"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+                     "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        rows = response.json()
+    except Exception:
+        return None
+    lo = min(elevations) - STATION_ELEV_MARGIN_M
+    hi = max(elevations) + STATION_ELEV_MARGIN_M
+    now = datetime.now(tz=timezone.utc)
+    best: dict[str, Any] | None = None
+    for row in rows:
+        elev = row.get("elevation_m")
+        if not isinstance(elev, (int, float)) or not lo <= elev <= hi:
+            continue
+        asof_raw = row.get("asof")
+        try:
+            asof = datetime.fromisoformat(str(asof_raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if (now - asof).total_seconds() > STATION_MAX_AGE_H * 3600:
+            continue
+        distance = _haversine_km(lat, lon, float(row["lat"]), float(row["lon"]))
+        if distance > STATION_MAX_DISTANCE_KM:
+            continue
+        if best is None or distance < best["distance_km"]:
+            best = dict(row, distance_km=round(distance, 1))
+    return best
+
+
+def _budget_at_elevation(band_budgets: dict[str, float],
+                         bands: dict[str, float | None],
+                         elevation_m: float) -> float | None:
+    """Season budget linearly interpolated to an arbitrary elevation (clamped to
+    the band range) — evaluates the budget curve at a station's altitude."""
+    points = sorted(
+        (float(bands[band]), budget)
+        for band, budget in band_budgets.items()
+        if isinstance(bands.get(band), (int, float))
+    )
+    if not points:
+        return None
+    if elevation_m <= points[0][0]:
+        return points[0][1]
+    if elevation_m >= points[-1][0]:
+        return points[-1][1]
+    for (e0, b0), (e1, b1) in zip(points, points[1:]):
+        if e0 <= elevation_m <= e1:
+            t = (elevation_m - e0) / (e1 - e0) if e1 > e0 else 0.0
+            return b0 + (b1 - b0) * t
+    return points[-1][1]
 
 
 def _banded_depth_cm(grid_depth_cm: int | None,
@@ -622,11 +714,13 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             if multi_band else {}
         )
         ref_history_future = pool.submit(fetch_band_history, resort, None) if multi_band else None
+        station_future = pool.submit(fetch_nearby_station, resort, bands) if multi_band else None
         band_payloads = {band: future.result() for band, future in band_futures.items()}
         tendency = tendency_future.result() if tendency_future else []
         band_budgets = {band: _season_budget_cm(future.result())
                         for band, future in history_futures.items()}
         ref_budget = _season_budget_cm(ref_history_future.result()) if ref_history_future else 0.0
+        station = station_future.result() if station_future else None
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
@@ -635,17 +729,28 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                                           freezing_by_date, freezing_by_block, 7))
     for row in daily_rows:
         row["resort_id"] = resort["resort_id"]
-    # Current snowpack depth per band (estimate — model, not resort-measured).
-    # The grid value is identical across bands (snow_depth ignores elevation
-    # downscaling), so multi-band resorts distribute it by season-budget ratio.
+    # Current snowpack depth per band. The model grid value is identical across
+    # bands (snow_depth ignores elevation downscaling), so multi-band resorts
+    # distribute an ANCHOR by season-budget ratio. The anchor is a nearby
+    # measured station when one qualifies (better absolute level), else the
+    # model grid value.
     grid_depth_cm = next(
         (cm for cm in (_current_depth_cm(bp) for bp in band_payloads.values()) if cm is not None),
         None,
     )
+    anchor_depth_cm = grid_depth_cm
+    anchor_budget = ref_budget
+    depth_source = "model"
+    if station is not None:
+        station_budget = _budget_at_elevation(band_budgets, bands, float(station["elevation_m"]))
+        if station_budget is not None:
+            anchor_depth_cm = int(station["depth_cm"])
+            anchor_budget = station_budget
+            depth_source = "station"
     if multi_band:
-        banded = _banded_depth_cm(grid_depth_cm, band_budgets, ref_budget)
+        banded = _banded_depth_cm(anchor_depth_cm, band_budgets, anchor_budget)
     else:
-        banded = {band: grid_depth_cm for band in band_payloads}
+        banded = {band: anchor_depth_cm for band in band_payloads}
     depth = {
         "base_cm": banded.get("base"),
         "mid_cm": banded.get("mid"),
@@ -656,7 +761,17 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             None,
         ),
         "estimate": True,
+        "source": depth_source,
     }
+    if depth_source == "station":
+        depth["station"] = {
+            "id": station.get("station_id"),
+            "name": station.get("name"),
+            "network": station.get("source"),
+            "distance_km": station.get("distance_km"),
+            "elevation_m": station.get("elevation_m"),
+            "asof": station.get("asof"),
+        }
     return {
         "resort_id": resort["resort_id"],
         "country_code": resort.get("country_code"),
