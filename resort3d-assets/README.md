@@ -14,5 +14,16 @@ lib injection — see `Resort3DPreviewView.swift`).
 
 Do NOT bump the library versions and do NOT load them from a CDN — the tile
 router and terrain behaviour are validated against these exact bytes (see the
-comment block at the top of resort3d.html). When the iOS copy changes, re-copy
-all four files from the iOS repo and verify `md5` matches.
+comment block at the top of resort3d.html).
+
+**Sync from the COMMITTED iOS version, never the working tree** — the iOS
+repo is shared-dirty across parallel sessions, and an uncommitted engine
+draft shipped here once (2026-07-10: FATMAP-session edits caused woodgrain
+hillshade banding on the web while the app, built from the committed file,
+was clean). To sync:
+
+    git -C ../StancePro show HEAD:StancePro/Resources/web/resort3d.html \
+      > resort3d-assets/resort3d.html   # (repeat for the three lib files)
+
+then verify each file's md5 equals `git show HEAD:...` — not the checkout.
+Current snapshot: commit 32cd0fc7.

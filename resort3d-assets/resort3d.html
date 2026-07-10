@@ -773,20 +773,6 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       const z = +m[1], x = +m[2], y = +m[3];
       if (coreHasTile(z, x, y)) return { url: CORE_BASE + z + "/" + x + "/" + y + ".png?v=" + VER };
     }
-    // Drape (hill/slope/extreme) edge ring: tiles whose CENTRE is outside the
-    // resort's extent were never emitted — answer with a transparent 1×1 PNG
-    // instead of letting them 400-retry forever (see drapeExtents note).
-    const d = url.match(/terrain_offpiste_v1\/([^/]+)\/[^?]*?\/(?:hill|slope|extreme)\/(\d+)\/(\d+)\/(\d+)\.webp/);
-    if (d) {
-      const cb = drapeExtents[d[1]];
-      if (cb) {
-        const z = +d[2], x = +d[3], y = +d[4];
-        const sp = 2 * WM / (2 ** z);
-        const cx = -WM + (x + 0.5) * sp, cy = WM - (y + 0.5) * sp;
-        if (!(cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]))
-          return { url: TRANSPARENT_TILE };
-      }
-    }
     return { url };
   };
 
@@ -803,14 +789,6 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   const DRAPE_KINDS = [["hill", "hillshade", "hillshade_5m.png", 0.9, "visible"],
                        ["slope", "slope", "slope_5m.png", 0.72, "none"],
                        ["extreme", "extreme", "extreme_5m.png", 0.72, "none"]];
-  // Per-resort drape-tile extents for the request router: the tiles/{hill,slope,
-  // extreme} trees are emitted with a tile-CENTRE-in-bounds test, but MapLibre
-  // requests every tile INTERSECTING the source bounds — the edge ring (centre
-  // outside, extent overlapping) 400s and MapLibre re-requests it on every
-  // move: log spam, battery, and map.loaded() never settles. The router below
-  // answers those ring tiles with a transparent 1×1 PNG instead.
-  const drapeExtents = {};   // rid -> bounds_3857
-  const TRANSPARENT_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
   function drapeSpec(tag, m, b, baseUrl) {
     const sln = (m.safety_native && m.safety_native.layers) || {};
     const tiles = m.safety_native && m.safety_native.tiles;   // {minzoom,maxzoom,tree,bounds}
@@ -820,23 +798,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       ...(vis === "none" ? { layout: { visibility: "none" } } : {}), paint: { "raster-opacity": op } });
     const box = (x0, x1, y0, y1) => { const w = m2lon(x0), e = m2lon(x1), n = m2lat(y1), s = m2lat(y0);
       return [[w, n], [e, n], [e, s], [w, s]]; };
-    if (tiles) {
-      // The drape tiler emits tiles whose CENTRE lies in the tight real-data
-      // extent (dem_tiles.core_bounds); the padded grid bbox (bounds_3857) is
-      // ~100 m looser and lets edge-ring requests through to 400s.
-      const ext = (m.dem_tiles && m.dem_tiles.core_bounds) || b;
-      const rm = baseUrl.match(/terrain_offpiste_v1\/([^/]+)\//);
-      if (rm && ext) drapeExtents[rm[1]] = ext;
-    }
     DRAPE_KINDS.forEach(([kind, key, def, op, vis]) => {
       const id0 = tag ? kind + tag : kind;
       if (tiles) {   // hillshade + slope + cliff all as XYZ RasterTileSources (LOD, no clip)
-        // bounds cut most off-coverage requests (meta value, else the resort's
-        // own extent); the transformRequest router catches the edge ring.
-        const srcBounds = tiles.bounds || (b ? [m2lon(b[0]), m2lat(b[1]), m2lon(b[2]), m2lat(b[3])] : null);
         sources[id0] = { type: "raster", tileSize: 256,
           tiles: [baseUrl + (tiles.tree || "tiles") + "/" + kind + "/{z}/{x}/{y}.webp?v=" + VER],
-          minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, ...(srcBounds ? { bounds: srcBounds } : {}) };
+          minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, ...(tiles.bounds ? { bounds: tiles.bounds } : {}) };
       } else {       // legacy fallback: single image
         sources[id0] = { type: "image", url: artFn(sln[key] || def), coordinates: box(b[0], b[2], b[1], b[3]) };
       }
@@ -1017,15 +984,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   const updZBadge = () => {
     if (!zbadge) return;
     const z = map.getZoom();
-    // "5m" iff the CAMERA CENTRE is inside any registered core region (focused
-    // OR an on-demand-loaded neighbour) — the old focused-only `hasCore` check
-    // said "5m" over unloaded neighbours and "30m" over loaded ones.
-    const c = map.getCenter();
-    const cx = c.lng / 180 * WM;
-    const cy = Math.log(Math.tan(Math.PI / 4 + c.lat * Math.PI / 360)) / Math.PI * WM;
-    const inCore = coreRegions.some(cb => cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]);
     zbadge.textContent = "z " + z.toFixed(1) + "  p " + Math.round(map.getPitch())
-      + "°  dem " + (inCore && z >= 13.5 ? "5m" : "30m");
+      + "°  dem " + (hasCore && z >= 13.5 ? "5m" : "30m");
   };
   map.on("move", updZBadge);
   map.on("zoom", updZBadge);
@@ -1738,7 +1698,6 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const nbLoaded = {};
     let nbCount = 0;
     const nbGeoData = { type: "FeatureCollection", features: [] };
-    const nbContourData = { type: "FeatureCollection", features: [] };
     function nbInitGeo() {
       if (map.getSource("nbgeo")) return;
       map.addSource("nbgeo", { type: "geojson", data: nbGeoData });
@@ -1764,24 +1723,6 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
           "text-rotation-alignment": "viewport", "text-pitch-alignment": "viewport" },
         paint: { "text-color": "#2A2F38", "text-halo-color": "#FFFFFF", "text-halo-width": 1.4 } }, "nearby-dots");
     }
-    // A neighbour's core_bounds lands AFTER the DEM tiles for that area were
-    // already fetched as 30 m Terrarium (the loader fires on idle — i.e. while
-    // that very viewport is rendered), and MapLibre never re-requests a loaded
-    // tile, so the neighbour 5 m mesh silently never appeared (verified: last
-    // z14 request at t=51.28s vs neighbour meta at t=51.9s — routeDem rewrites
-    // fine when asked again). setTiles() with the SAME url forces a source
-    // reload through routeDem with the now-populated coreRegions; debounced so
-    // one reload covers a whole neighbour batch.
-    let demReloadTimer = null;
-    function scheduleDemReload() {
-      clearTimeout(demReloadTimer);
-      demReloadTimer = setTimeout(() => {
-        try {
-          const s = map.getSource("dem");
-          if (s && s.setTiles) s.setTiles(["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"]);
-        } catch (e) { console.log("dem reload failed", e); }
-      }, 700);
-    }
     async function loadNeighbor(nb) {
       if (!nb.id || nbLoaded[nb.id] || nbCount >= NB_MAX) return;
       nbLoaded[nb.id] = true; nbCount++;
@@ -1797,44 +1738,10 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         nd.layers.forEach(L => { if (!map.getLayer(L.id)) map.addLayer(L, "c100"); });
         applyHillNight(isNightNow());          // dim the new neighbour hill(s) at night
         applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
-        if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); scheduleDemReload(); }
+        if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); map.triggerRepaint(); }
         const geo = await (await fetch(base + "geometry.json?v=" + VER)).json();
-        // Clip the neighbour's runs to ITS OWN terrain extent before adding —
-        // the same guard the focused resort gets. nbgeo has no other clip, so a
-        // neighbour whose geometry.json still over-includes (stale pre-clip
-        // cache, or its own valley) would drape past its loaded terrain →
-        // stretched lines the moment you pan onto it. b = nm.bounds_3857.
-        const nbW = m2lon(b[0]), nbE = m2lon(b[2]), nbS = m2lat(b[1]), nbN = m2lat(b[3]);
-        const inNb = (a) => {
-          if (!a) return false;
-          if (typeof a[0] === "number") return a[0] >= nbW && a[0] <= nbE && a[1] >= nbS && a[1] <= nbN;
-          for (let i = 0; i < a.length; i++) if (inNb(a[i])) return true;
-          return false;
-        };
-        (geo.features || []).forEach(f => { if (inNb(f.geometry && f.geometry.coordinates)) nbGeoData.features.push(f); });
+        (geo.features || []).forEach(f => nbGeoData.features.push(f));
         if (map.getSource("nbgeo")) map.getSource("nbgeo").setData(nbGeoData);
-        // Contours too — an interconnect member reached by panning (aggregate
-        // degraded view → member zoom-in, e.g. Dolomiti Superski → Val Gardena)
-        // should read like a focused resort. Same styling as c100/c50; only the
-        // rendered classes are merged to keep the shared source lean.
-        try {
-          const cj = await (await fetch(base + "contours.json?v=" + VER)).json();
-          if (!map.getSource("nbcontours")) {
-            map.addSource("nbcontours", { type: "geojson", data: nbContourData });
-            const before = map.getLayer("nb-lifts") ? "nb-lifts" : "nearby-dots";
-            map.addLayer({ id: "nb-c100", type: "line", source: "nbcontours",
-              filter: ["==", ["get", "cls"], "major"],
-              paint: { "line-color": "#38485C", "line-width": 1.2, "line-opacity": 0.45 } }, before);
-            map.addLayer({ id: "nb-c50", type: "line", source: "nbcontours", minzoom: 13,
-              filter: ["==", ["get", "cls"], "mid"],
-              paint: { "line-color": "#38485C", "line-width": 0.9, "line-opacity": 0.35 } }, before);
-          }
-          (cj.features || []).forEach(f => {
-            const cls = f.properties && f.properties.cls;
-            if (cls === "major" || cls === "mid") nbContourData.features.push(f);
-          });
-          map.getSource("nbcontours").setData(nbContourData);
-        } catch (e) { console.log("neighbour contours skipped", nb.id, e); }
       } catch (e) {
         console.log("neighbour load failed", nb.id, e);
         nbLoaded[nb.id] = false; nbCount--;   // isolated failure; allow a retry
