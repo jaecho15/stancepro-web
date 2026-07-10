@@ -81,6 +81,7 @@
   #ctl button.off { background:rgba(255,255,255,.92); color:#1F2530; }
   #bSlope.on   { background:rgba(37,99,168,.9); }
   #bExtreme.on { background:rgba(186,26,125,.9); }
+  #bForest.on  { background:rgba(38,94,58,.9); }
   /* Temporary on-screen sky debug (WKWebView has no console). */
   #dbg { position:absolute; left:8px; bottom:calc(var(--safe-bottom) + 8px); z-index:9;
          font:11px/1.35 ui-monospace,monospace; color:#9ff; background:rgba(0,0,0,.6);
@@ -114,6 +115,7 @@
   <button id="skybtn" class="off" aria-label="Auto day/night">◐</button>
   <button id="bSlope" class="off">30°+</button>
   <button id="bExtreme" class="off">45°+</button>
+  <button id="bForest" class="on">🌲</button>
 </div>
 <!-- ===== Off-piste route drawing (Stage-1). Self-contained & namespaced (op-*);
      injects its own CSS/DOM, samples the LiDAR elev_5m artifact for the slope
@@ -640,7 +642,10 @@ const RAW_VER = "__CACHE_VER__";
 const VER = encodeURIComponent(
   RAW_VER && !RAW_VER.startsWith("__") ? RAW_VER : String(Math.floor(Date.now() / 3.6e6)));
 console.log("resort3d boot", RESORT_ID, APP_LANG, VER);
-const BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/terrain_offpiste_v1/" + RESORT_ID + "/";
+// Backcountry mountains (curated bc-* catalog) live in their own artifact tree
+// but share everything else — the DEM core tile tree, router, drapes, contours.
+const ART_TREE = RESORT_ID.indexOf("bc-") === 0 ? "terrain_backcountry_v1" : "terrain_offpiste_v1";
+const BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/" + ART_TREE + "/" + RESORT_ID + "/";
 const art = f => BASE + f + "?v=" + VER;
 const WM = 20037508.342789244;
 const m2lon = x => x / WM * 180;
@@ -713,18 +718,33 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       cx.imageSmoothingEnabled = false;
       cx.drawImage(bmp, 0, 0, W, H);
       const d = cx.getImageData(0, 0, W, H).data;
-      let best = 0, bi = -1;
+      let best = 0, bi = -1, lo = Infinity, li = -1;
       for (let i = 0; i < W * H; i++) {
         const p = i * 4;
         if (d[p + 3] === 0) continue;
         const v = d[p] * 65536 + d[p + 1] * 256 + d[p + 2];
         if (v > best) { best = v; bi = i; }
+        if (v < lo) { lo = v; li = i; }     // lowest inside px = base area (for face-the-mountain)
       }
       if (bi < 0) return null;
       const px = bi % W, py = (bi / W) | 0;
       const mx = minx + (px + 0.5) / W * (maxx - minx);
       const my = maxy - (py + 0.5) / H * (maxy - miny);   // image y is down
-      return { lon: m2lon(mx), lat: m2lat(my), elev: best / 10 - 10000 };
+      const bx = li % W, by = (li / W) | 0;
+      // sample(): elevation lookup on this same downscaled canvas — lets the
+      // face-the-mountain code find the LOWEST PISTE VERTEX (the real base
+      // area) instead of the lowest buffer pixel (a valley floor ~1 km out).
+      const sample = (lon, lat) => {
+        const X = lon / 180 * WM, Y = Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) * WM / Math.PI;
+        const c = ((X - minx) / (maxx - minx) * W) | 0, r = ((maxy - Y) / (maxy - miny) * H) | 0;
+        if (c < 0 || r < 0 || c >= W || r >= H) return null;
+        const p = (r * W + c) * 4;
+        if (d[p + 3] === 0) return null;
+        return (d[p] * 65536 + d[p + 1] * 256 + d[p + 2]) / 10 - 10000;
+      };
+      return { lon: m2lon(mx), lat: m2lat(my), elev: best / 10 - 10000,
+               baseLon: m2lon(minx + (bx + 0.5) / W * (maxx - minx)),
+               baseLat: m2lat(maxy - (by + 0.5) / H * (maxy - miny)), sample };
     } catch (err) {
       console.log("summit detect failed", err);
       return null;
@@ -773,6 +793,20 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       const z = +m[1], x = +m[2], y = +m[3];
       if (coreHasTile(z, x, y)) return { url: CORE_BASE + z + "/" + x + "/" + y + ".png?v=" + VER };
     }
+    // Drape (hill/slope/extreme) edge ring: tiles whose CENTRE is outside the
+    // resort's extent were never emitted — answer with a transparent 1×1 PNG
+    // instead of letting them 400-retry forever (see drapeExtents note).
+    const d = url.match(/terrain_offpiste_v1\/([^/]+)\/[^?]*?\/(?:hill|slope|extreme)\/(\d+)\/(\d+)\/(\d+)\.webp/);
+    if (d) {
+      const cb = drapeExtents[d[1]];
+      if (cb) {
+        const z = +d[2], x = +d[3], y = +d[4];
+        const sp = 2 * WM / (2 ** z);
+        const cx = -WM + (x + 0.5) * sp, cy = WM - (y + 0.5) * sp;
+        if (!(cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]))
+          return { url: TRANSPARENT_TILE };
+      }
+    }
     return { url };
   };
 
@@ -789,6 +823,14 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   const DRAPE_KINDS = [["hill", "hillshade", "hillshade_5m.png", 0.9, "visible"],
                        ["slope", "slope", "slope_5m.png", 0.72, "none"],
                        ["extreme", "extreme", "extreme_5m.png", 0.72, "none"]];
+  // Per-resort drape-tile extents for the request router: the tiles/{hill,slope,
+  // extreme} trees are emitted with a tile-CENTRE-in-bounds test, but MapLibre
+  // requests every tile INTERSECTING the source bounds — the edge ring (centre
+  // outside, extent overlapping) 400s and MapLibre re-requests it on every
+  // move: log spam, battery, and map.loaded() never settles. The router below
+  // answers those ring tiles with a transparent 1×1 PNG instead.
+  const drapeExtents = {};   // rid -> bounds_3857
+  const TRANSPARENT_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
   function drapeSpec(tag, m, b, baseUrl) {
     const sln = (m.safety_native && m.safety_native.layers) || {};
     const tiles = m.safety_native && m.safety_native.tiles;   // {minzoom,maxzoom,tree,bounds}
@@ -798,16 +840,44 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       ...(vis === "none" ? { layout: { visibility: "none" } } : {}), paint: { "raster-opacity": op } });
     const box = (x0, x1, y0, y1) => { const w = m2lon(x0), e = m2lon(x1), n = m2lat(y1), s = m2lat(y0);
       return [[w, n], [e, n], [e, s], [w, s]]; };
+    if (tiles) {
+      // The drape tiler emits tiles whose CENTRE lies in the tight real-data
+      // extent (dem_tiles.core_bounds); the padded grid bbox (bounds_3857) is
+      // ~100 m looser and lets edge-ring requests through to 400s.
+      const ext = (m.dem_tiles && m.dem_tiles.core_bounds) || b;
+      const rm = baseUrl.match(/terrain_offpiste_v1\/([^/]+)\//);
+      if (rm && ext) drapeExtents[rm[1]] = ext;
+    }
+    // Backcountry (bc-*) artifacts bake slope/extreme only when the source is a
+    // safety-grade DTM (meta.wrote_slope_extreme) and never a hillshade_5m (the
+    // dynamic demshade layer does the shading) — skip absent kinds instead of
+    // letting their image fetches 400.
+    const isBC = !!m.destination_id;
     DRAPE_KINDS.forEach(([kind, key, def, op, vis]) => {
+      if (isBC && (kind === "hill" || !m.wrote_slope_extreme)) return;
       const id0 = tag ? kind + tag : kind;
       if (tiles) {   // hillshade + slope + cliff all as XYZ RasterTileSources (LOD, no clip)
+        // bounds cut most off-coverage requests (meta value, else the resort's
+        // own extent); the transformRequest router catches the edge ring.
+        const srcBounds = tiles.bounds || (b ? [m2lon(b[0]), m2lat(b[1]), m2lon(b[2]), m2lat(b[3])] : null);
         sources[id0] = { type: "raster", tileSize: 256,
           tiles: [baseUrl + (tiles.tree || "tiles") + "/" + kind + "/{z}/{x}/{y}.webp?v=" + VER],
-          minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, ...(tiles.bounds ? { bounds: tiles.bounds } : {}) };
+          minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, ...(srcBounds ? { bounds: srcBounds } : {}) };
       } else {       // legacy fallback: single image
         sources[id0] = { type: "image", url: artFn(sln[key] || def), coordinates: box(b[0], b[2], b[1], b[3]) };
       }
       layers.push(mkLayer(id0, vis, op));
+      if (kind === "hill" && m.forest && m.forest.file) {
+        // Forest canopy drape (CHM-derived, alpha = canopy density) — sits
+        // ABOVE the hillshade, BELOW the slope/cliff safety overlays. Single
+        // image over the resort extent (median 71 KB). Default ON with an
+        // explicit user toggle (🌲 chip) — the toggle is a hard requirement.
+        const fid = tag ? "forest" + tag : "forest";
+        sources[fid] = { type: "image", url: artFn(m.forest.file),
+                         coordinates: box(b[0], b[2], b[1], b[3]) };
+        layers.push({ id: fid, type: "raster", source: fid,
+                      paint: { "raster-opacity": 0.55, "raster-fade-duration": 0 } });
+      }
     });
     return { sources, layers };
   }
@@ -838,7 +908,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         ofm: { type: "vector", url: "https://tiles.openfreemap.org/planet",
                attribution: "© OpenStreetMap contributors · OpenFreeMap" },
         ...focDrape.sources,   // hillshade/slope/cliff — single image, or pieces if oversized
-        contours:{ type: "geojson", data: art("contours.json") },   // exists for non-LiDAR too (Terrarium-baked, reference-only)
+        contours:{ type: "geojson", data: meta.destination_id ? { type: "FeatureCollection", features: [] } : art("contours.json") },   // bc-* has none baked (v1); exists for non-LiDAR resorts too (Terrarium-baked, reference-only)
         geometry:{ type: "geojson", data: { type: "FeatureCollection", features: [] } },
         nearby:  { type: "geojson", data: nearbyGeo }
       },
@@ -957,6 +1027,57 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       .addTo(map);
     console.log("summit pin", summit.lon.toFixed(5), summit.lat.toFixed(5),
                 Math.round(summit.elev) + "m");
+
+    // Face the mountain: once the first render settles, swing the camera to
+    // look from the base area up toward the summit — the angle a paper trail
+    // map is drawn from. Skipped the moment the user touches the map (never
+    // fight an interacting user); degraded resorts (no summit) never get here.
+    if (summit.baseLon != null) {
+      let userMoved = false;
+      ["mousedown", "touchstart", "wheel"].forEach(ev =>
+        map.getCanvas().addEventListener(ev, () => { userMoved = true; }, { once: true, passive: true }));
+      const face = () => {
+        if (userMoved) return;
+        // Base = lowest-elevation PISTE vertex (bottom of the runs); fall back
+        // to the lowest inside pixel when geometry/sampling yields nothing.
+        let bLon = summit.baseLon, bLat = summit.baseLat, lo = Infinity;
+        try {
+          const geo = map.getSource("geometry") && map.getSource("geometry")._data;
+          (geo && geo.features || []).forEach(f => {
+            const p = f.properties || {};
+            if (!(p["piste:type"] || p["piste:difficulty"])) return;
+            const walk = c => {
+              if (c && typeof c[0] === "number") {
+                const e = summit.sample(c[0], c[1]);
+                if (e != null && e < lo) { lo = e; bLon = c[0]; bLat = c[1]; }
+              } else if (Array.isArray(c)) c.forEach(walk);
+            };
+            walk(f.geometry && f.geometry.coordinates);
+          });
+        } catch (e) {}
+        const dx = (summit.lon - bLon) * Math.cos((summit.lat + bLat) / 2 * Math.PI / 180);
+        const dy = summit.lat - bLat;
+        if (!dx && !dy) return;
+        const target = Math.atan2(dx, dy) * 180 / Math.PI;
+        // One cinematic 360° sweep over the resort, easing out INTO the
+        // trail-map bearing. rAF-driven so a user touch cancels mid-flight
+        // (the once-listeners above flip userMoved, checked every frame).
+        const start = map.getBearing();
+        const total = 360 + (((target - start) % 360) + 360) % 360;   // full turn, land on target
+        const T = 7000, t0 = performance.now();
+        const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const spin = now => {
+          if (userMoved) return;
+          const t = Math.min(1, (now - t0) / T);
+          map.setBearing(start + total * ease(t));
+          if (t < 1) requestAnimationFrame(spin);
+        };
+        requestAnimationFrame(spin);
+        console.log("orbit+face bearing", target.toFixed(0),
+                    lo < Infinity ? "(piste base " + Math.round(lo) + "m)" : "(pixel base)");
+      };
+      if (map.loaded()) face(); else map.once("idle", face);
+    }
   })();
 
   // 2D/3D toggle — flattening the terrain helps reading dense trail networks.
@@ -984,8 +1105,15 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   const updZBadge = () => {
     if (!zbadge) return;
     const z = map.getZoom();
+    // "5m" iff the CAMERA CENTRE is inside any registered core region (focused
+    // OR an on-demand-loaded neighbour) — the old focused-only `hasCore` check
+    // said "5m" over unloaded neighbours and "30m" over loaded ones.
+    const c = map.getCenter();
+    const cx = c.lng / 180 * WM;
+    const cy = Math.log(Math.tan(Math.PI / 4 + c.lat * Math.PI / 360)) / Math.PI * WM;
+    const inCore = coreRegions.some(cb => cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]);
     zbadge.textContent = "z " + z.toFixed(1) + "  p " + Math.round(map.getPitch())
-      + "°  dem " + (hasCore && z >= 13.5 ? "5m" : "30m");
+      + "°  dem " + (inCore && z >= 13.5 ? "5m" : "30m");
   };
   map.on("move", updZBadge);
   map.on("zoom", updZBadge);
@@ -996,7 +1124,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // Shared by the focused resort AND on-demand neighbours: a chip toggles ALL
   // matching layers ("slope" + "slope__<neighbourId>", etc.), and newly-loaded
   // neighbours adopt the current state (see kindVis in loadNeighbor).
-  const kindVis = { slope: false, extreme: false };
+  const kindVis = { slope: false, extreme: false, forest: true };   // forest: default ON (user-mandated explicit toggle)
   function applyKindVis(kind) {
     const on = kindVis[kind];
     map.getStyle().layers.forEach(L => {
@@ -1014,6 +1142,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   };
   bindLayerToggle("bSlope", "slope");
   bindLayerToggle("bExtreme", "extreme");
+  bindLayerToggle("bForest", "forest");
 
   // ===================== Real sky (night stars + day sun) =====================
   // NASA Deep Star Maps texture (equirectangular, equatorial) on a Three.js
@@ -1151,6 +1280,11 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       if (L.id === "hill" || L.id.indexOf("hill__") === 0) {
         map.setPaintProperty(L.id, "raster-opacity", night ? 0.6 : 0.9);
         map.setPaintProperty(L.id, "raster-brightness-max", night ? 0.9 : 1.0);
+      }
+      // Forest canopy tint dims harder at night — moonlit forest reads as a
+      // shadow, not a green wash (same focused+neighbour prefix convention).
+      if (L.id === "forest" || L.id.indexOf("forest__") === 0) {
+        map.setPaintProperty(L.id, "raster-opacity", night ? 0.25 : 0.55);
       }
     });
   }
@@ -1669,6 +1803,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // loads fewer far tiles). Drop features with no vertex inside the extent —
     // neighbouring resorts arrive via the on-demand nbgeo loader instead.
     (async () => {
+      if (meta.destination_id) return;   // bc-*: no geometry.json baked (v1)
       try {
         const gj = await (await fetch(art("geometry.json"))).json();
         const inExtent = (a) => {
@@ -1693,11 +1828,13 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // cliff draped over its bbox (adopting the current chip + night state), and
     // its 5 m core_bounds registered with the DEM router. Capped so an
     // interconnected valley loads what you actually look at, not all 30 at once.
-    const NB_BASE = id => "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/terrain_offpiste_v1/" + id + "/";
+    const NB_BASE = id => "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/"
+      + (id.indexOf("bc-") === 0 ? "terrain_backcountry_v1" : "terrain_offpiste_v1") + "/" + id + "/";
     const NB_MAX = 10;
     const nbLoaded = {};
     let nbCount = 0;
     const nbGeoData = { type: "FeatureCollection", features: [] };
+    const nbContourData = { type: "FeatureCollection", features: [] };
     function nbInitGeo() {
       if (map.getSource("nbgeo")) return;
       map.addSource("nbgeo", { type: "geojson", data: nbGeoData });
@@ -1723,6 +1860,24 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
           "text-rotation-alignment": "viewport", "text-pitch-alignment": "viewport" },
         paint: { "text-color": "#2A2F38", "text-halo-color": "#FFFFFF", "text-halo-width": 1.4 } }, "nearby-dots");
     }
+    // A neighbour's core_bounds lands AFTER the DEM tiles for that area were
+    // already fetched as 30 m Terrarium (the loader fires on idle — i.e. while
+    // that very viewport is rendered), and MapLibre never re-requests a loaded
+    // tile, so the neighbour 5 m mesh silently never appeared (verified: last
+    // z14 request at t=51.28s vs neighbour meta at t=51.9s — routeDem rewrites
+    // fine when asked again). setTiles() with the SAME url forces a source
+    // reload through routeDem with the now-populated coreRegions; debounced so
+    // one reload covers a whole neighbour batch.
+    let demReloadTimer = null;
+    function scheduleDemReload() {
+      clearTimeout(demReloadTimer);
+      demReloadTimer = setTimeout(() => {
+        try {
+          const s = map.getSource("dem");
+          if (s && s.setTiles) s.setTiles(["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"]);
+        } catch (e) { console.log("dem reload failed", e); }
+      }, 700);
+    }
     async function loadNeighbor(nb) {
       if (!nb.id || nbLoaded[nb.id] || nbCount >= NB_MAX) return;
       nbLoaded[nb.id] = true; nbCount++;
@@ -1736,12 +1891,48 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         const nd = drapeSpec("__" + nb.id, nm, b, base);
         Object.keys(nd.sources).forEach(id => { if (!map.getSource(id)) map.addSource(id, nd.sources[id]); });
         nd.layers.forEach(L => { if (!map.getLayer(L.id)) map.addLayer(L, "c100"); });
-        applyHillNight(isNightNow());          // dim the new neighbour hill(s) at night
+        applyHillNight(isNightNow());          // dim the new neighbour hill(s)+forest at night
         applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
-        if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); map.triggerRepaint(); }
+        applyKindVis("forest");                // incl. the default-ON forest toggle
+        if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); scheduleDemReload(); }
+        if (nm.destination_id) return;   // backcountry neighbour: mesh+drape only (no geometry/contours baked in v1)
         const geo = await (await fetch(base + "geometry.json?v=" + VER)).json();
-        (geo.features || []).forEach(f => nbGeoData.features.push(f));
+        // Clip the neighbour's runs to ITS OWN terrain extent before adding —
+        // the same guard the focused resort gets. nbgeo has no other clip, so a
+        // neighbour whose geometry.json still over-includes (stale pre-clip
+        // cache, or its own valley) would drape past its loaded terrain →
+        // stretched lines the moment you pan onto it. b = nm.bounds_3857.
+        const nbW = m2lon(b[0]), nbE = m2lon(b[2]), nbS = m2lat(b[1]), nbN = m2lat(b[3]);
+        const inNb = (a) => {
+          if (!a) return false;
+          if (typeof a[0] === "number") return a[0] >= nbW && a[0] <= nbE && a[1] >= nbS && a[1] <= nbN;
+          for (let i = 0; i < a.length; i++) if (inNb(a[i])) return true;
+          return false;
+        };
+        (geo.features || []).forEach(f => { if (inNb(f.geometry && f.geometry.coordinates)) nbGeoData.features.push(f); });
         if (map.getSource("nbgeo")) map.getSource("nbgeo").setData(nbGeoData);
+        // Contours too — an interconnect member reached by panning (aggregate
+        // degraded view → member zoom-in, e.g. Dolomiti Superski → Val Gardena)
+        // should read like a focused resort. Same styling as c100/c50; only the
+        // rendered classes are merged to keep the shared source lean.
+        try {
+          const cj = await (await fetch(base + "contours.json?v=" + VER)).json();
+          if (!map.getSource("nbcontours")) {
+            map.addSource("nbcontours", { type: "geojson", data: nbContourData });
+            const before = map.getLayer("nb-lifts") ? "nb-lifts" : "nearby-dots";
+            map.addLayer({ id: "nb-c100", type: "line", source: "nbcontours",
+              filter: ["==", ["get", "cls"], "major"],
+              paint: { "line-color": "#38485C", "line-width": 1.2, "line-opacity": 0.45 } }, before);
+            map.addLayer({ id: "nb-c50", type: "line", source: "nbcontours", minzoom: 13,
+              filter: ["==", ["get", "cls"], "mid"],
+              paint: { "line-color": "#38485C", "line-width": 0.9, "line-opacity": 0.35 } }, before);
+          }
+          (cj.features || []).forEach(f => {
+            const cls = f.properties && f.properties.cls;
+            if (cls === "major" || cls === "mid") nbContourData.features.push(f);
+          });
+          map.getSource("nbcontours").setData(nbContourData);
+        } catch (e) { console.log("neighbour contours skipped", nb.id, e); }
       } catch (e) {
         console.log("neighbour load failed", nb.id, e);
         nbLoaded[nb.id] = false; nbCount--;   // isolated failure; allow a retry

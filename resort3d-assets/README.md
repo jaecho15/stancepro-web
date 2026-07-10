@@ -26,4 +26,4 @@ was clean). To sync:
       > resort3d-assets/resort3d.html   # (repeat for the three lib files)
 
 then verify each file's md5 equals `git show HEAD:...` — not the checkout.
-Current snapshot: commit 32cd0fc7.
+Current snapshot: commit f9e09501 (face-the-mountain intro orbit).
