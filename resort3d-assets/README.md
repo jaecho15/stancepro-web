@@ -31,6 +31,5 @@ was clean). To sync:
       > resort3d-assets/resort3d.html   # (repeat for the three lib files)
 
 then verify each file's md5 equals `git show HEAD:...` — not the checkout.
-Current snapshot: commit 01bc8a87 (face-the-mountain intro orbit; formerly
-f9e09501 before an unpushed-range history rewrite — content verified
-identical, all four files md5-matched against the new hash).
+Current snapshot: commit 3a5efdc6 (frozen alpine tarns — icy fill +
+thin-ice caution; includes the face-the-mountain intro orbit).

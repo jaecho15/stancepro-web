@@ -987,6 +987,10 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     if (ev && ev.error) console.log("map error", ev.error.message || String(ev.error));
   });
 
+  // Elevation sampler shared beyond the summit IIFE (frozen-tarn detection);
+  // set once detectSummit succeeds, null for degraded resorts.
+  let elevSampler = null;
+
   // Resort name: preferred placement is a pin hovering over the summit
   // (markers are terrain-aware, so it rides the 3D surface); the static
   // top-center chip is only the fallback when detection fails. The name
@@ -997,6 +1001,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const displayName = (hostRaw && !hostRaw.startsWith("__") ? hostRaw : meta.name) || "";
     if (!displayName) return;
     const summit = degraded ? null : await detectSummit();   // no elev_5m in degraded → top-center title chip
+    if (summit && summit.sample) elevSampler = summit.sample;
     if (!summit) {
       const t = document.getElementById("title");
       t.textContent = displayName;
@@ -1079,6 +1084,73 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       if (map.loaded()) face(); else map.once("idle", face);
     }
   })();
+
+  // ---- Frozen alpine tarns (user spec 2026-07-11): a small high-altitude
+  // water body reads as ICE in winter — restyle it white-blue AND drop a
+  // thin-ice caution marker, instead of drawing summer-blue water under a red
+  // run (the Mount Olympus case: real OSM tarn at 1,802 m crossed by a real
+  // OSM run). Water polygons come from the OFM vector tiles in view; altitude
+  // from the LiDAR artifact inside the resort (elevSampler), else the mesh.
+  const FROZEN_MIN_ELEV = 1400;          // m — plausible mid-winter freeze line for ski latitudes
+  const FROZEN_MAX_AREA_M2 = 120000;     // only tarns/ponds; big lakes stay open water
+  const frozenIds = [], frozenSeen = new Set();
+  const frozenPts = { type: "FeatureCollection", features: [] };
+  function cautionIcon() {
+    const c = document.createElement("canvas"); c.width = 44; c.height = 40;
+    const t = c.getContext("2d");
+    t.beginPath(); t.moveTo(22, 3); t.lineTo(41, 36); t.lineTo(3, 36); t.closePath();
+    t.fillStyle = "#FFC93D"; t.fill(); t.lineWidth = 3; t.strokeStyle = "#20242B"; t.stroke();
+    t.fillStyle = "#20242B"; t.fillRect(20, 12, 4, 12); t.fillRect(20, 28, 4, 4);
+    return t.getImageData(0, 0, 44, 40);
+  }
+  function initFrozen() {
+    if (map.getLayer("frozen-water")) return;
+    map.addImage("ice-caution", cautionIcon(), { pixelRatio: 2 });
+    // fill rides the SAME ofm tiles with an id filter — no geojson copy, so
+    // tile-clipped fragments never double-draw or seam.
+    map.addLayer({ id: "frozen-water", type: "fill", source: "ofm", "source-layer": "water",
+      filter: ["in", ["id"], ["literal", []]],
+      paint: { "fill-color": "#E8F1F7", "fill-opacity": 0.96 } }, "waterway");
+    map.addSource("frozen-pts", { type: "geojson", data: frozenPts });
+    map.addLayer({ id: "frozen-caution", type: "symbol", source: "frozen-pts",
+      layout: { "icon-image": "ice-caution", "icon-size": 0.55,
+                "icon-allow-overlap": true, "icon-ignore-placement": true } });
+  }
+  function markFrozenTarns() {
+    try {
+      initFrozen();
+      let grew = false;
+      map.querySourceFeatures("ofm", { sourceLayer: "water" }).forEach(f => {
+        const id = f.id;
+        if (id == null || frozenSeen.has(id)) return;
+        const g = f.geometry; if (!g || g.type.indexOf("Polygon") < 0) return;
+        const ring = (g.type === "Polygon" ? g.coordinates[0] : (g.coordinates[0] || [])[0]) || [];
+        if (ring.length < 4) return;
+        frozenSeen.add(id);
+        let A = 0, sx = 0, sy = 0;
+        for (let i = 0; i < ring.length - 1; i++) {
+          A += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+          sx += ring[i][0]; sy += ring[i][1];
+        }
+        const cx = sx / (ring.length - 1), cy = sy / (ring.length - 1);
+        // shoelace in degrees → m² (lon axis shrinks by cos(lat), applied once)
+        const areaM2 = Math.abs(A / 2) * 111320 * 111320 * Math.cos(cy * Math.PI / 180);
+        if (areaM2 > FROZEN_MAX_AREA_M2 || areaM2 < 400) return;
+        let el = elevSampler ? elevSampler(cx, cy) : null;
+        if (el == null) { try { el = map.queryTerrainElevation([cx, cy]); } catch (e) {} }
+        if (el == null || el < FROZEN_MIN_ELEV) return;
+        frozenIds.push(id); grew = true;
+        frozenPts.features.push({ type: "Feature", properties: {},
+          geometry: { type: "Point", coordinates: [cx, cy] } });
+      });
+      if (grew) {
+        map.setFilter("frozen-water", ["in", ["id"], ["literal", frozenIds]]);
+        map.getSource("frozen-pts").setData(frozenPts);
+        console.log("frozen tarns:", frozenIds.length);
+      }
+    } catch (e) {}
+  }
+  map.on("idle", markFrozenTarns);
 
   // 2D/3D toggle — flattening the terrain helps reading dense trail networks.
   let terrainOn = true;
