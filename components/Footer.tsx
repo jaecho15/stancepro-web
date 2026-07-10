@@ -10,7 +10,7 @@ export function Footer() {
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center mb-4">
-              <BrandLogo iconSize={32} wordmarkWidth={156} />
+              <BrandLogo iconSize={32} wordmarkWidth={234} />
             </Link>
             <p className="text-slate-400 text-sm">
               The ultimate snowboard and ski stance calculator. Dial in your setup like the pros.

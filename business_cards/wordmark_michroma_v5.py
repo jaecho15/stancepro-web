@@ -89,17 +89,15 @@ def render_wordmark(
     max_w: int | None = None,
     supersample: int = 2,
 ) -> Image.Image:
-    """Render v5 transparent wordmark; STANCE and PRO share the same glyph metrics."""
-    from build_michroma_bold_wordmark import rasterize_glyphs
+    """Render the geometric STANCEPRO wordmark (business_cards/wordmark_stancepro.py),
+    transparent, scaled so the ink height == target_h (bounded by max_w)."""
+    import wordmark_stancepro as ws
 
     ss = max(1, supersample)
     internal_h = max(1, target_h * ss)
     internal_max_w = max_w * ss if max_w else None
 
-    glyphs, width, height, ascender = _v5_art()
-    # Oversample width so post-crop scale hits target_h accurately.
-    est_w = max(200, int(round(width * internal_h / height)))
-    wm = rasterize_glyphs(glyphs, width, height, ascender, dark, est_w, True)
+    wm = ws.render(dark=dark, target_w=2600, transparent=True)
     wm = _scale_ink_to_height(wm, internal_h, internal_max_w)
     if ss > 1:
         wm = _scale_ink_to_height(wm, target_h, max_w)

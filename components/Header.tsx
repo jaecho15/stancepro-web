@@ -24,7 +24,7 @@ export function Header() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center">
-              <BrandLogo iconSize={32} wordmarkWidth={156} />
+              <BrandLogo iconSize={32} wordmarkWidth={234} />
             </Link>
 
             {/* Desktop Navigation */}
