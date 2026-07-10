@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronRight, Snowflake } from "lucide-react";
+import { regionContext } from "@/lib/snow/region-context";
 import type { SeasonalOutlookRow } from "@/lib/snow/types";
 
 // "This winter's outlook" strip on the snow-forecast landing — web counterpart
@@ -67,6 +68,7 @@ export function SeasonalTilesSection({ rows }: { rows: SeasonalOutlookRow[] }) {
             >
               <span className="flex items-start justify-between gap-1">
                 <span className="text-sm font-semibold text-white leading-tight">
+                  {regionContext(row.climate_region, row.region_ids).flags}{" "}
                   {row.label}
                 </span>
                 <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />

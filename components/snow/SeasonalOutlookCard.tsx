@@ -4,11 +4,7 @@ import {
   ArrowUpRight,
   FlaskConical,
 } from "lucide-react";
-import {
-  MINIMAP_H,
-  MINIMAP_W,
-  regionMiniMapPaths,
-} from "@/lib/snow/region-minimap";
+import { regionContext } from "@/lib/snow/region-context";
 import type { SeasonalOutlookRow, SeasonalSignal } from "@/lib/snow/types";
 
 // 4-layer seasonal card — web counterpart of the app's SeasonalOutlookCard
@@ -51,45 +47,6 @@ const ENSO_LABEL: Record<string, string> = {
 };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-
-function RegionMiniMap({ row, lean }: { row: SeasonalOutlookRow; lean: LeanKey }) {
-  const paths = regionMiniMapPaths(row.region_ids);
-  if (!paths) return null;
-  return (
-    <svg
-      viewBox={`0 0 ${MINIMAP_W} ${MINIMAP_H}`}
-      className="w-[104px] h-[70px] shrink-0 rounded-xl bg-slate-800/80 border border-slate-700/60"
-      aria-hidden
-    >
-      {/* faint graticule so lone shapes still read as a map */}
-      {[1, 2].map((i) => (
-        <line
-          key={`h${i}`}
-          x1="0"
-          y1={(MINIMAP_H / 3) * i}
-          x2={MINIMAP_W}
-          y2={(MINIMAP_H / 3) * i}
-          className="stroke-slate-700/50"
-          strokeWidth="0.5"
-        />
-      ))}
-      {[1, 2, 3].map((i) => (
-        <line
-          key={`v${i}`}
-          x1={(MINIMAP_W / 4) * i}
-          y1="0"
-          x2={(MINIMAP_W / 4) * i}
-          y2={MINIMAP_H}
-          className="stroke-slate-700/50"
-          strokeWidth="0.5"
-        />
-      ))}
-      {paths.map((d, i) => (
-        <path key={i} d={d} className={LEAN[lean].map} strokeWidth="0.8" />
-      ))}
-    </svg>
-  );
-}
 
 function TrendRow({ row }: { row: SeasonalOutlookRow }) {
   const trend = row.payload.trend;
@@ -180,14 +137,17 @@ const Divider = () => <div className="border-t border-slate-700/50" />;
 export function SeasonalOutlookCard({
   row,
   compact = false,
+  index,
 }: {
   row: SeasonalOutlookRow;
   compact?: boolean;
+  index?: number;
 }) {
   const { payload, enso_state } = row;
   const signal = payload.signal;
   const lean: LeanKey = signal?.lean ?? "near";
   const ensoName = ENSO_LABEL[enso_state.state] ?? enso_state.state;
+  const context = regionContext(row.climate_region, row.region_ids);
 
   return (
     <div
@@ -199,7 +159,23 @@ export function SeasonalOutlookCard({
           <p className="text-[11px] uppercase tracking-wide text-slate-500">
             Seasonal outlook · Winter {row.target_season}
           </p>
-          <h3 className="text-xl font-bold text-white mt-0.5">{row.label}</h3>
+          <h3 className="text-xl font-bold text-white mt-0.5 flex items-center gap-2">
+            {index !== undefined && (
+              <span
+                className={`w-6 h-6 rounded-full text-[13px] font-semibold text-slate-900 inline-flex items-center justify-center shrink-0 ${
+                  lean === "above" ? "bg-sky-400" : lean === "below" ? "bg-amber-400" : "bg-slate-400"
+                }`}
+              >
+                {index}
+              </span>
+            )}
+            {row.label}
+          </h3>
+          {context.subtitle && (
+            <p className="text-xs text-slate-400 mt-0.5">
+              {context.flags} {context.subtitle}
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <span className={`text-sm font-semibold ${LEAN[lean].text}`}>
               {signal ? LEAN[lean].sentence : "Near normal expected"}
@@ -211,7 +187,6 @@ export function SeasonalOutlookCard({
             </span>
           </div>
         </div>
-        <RegionMiniMap row={row} lean={lean} />
       </div>
 
       <Divider />

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { fetchSeasonalOutlooks } from "@/lib/snow/fetch";
 import { SeasonalOutlookCard } from "@/components/snow/SeasonalOutlookCard";
+import { WorldOutlookHero } from "@/components/snow/WorldOutlookHero";
+import { OutlookHeroSync } from "@/components/snow/OutlookHeroSync";
 
 export const revalidate = 3600;
 
@@ -46,17 +48,24 @@ export default async function SnowOutlookPage() {
               Outlook data is temporarily unavailable. Please check back later.
             </p>
           ) : (
-            <div className="grid md:grid-cols-2 gap-6">
-              {rows.map((row) => (
-                <div
-                  key={row.climate_region}
-                  id={row.climate_region}
-                  className="scroll-mt-24"
-                >
-                  <SeasonalOutlookCard row={row} />
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="mb-8">
+                <WorldOutlookHero rows={rows} />
+              </div>
+              <div className="grid md:grid-cols-2 gap-6">
+                {rows.map((row, i) => (
+                  <div
+                    key={row.climate_region}
+                    id={row.climate_region}
+                    data-outlook-card={row.climate_region}
+                    className="scroll-mt-24"
+                  >
+                    <SeasonalOutlookCard row={row} index={i + 1} />
+                  </div>
+                ))}
+              </div>
+              <OutlookHeroSync />
+            </>
           )}
 
           <div className="mt-12 glass rounded-2xl p-6 text-sm text-slate-400 space-y-2">
