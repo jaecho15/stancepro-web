@@ -75,14 +75,13 @@
          right:calc(var(--safe-right) + 12px); z-index:9;
          display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
   #ctl button { font:600 13px/1 -apple-system,Roboto,sans-serif;
-                padding:10px 14px; border-radius:20px; border:0; min-width:58px;
+                width:44px; height:44px; padding:0; border-radius:50%; border:0;
+                display:inline-flex; align-items:center; justify-content:center;
                 box-shadow:0 2px 8px rgba(0,0,0,.25); }
-  #ctl button.on  { background:rgba(31,37,48,.82); color:#fff; }
-  #ctl button.off { background:rgba(255,255,255,.92); color:#1F2530; }
-  #bSlope.on   { background:rgba(37,99,168,.9); }
-  #bForest.on  { background:rgba(38,94,58,.9); }
-  #op-aspect { background:rgba(255,255,255,.92); color:#1F2530; }
-  #op-aspect.on { background:rgba(31,37,48,.82); color:#fff; }
+  #ctl button.on  { background:rgba(255,255,255,.92); color:#1F2530; }
+  #ctl button.off { background:rgba(31,37,48,.82); color:#fff; }
+  #op-aspect { background:rgba(31,37,48,.82); color:#fff; }
+  #op-aspect.on { background:rgba(255,255,255,.92); color:#1F2530; }
   #ctl button[disabled] { opacity:.4; }
   #slope-legend { position:absolute; left:8px; bottom:calc(var(--safe-bottom) + 44px); z-index:9;
                   display:none; background:rgba(20,24,34,.9); border-radius:12px; padding:9px 11px;
@@ -101,6 +100,7 @@
   .maplibregl-ctrl-top-right { top:var(--safe-top); right:var(--safe-right); }
   .maplibregl-ctrl-bottom-right { bottom:var(--safe-bottom); right:var(--safe-right); }
   .maplibregl-ctrl-bottom-left { bottom:var(--safe-bottom); left:var(--safe-left); }
+  .maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib a { font-size:8px; line-height:1.3; }
 </style>
 </head>
 <body>
@@ -120,9 +120,9 @@
 <div id="ctl">
   <button id="tbtn" class="on">2D</button>
   <button id="skybtn" class="off" aria-label="Auto day/night">◐</button>
-  <button id="bSlope" class="off">Slope</button>
-  <button id="op-aspect" disabled>🧭 Aspect</button>
-  <button id="bForest" class="on">🌲</button>
+  <button id="op-aspect" disabled aria-label="Aspect"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><polygon points="12,3 16,12 8,12" fill="currentColor"/><polygon points="12,21 16,12 8,12"/></svg></button>
+  <button id="bSlope" class="off" aria-label="Slope angle"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18H20"/><path d="M4 18L19 6.5"/><path d="M10 18A6 6 0 0 0 8.3 13.7"/></svg></button>
+  <button id="bForest" class="on" aria-label="Forest"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L16.5 11H14L18.5 18H5.5L10 11H7.5Z"/><path d="M12 18V22"/></svg></button>
 </div>
 <div id="slope-legend">
   <div class="sl-h">Slope angle</div>
@@ -156,8 +156,8 @@ window.OffpisteDraw = (function(){
     + "#op-badge b{color:#8fe;font-weight:600}#op-badge .l{color:#6de26d}#op-badge .e{color:#ffd166}#op-badge .op-snow{color:#9fd8ff}"
     + "#op-tools{position:absolute;top:calc(var(--safe-top,0px) + 140px);right:calc(var(--safe-right,0px) + 12px);"
     +   "z-index:10;display:flex;flex-direction:column;gap:8px;align-items:flex-end}"
-    + ".op-btn{background:rgba(20,24,34,.86);color:#eaf;border:0;border-radius:20px;padding:10px 14px;"
-    +   "font:600 13px/1 -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);min-width:52px}"
+    + ".op-btn{background:rgba(20,24,34,.86);color:#eaf;border:0;border-radius:50%;padding:0;"
+    +   "font:600 13px/1 -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px}"
     + ".op-btn.on{background:#2f7dfb;color:#fff}.op-btn.op-save{background:#34c759;color:#06331a}"
     + ".op-btn[disabled]{opacity:.4}"
     + "#op-oob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:11;"
@@ -176,7 +176,7 @@ window.OffpisteDraw = (function(){
     + "#op-saved-chip.show{display:block}"
     + "#op-hint{position:absolute;top:calc(var(--safe-top,0px) + 8px);left:50%;transform:translateX(-50%);z-index:10;display:none;background:rgba(20,24,34,.82);color:#cfe;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px;max-width:80%;white-space:nowrap;text-align:center}"
     + "#op-hint.show{display:block}"
-    + "#op-aspect-legend{position:absolute;top:calc(var(--safe-top,0px) + 128px);left:8px;z-index:10;display:none;background:rgba(20,24,34,.9);border-radius:12px;padding:10px 12px;font:10px -apple-system,Roboto,sans-serif;color:#cde}"+ "#op-aspect-legend .al-h{font:600 11px -apple-system,Roboto,sans-serif;color:#eaf;margin-bottom:7px;text-align:center}"+ "#op-aspect-legend .al-wheel{position:relative;width:92px;height:92px;border-radius:50%;margin:0 auto}"+ "#op-aspect-legend .al-wheel b{position:absolute;font:700 10px -apple-system,Roboto,sans-serif;color:#fff;text-shadow:0 1px 2px #000}"+ "#op-aspect-legend .al-n{top:-1px;left:50%;transform:translateX(-50%)}#op-aspect-legend .al-s{bottom:-1px;left:50%;transform:translateX(-50%)}"+ "#op-aspect-legend .al-e{right:-2px;top:50%;transform:translateY(-50%)}#op-aspect-legend .al-w{left:-3px;top:50%;transform:translateY(-50%)}"
+    + "#op-aspect-legend{position:absolute;bottom:calc(var(--safe-bottom,0px) + 140px);left:8px;z-index:10;display:none;background:rgba(20,24,34,.9);border-radius:12px;padding:10px 12px;font:10px -apple-system,Roboto,sans-serif;color:#cde}"+ "#op-aspect-legend .al-h{font:600 11px -apple-system,Roboto,sans-serif;color:#eaf;margin-bottom:7px;text-align:center}"+ "#op-aspect-legend .al-wheel{position:relative;width:92px;height:92px;border-radius:50%;margin:0 auto}"+ "#op-aspect-legend .al-wheel b{position:absolute;font:700 10px -apple-system,Roboto,sans-serif;color:#fff;text-shadow:0 1px 2px #000}"+ "#op-aspect-legend .al-n{top:-1px;left:50%;transform:translateX(-50%)}#op-aspect-legend .al-s{bottom:-1px;left:50%;transform:translateX(-50%)}"+ "#op-aspect-legend .al-e{right:-2px;top:50%;transform:translateY(-50%)}#op-aspect-legend .al-w{left:-3px;top:50%;transform:translateY(-50%)}"
     + "#op-aspect-legend.show{display:block}"
     + ".op-wp{display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:pointer}"
     + ".op-wp-edit{display:flex;flex-direction:column;gap:6px;min-width:180px}"
@@ -199,13 +199,13 @@ window.OffpisteDraw = (function(){
         '<div id="op-badge">…</div>'
       + '<div id="op-saved-chip"></div>'
       + '<div id="op-tools">'
-      +   '<button id="op-route-btn" class="op-btn" disabled>🗺️ Route</button>'
-      +   '<button id="op-draw" class="op-btn" disabled>✏️ Draw</button>'
-      +   '<button id="op-pin" class="op-btn" disabled>📍 Pin</button>'
-      +   '<button id="op-undo" class="op-btn" disabled>↶</button>'
+      +   '<button id="op-route-btn" class="op-btn" disabled aria-label="Route"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17 Q 9 6 12 13 T 20 7"/><circle cx="4" cy="17" r="2.3" fill="currentColor" stroke="none"/><circle cx="20" cy="7" r="2.3" fill="currentColor" stroke="none"/></svg></button>'
+      +   '<button id="op-draw" class="op-btn" disabled aria-label="Draw"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L4 16 L15 5 L19 9 L8 20 Z"/><path d="M13 7 L17 11"/></svg></button>'
+      +   '<button id="op-pin" class="op-btn" disabled aria-label="Pin"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21 C12 21 18 13.5 18 9 A6 6 0 1 0 6 9 C6 13.5 12 21 12 21 Z"/><circle cx="12" cy="9" r="2.3"/></svg></button>'
+      +   '<button id="op-undo" class="op-btn" disabled aria-label="Undo"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="currentColor" d="M20 13.5a6.5 6.5 0 0 1-6.5 6.5H6v-2h7.5c2.5 0 4.5-2 4.5-4.5S16 9 13.5 9H7.83l3.08 3.09L9.5 13.5L4 8l5.5-5.5l1.42 1.41L7.83 7h5.67a6.5 6.5 0 0 1 6.5 6.5"/></svg></button>'
       +   '<button id="op-clear" class="op-btn" disabled>✕</button>'
-      +   '<button id="op-save" class="op-btn op-save" disabled>Save</button>'
-      +   '<button id="op-fly" class="op-btn" disabled>🎬 Fly</button>'
+      +   '<button id="op-save" class="op-btn op-save" disabled aria-label="Save"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M6 4h10l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/><path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0-4 0m4-10v4H8V4"/></svg></button>'
+      +   '<button id="op-fly" class="op-btn" disabled aria-label="Fly"><svg width="24" height="24" viewBox="-1 -1 17 17" fill="none"><path fill="currentColor" transform="rotate(45 7.5 7.5)" d="M6.82.68H4.77c-.68 0-.68-.68 0-.68h5.45c.68 0 .68.68 0 .68H8.18S9 1.27 9 2.63V4h6v2L9 8l-.5 5l2.5 1.32V15H4v-.68L6.5 13L6 8L0 6V4h6V2.64c0-1.37.82-1.96.82-1.96"/></svg></button>'
       +   '<button id="op-offline" class="op-btn" disabled aria-label="Download for offline">⬇</button>'
       + '</div>'
       + '<div id="op-aspect-legend"></div>'
@@ -265,7 +265,6 @@ window.OffpisteDraw = (function(){
     active=!active;
     if(active && pinMode) togglePin();   // draw and pin modes are mutually exclusive
     el.draw.classList.toggle("on",active);
-    el.draw.textContent = active ? "✏️ Drawing" : "✏️ Draw";
     if(el.hint) el.hint.classList.toggle("show",active);
     if(active){ map.dragPan.disable(); map.dragRotate.disable(); }
     else{ map.dragPan.enable(); map.dragRotate.enable(); }
@@ -397,7 +396,7 @@ window.OffpisteDraw = (function(){
     try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteRoute) webkit.messageHandlers.offpisteRoute.postMessage(payload); }catch(e){}
     try{ if(window.AndroidOffpiste&&AndroidOffpiste.onSaveRoute) AndroidOffpiste.onSaveRoute(JSON.stringify(payload)); }catch(e){}
     console.log("ROUTE_SAVE "+JSON.stringify(payload)); window.__LAST_SAVE__=payload;
-    el.save.textContent="Saved ✓"; setTimeout(function(){el.save.textContent="Save";},1200);
+    el.save.innerHTML='<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m5 12l5 5L20 7"/></svg>'; setTimeout(function(){el.save.innerHTML='<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M6 4h10l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/><path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0-4 0m4-10v4H8V4"/></svg>';},1200);
   }
   function grabEls(){
     el.badge=byId("op-badge"); el.draw=byId("op-draw"); el.undo=byId("op-undo");
@@ -469,7 +468,6 @@ window.OffpisteDraw = (function(){
     if(!ready) return;
     pinMode=!pinMode;
     el.pin.classList.toggle("on",pinMode);
-    el.pin.textContent = pinMode ? "📍 Tap map" : "📍 Pin";
     if(el.wpInput) el.wpInput.classList.toggle("show",pinMode);
     if(pinMode && active) toggle();   // leave draw mode; a single tap now places a pin
   }
@@ -510,7 +508,7 @@ window.OffpisteDraw = (function(){
   function endFly(){
     flying=false;
     if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
-    if(el.fly){ el.fly.classList.remove("on"); el.fly.textContent="🎬 Fly"; el.fly.disabled=pts.length<2; }
+    if(el.fly){ el.fly.classList.remove("on"); el.fly.disabled=pts.length<2; }
     if(savedCam){ map.easeTo({center:savedCam.center,zoom:savedCam.zoom,bearing:savedCam.bearing,pitch:savedCam.pitch,duration:1200}); savedCam=null; }
   }
   // Move a [lng,lat] by `m` metres along compass bearing `brg`.
@@ -526,7 +524,7 @@ window.OffpisteDraw = (function(){
     var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
     var total=cum[cum.length-1]; if(total<1) return;
     savedCam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
-    flying=true; el.fly.classList.add("on"); el.fly.textContent="⏹ Stop";
+    flying=true; el.fly.classList.add("on");
     if(active) toggle();                                   // leave draw mode during fly
     var dur=Math.min(20000,Math.max(6000,total/15*1000)); // ~15 m/s virtual, 6–20 s
     var t0=performance.now();
