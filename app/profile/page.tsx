@@ -16,11 +16,19 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+function SportHeading({ emoji, title }: { emoji: string; title: string }) {
+  return (
+    <h2 className="text-2xl font-bold text-white mt-14 mb-1 flex items-center gap-2.5 pb-3 border-b border-slate-700/60">
+      <span aria-hidden>{emoji}</span> {title}
+    </h2>
+  );
+}
+
 function SectionHeading({ title, count }: { title: string; count: number }) {
   return (
-    <h2 className="text-xl font-bold text-white mt-12 mb-4">
+    <h3 className="text-lg font-semibold text-slate-200 mt-8 mb-4">
       {title} <span className="text-slate-500 font-medium text-base">({count})</span>
-    </h2>
+    </h3>
   );
 }
 
@@ -70,7 +78,9 @@ export default async function ProfilePage() {
                 </EmptyNote>
               )}
 
-              <SectionHeading title="Snowboard stance setups" count={data.snowboardSetups.length} />
+              <SportHeading emoji="🏂" title="Snowboard" />
+
+              <SectionHeading title="Stance setups" count={data.snowboardSetups.length} />
               {data.snowboardSetups.length === 0 ? (
                 <EmptyNote>
                   Nothing saved yet — setups you save in the app show up here. Try the{" "}
@@ -91,7 +101,23 @@ export default async function ProfilePage() {
                 </div>
               )}
 
-              <SectionHeading title="Ski setups" count={data.skiSetups.length} />
+              <SectionHeading title="Gear" count={data.snowboardGear.length} />
+              {data.snowboardGear.length === 0 ? (
+                <EmptyNote>
+                  No snowboard gear saved yet — add your board, boots and bindings in the
+                  app&apos;s gear section.
+                </EmptyNote>
+              ) : (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {data.snowboardGear.map((gear) => (
+                    <GearSetupCard key={gear.id} gear={gear} />
+                  ))}
+                </div>
+              )}
+
+              <SportHeading emoji="⛷️" title="Ski" />
+
+              <SectionHeading title="Setups" count={data.skiSetups.length} />
               {data.skiSetups.length === 0 ? (
                 <EmptyNote>No ski setups saved in the app yet.</EmptyNote>
               ) : (
@@ -102,20 +128,14 @@ export default async function ProfilePage() {
                 </div>
               )}
 
-              <SectionHeading
-                title="Gear"
-                count={data.snowboardGear.length + data.skiGear.length}
-              />
-              {data.snowboardGear.length + data.skiGear.length === 0 ? (
+              <SectionHeading title="Gear" count={data.skiGear.length} />
+              {data.skiGear.length === 0 ? (
                 <EmptyNote>
-                  No gear saved yet — add your board, boots and bindings in the app&apos;s gear
-                  section.
+                  No ski gear saved yet — add your skis, boots and bindings in the app&apos;s
+                  gear section.
                 </EmptyNote>
               ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {data.snowboardGear.map((gear) => (
-                    <GearSetupCard key={gear.id} gear={gear} />
-                  ))}
                   {data.skiGear.map((gear) => (
                     <GearSetupCard key={gear.id} gear={gear} />
                   ))}
