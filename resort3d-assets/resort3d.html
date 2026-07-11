@@ -578,8 +578,8 @@ window.OffpisteDraw = (function(){
   // FATMAP-style aspect palette (familiar to FATMAP users; encodes sun/shade):
   // N blue (cold/shaded, holds snow) → E white → S orange (sunny) → W black,
   // interpolated around the compass. Anchors: N NE E SE S SW W NW.
-  var ASPECT_ANCHORS=[[85,68,160],[20,40,120],[30,90,230],[90,170,235],
-                      [240,240,240],[250,200,120],[245,140,40],[150,90,50]];
+  var ASPECT_ANCHORS=[[80,62,140],[55,76,185],[30,90,230],[135,165,235],
+                      [240,240,240],[243,190,140],[245,140,40],[163,101,90]];
   function aspectColor(brg){
     if(southern) brg=((180-brg)%360+360)%360;
     var seg=(((brg%360)+360)%360)/45, i=Math.floor(seg)%8, j=(i+1)%8, f=seg-Math.floor(seg);
