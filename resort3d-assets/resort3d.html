@@ -80,15 +80,22 @@
   #ctl button.on  { background:rgba(31,37,48,.82); color:#fff; }
   #ctl button.off { background:rgba(255,255,255,.92); color:#1F2530; }
   #bSlope.on   { background:rgba(37,99,168,.9); }
-  #bExtreme.on { background:rgba(186,26,125,.9); }
   #bForest.on  { background:rgba(38,94,58,.9); }
-  /* Temporary on-screen sky debug (WKWebView has no console). */
-  #dbg { position:absolute; left:8px; bottom:calc(var(--safe-bottom) + 8px); z-index:9;
-         font:11px/1.35 ui-monospace,monospace; color:#9ff; background:rgba(0,0,0,.6);
-         padding:4px 7px; border-radius:6px; max-width:82%; white-space:pre-wrap; }
-  #zbadge { position:absolute; left:8px; top:calc(var(--safe-top) + 8px); z-index:9;
-            font:12px/1.3 ui-monospace,monospace; color:#fff; background:rgba(0,0,0,.62);
-            padding:4px 8px; border-radius:6px; }
+  #op-aspect, #op-flat { background:rgba(255,255,255,.92); color:#1F2530; }
+  #op-aspect.on, #op-flat.on { background:rgba(31,37,48,.82); color:#fff; }
+  #ctl button[disabled] { opacity:.4; }
+  #slope-legend { position:absolute; left:8px; bottom:calc(var(--safe-bottom) + 44px); z-index:9;
+                  display:none; background:rgba(20,24,34,.9); border-radius:12px; padding:9px 11px;
+                  box-shadow:0 2px 12px rgba(0,0,0,.35); font:12px -apple-system,Roboto,sans-serif; color:#dfe8f2; }
+  #slope-legend.show { display:block; }
+  #slope-legend .sl-h { font-weight:600; color:#eaf; margin-bottom:5px; }
+  #slope-legend .sl-row { display:flex; align-items:center; gap:7px; line-height:1.7; }
+  #slope-legend .sl-sw { width:22px; height:11px; border-radius:3px; display:inline-block; flex:none; }
+  #slope-legend .sl-note { border-top:0.5px solid rgba(255,255,255,.14); margin-top:5px; padding-top:5px; color:#ffd166; font-size:11px; }
+  #zbadge { position:absolute; right:calc(var(--safe-right) + 12px); top:calc(var(--safe-top) + 100px); z-index:9;
+            font:600 11px/1.3 -apple-system,Roboto,sans-serif; color:#dfe8f2; background:rgba(20,24,34,.86);
+            padding:5px 9px; border-radius:11px; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  #zbadge b { color:#8fe; font-weight:600; }
   /* Keep MapLibre's own controls out of the status bar / rounded corners. */
   .maplibregl-ctrl-top-right { top:var(--safe-top); right:var(--safe-right); }
   .maplibregl-ctrl-bottom-right { bottom:var(--safe-bottom); right:var(--safe-right); }
@@ -108,14 +115,22 @@
      {n: name, la: lat, lo: lon}, names already localized by the host.
      Same text-node trick; unreplaced placeholder = no nearby pins. -->
 <div id="nearby" style="display:none">__NEARBY__</div>
-<div id="dbg">sky: init…</div>
 <div id="zbadge">z…</div>
 <div id="ctl">
   <button id="tbtn" class="on">2D</button>
   <button id="skybtn" class="off" aria-label="Auto day/night">◐</button>
-  <button id="bSlope" class="off">30°+</button>
-  <button id="bExtreme" class="off">45°+</button>
+  <button id="bSlope" class="off">Slope</button>
+  <button id="op-aspect" disabled>🧭 Aspect</button>
+  <button id="op-flat" disabled>🟢 Flat</button>
   <button id="bForest" class="on">🌲</button>
+</div>
+<div id="slope-legend">
+  <div class="sl-h">Slope angle</div>
+  <div class="sl-row"><span class="sl-sw" style="background:#F2E50A"></span>30–35°</div>
+  <div class="sl-row"><span class="sl-sw" style="background:#F46F24"></span>35–40°</div>
+  <div class="sl-row"><span class="sl-sw" style="background:#DE055B"></span>40–45°</div>
+  <div class="sl-row"><span class="sl-sw" style="background:#6B21A8"></span>45°+</div>
+  <div class="sl-note">Uncoloured ≠ safe</div>
 </div>
 <!-- ===== Off-piste route drawing (Stage-1). Self-contained & namespaced (op-*);
      injects its own CSS/DOM, samples the LiDAR elev_5m artifact for the slope
@@ -127,8 +142,8 @@
 window.OffpisteDraw = (function(){
   var map, meta, art, elevImg=null, ready=false;
   var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
-  var flying=false, flyRAF=null, savedCam=null;
-  var pinMode=false, waypoints=[], wpMarkers=[], depthInfo=null;
+  var flying=false, flyRAF=null, savedCam=null, routeOpen=false;
+  var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
   var SRC="op-route", LYR="op-route-line";
   var WMx=20037508.342789244;
   var lon2mx=function(l){return l/180*WMx;}, lat2my=function(l){return Math.log(Math.tan(Math.PI/4+l*Math.PI/360))*WMx/Math.PI;};
@@ -141,7 +156,7 @@ window.OffpisteDraw = (function(){
     +   "background:rgba(20,24,34,.86);color:#dfe8f2;border-radius:10px;padding:7px 10px;line-height:1.4;"
     +   "font:12px -apple-system,Roboto,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:56%}"
     + "#op-badge b{color:#8fe;font-weight:600}#op-badge .l{color:#6de26d}#op-badge .e{color:#ffd166}#op-badge .op-snow{color:#9fd8ff}"
-    + "#op-tools{position:absolute;top:calc(var(--safe-top,0px) + 8px);right:calc(var(--safe-right,0px) + 12px);"
+    + "#op-tools{position:absolute;top:calc(var(--safe-top,0px) + 140px);right:calc(var(--safe-right,0px) + 12px);"
     +   "z-index:10;display:flex;flex-direction:column;gap:8px;align-items:flex-end}"
     + ".op-btn{background:rgba(20,24,34,.86);color:#eaf;border:0;border-radius:20px;padding:10px 14px;"
     +   "font:600 13px/1 -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);min-width:52px}"
@@ -161,11 +176,20 @@ window.OffpisteDraw = (function(){
     + "#op-disc{color:#9fb0c2;font-size:11px;margin-top:3px}"
     + "#op-saved-chip{position:absolute;top:calc(var(--safe-top,0px) + 98px);left:8px;z-index:10;display:none;background:rgba(20,24,34,.8);color:#7fd8ff;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px}"
     + "#op-saved-chip.show{display:block}"
-    + "#op-hint{position:absolute;top:calc(var(--safe-top,0px) + 214px);right:calc(var(--safe-right,0px) + 12px);z-index:10;display:none;background:rgba(20,24,34,.82);color:#cfe;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px;max-width:56%;text-align:right}"
+    + "#op-hint{position:absolute;top:calc(var(--safe-top,0px) + 8px);left:50%;transform:translateX(-50%);z-index:10;display:none;background:rgba(20,24,34,.82);color:#cfe;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px;max-width:80%;white-space:nowrap;text-align:center}"
     + "#op-hint.show{display:block}"
     + "#op-aspect-legend{position:absolute;top:calc(var(--safe-top,0px) + 252px);right:calc(var(--safe-right,0px) + 12px);z-index:10;display:none;background:rgba(20,24,34,.82);border-radius:8px;padding:6px 8px;font:10px/1.5 -apple-system,Roboto,sans-serif;color:#cde}"
     + "#op-aspect-legend.show{display:block}"
-    + ".op-wp{display:flex;flex-direction:column;align-items:center;pointer-events:none}"
+    + ".op-wp{display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:pointer}"
+    + ".op-wp-edit{display:flex;flex-direction:column;gap:6px;min-width:180px}"
+    + ".op-wp-edit input{padding:7px 10px;border:0;border-radius:10px;background:rgba(255,255,255,.95);font:13px -apple-system,Roboto,sans-serif}"
+    + ".op-wp-edit-row{display:flex;gap:6px}"
+    + ".op-wp-edit-row button{flex:1;padding:7px 0;border:0;border-radius:10px;font:600 12px -apple-system,Roboto,sans-serif;color:#fff}"
+    + ".op-wp-edit-del{background:#b3402e}.op-wp-edit-save{background:#2e7d4f}"
+    + ".op-wp-edit-note{font:10px -apple-system,Roboto,sans-serif;color:rgba(255,255,255,.55);text-align:center}"
+    + ".maplibregl-popup-content{background:rgba(31,37,48,.92);border-radius:12px;padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.4)}"
+    + ".maplibregl-popup-anchor-bottom .maplibregl-popup-tip{border-top-color:rgba(31,37,48,.92)}"
+    + ".maplibregl-popup-anchor-top .maplibregl-popup-tip{border-bottom-color:rgba(31,37,48,.92)}"
     + ".op-wp-pin{font-size:20px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}"
     + ".op-wp-lbl{font:600 10px -apple-system,Roboto,sans-serif;color:#fff;background:rgba(31,37,48,.86);padding:2px 6px;border-radius:8px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;margin-top:1px}"
     + "#op-wp-input{position:absolute;top:calc(var(--safe-top,0px) + 56px);left:50%;transform:translateX(-50%);z-index:11;display:none;width:60%;max-width:280px;padding:8px 12px;border:0;border-radius:18px;background:rgba(255,255,255,.95);font:14px -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)}"
@@ -177,15 +201,14 @@ window.OffpisteDraw = (function(){
         '<div id="op-badge">…</div>'
       + '<div id="op-saved-chip"></div>'
       + '<div id="op-tools">'
-      +   '<button id="op-aspect" class="op-btn" disabled>🧭 Aspect</button>'
-      +   '<button id="op-flat" class="op-btn" disabled>🟢 Flat</button>'
+      +   '<button id="op-route-btn" class="op-btn" disabled>🗺️ Route</button>'
       +   '<button id="op-draw" class="op-btn" disabled>✏️ Draw</button>'
+      +   '<button id="op-pin" class="op-btn" disabled>📍 Pin</button>'
       +   '<button id="op-undo" class="op-btn" disabled>↶</button>'
       +   '<button id="op-clear" class="op-btn" disabled>✕</button>'
       +   '<button id="op-save" class="op-btn op-save" disabled>Save</button>'
       +   '<button id="op-fly" class="op-btn" disabled>🎬 Fly</button>'
-      +   '<button id="op-pin" class="op-btn" disabled>📍 Pin</button>'
-      +   '<button id="op-offline" class="op-btn" disabled>⬇ Offline</button>'
+      +   '<button id="op-offline" class="op-btn" disabled aria-label="Download for offline">⬇</button>'
       + '</div>'
       + '<div id="op-aspect-legend"></div>'
       + '<div id="op-hint">1 finger: draw · 2 fingers: move map</div>'
@@ -205,7 +228,7 @@ window.OffpisteDraw = (function(){
       var cv=document.createElement("canvas"); cv.width=bmp.width; cv.height=bmp.height;
       var cx=cv.getContext("2d",{willReadFrequently:true}); cx.imageSmoothingEnabled=false; cx.drawImage(bmp,0,0);
       elevImg={data:cx.getImageData(0,0,bmp.width,bmp.height).data,W:bmp.width,H:bmp.height,b:meta.bounds_3857};
-      ready=true; el.draw.disabled=false; if(el.aspect) el.aspect.disabled=false; if(el.pin) el.pin.disabled=false; if(el.flat) el.flat.disabled=false;
+      ready=true; el.draw.disabled=false; if(el.aspect) el.aspect.disabled=false; if(el.pin) el.pin.disabled=false; if(el.flat) el.flat.disabled=false; if(el.routeBtn) el.routeBtn.disabled=false;
       // Offline serving currently works only on Android (shouldInterceptRequest);
       // iOS WKWebView can't intercept https+fetch, so hide the button there.
       if(el.offline){ if(window.AndroidOffpiste && window.AndroidOffpiste.onCacheResort){ el.offline.disabled=false; } else { el.offline.style.display="none"; } }
@@ -248,6 +271,20 @@ window.OffpisteDraw = (function(){
     if(el.hint) el.hint.classList.toggle("show",active);
     if(active){ map.dragPan.disable(); map.dragRotate.disable(); }
     else{ map.dragPan.enable(); map.dragRotate.enable(); }
+    updOpToolsVis();
+  }
+  // Progressive disclosure of the route toolset. Collapsed: only Pin, the
+  // offline-download icon and the Route entry show. Route open adds Draw/Fly;
+  // while drawing (active) adds Undo/Clear/Save.
+  function updOpToolsVis(){
+    var open=routeOpen, edit=routeOpen&&active;
+    if(el.routeBtn) el.routeBtn.classList.toggle("on",open);
+    if(el.draw)  el.draw.style.display =open?"":"none";
+    if(el.pin)   el.pin.style.display  =open?"":"none";
+    if(el.fly)   el.fly.style.display  =open?"":"none";
+    if(el.undo)  el.undo.style.display =edit?"":"none";
+    if(el.clear) el.clear.style.display=edit?"":"none";
+    if(el.save)  el.save.style.display =edit?"":"none";
   }
   function flashOOB(){ el.oob.classList.add("show"); clearTimeout(flashOOB._t);
     flashOOB._t=setTimeout(function(){el.oob.classList.remove("show");},700); }
@@ -260,6 +297,7 @@ window.OffpisteDraw = (function(){
   }
   function wire(){
     el.draw.onclick=toggle;
+    if(el.routeBtn) el.routeBtn.onclick=function(){ routeOpen=!routeOpen; if(!routeOpen){ if(active) toggle(); if(pinMode) togglePin(); } updOpToolsVis(); };
     if(el.aspect) el.aspect.onclick=toggleAspect;
     if(el.flat) el.flat.onclick=toggleFlat;
     if(el.fly) el.fly.onclick=toggleFly;
@@ -369,14 +407,59 @@ window.OffpisteDraw = (function(){
     el.clear=byId("op-clear"); el.save=byId("op-save"); el.oob=byId("op-oob");
     el.dock=byId("op-dock"); el.summary=byId("op-summary"); el.prof=byId("op-prof"); el.hint=byId("op-hint");
     el.savedChip=byId("op-saved-chip"); el.aspect=byId("op-aspect"); el.legend=byId("op-aspect-legend"); el.fly=byId("op-fly"); el.flat=byId("op-flat");
-    el.pin=byId("op-pin"); el.wpInput=byId("op-wp-input"); el.offline=byId("op-offline");
+    el.pin=byId("op-pin"); el.wpInput=byId("op-wp-input"); el.offline=byId("op-offline"); el.routeBtn=byId("op-route-btn"); updOpToolsVis();
   }
   // ---- Waypoints (pin + note), personal, saved to Supabase ----
-  function escapeHtml(s){ return String(s).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]; }); }
   function addWpMarker(wp){
     var d=document.createElement('div'); d.className='op-wp';
-    d.innerHTML='<div class="op-wp-pin">📍</div><div class="op-wp-lbl">'+escapeHtml(wp.label)+'</div>';
-    wpMarkers.push(new maplibregl.Marker({element:d, anchor:'bottom'}).setLngLat([wp.lng,wp.lat]).addTo(map));
+    d.innerHTML='<div class="op-wp-pin">📍</div><div class="op-wp-lbl"></div>';
+    wp.lblEl=d.querySelector('.op-wp-lbl');
+    wp.lblEl.textContent=wp.label||'Waypoint';
+    d.onclick=function(ev){ ev.stopPropagation(); openWpEditor(wp); };
+    wp.marker=new maplibregl.Marker({element:d, anchor:'bottom'}).setLngLat([wp.lng,wp.lat]).addTo(map);
+    wpMarkers.push(wp.marker);
+  }
+  // Tap a pin -> rename / delete. Mutations go up the same native bridge the
+  // save path uses; rows are RLS owner-scoped so id alone is safe to send.
+  function openWpEditor(wp){
+    if(active) return;                     // don't interrupt route drawing
+    if(wpPopup){ wpPopup.remove(); wpPopup=null; }
+    var d=document.createElement('div'); d.className='op-wp-edit';
+    d.innerHTML='<input maxlength="80"/>'
+      + '<div class="op-wp-edit-row"><button class="op-wp-edit-del">Delete</button>'
+      + '<button class="op-wp-edit-save">Save</button></div>'
+      + (wp.id ? '' : '<div class="op-wp-edit-note">Not synced yet</div>');
+    var inp=d.querySelector('input'); inp.value=wp.label||'';
+    d.querySelector('.op-wp-edit-save').onclick=function(ev){
+      ev.stopPropagation();
+      var nl=inp.value.trim();
+      if(nl && nl!==wp.label){
+        wp.label=nl; if(wp.lblEl) wp.lblEl.textContent=nl;
+        if(wp.id) sendWpMutation("update", {id:wp.id, label:nl});
+      }
+      if(wpPopup){ wpPopup.remove(); wpPopup=null; }
+    };
+    d.querySelector('.op-wp-edit-del').onclick=function(ev){
+      ev.stopPropagation();
+      removeWp(wp);
+      if(wp.id) sendWpMutation("delete", {id:wp.id});
+      if(wpPopup){ wpPopup.remove(); wpPopup=null; }
+    };
+    wpPopup=new maplibregl.Popup({offset:34, closeButton:false, maxWidth:'260px'})
+      .setLngLat([wp.lng,wp.lat]).setDOMContent(d).addTo(map);
+    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 50);
+  }
+  function removeWp(wp){
+    try{ if(wp.marker) wp.marker.remove(); }catch(e){}
+    var i=waypoints.indexOf(wp); if(i>=0) waypoints.splice(i,1);
+    i=wpMarkers.indexOf(wp.marker); if(i>=0) wpMarkers.splice(i,1);
+  }
+  function sendWpMutation(kind, fields){
+    var payload={ schema:"offpiste_waypoint_"+kind+".v1", resort_id:meta.resort_id||null };
+    for(var k in fields) payload[k]=fields[k];
+    try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteWaypointMutate) webkit.messageHandlers.offpisteWaypointMutate.postMessage(payload); }catch(e){}
+    try{ if(window.AndroidOffpiste&&AndroidOffpiste.onWaypointMutate) AndroidOffpiste.onWaypointMutate(JSON.stringify(payload)); }catch(e){}
+    console.log("WAYPOINT_MUTATE "+JSON.stringify(payload)); window.__LAST_WP_MUT__=payload;
   }
   function saveWaypoint(wp){
     var payload={ schema:"offpiste_waypoint.v1", resort_id:meta.resort_id||null, label:wp.label,
@@ -393,12 +476,19 @@ window.OffpisteDraw = (function(){
     if(el.wpInput) el.wpInput.classList.toggle("show",pinMode);
     if(pinMode && active) toggle();   // leave draw mode; a single tap now places a pin
   }
-  // Render the user's saved waypoints for this resort. Called by the native host.
-  function loadWaypoints(list){
+  // Render the user's saved waypoints for this resort. Called by the native
+  // host — with reset=true it REPLACES local pins with the server truth (used
+  // after a save so the fresh pin gains its row id and becomes editable).
+  function loadWaypoints(list, reset){
+    if(reset){
+      wpMarkers.forEach(function(m){ try{ m.remove(); }catch(e){} });
+      wpMarkers=[]; waypoints=[];
+      if(wpPopup){ wpPopup.remove(); wpPopup=null; }
+    }
     (list||[]).forEach(function(w){
       if(w.lng==null||w.lat==null) return;
-      waypoints.push({lng:w.lng,lat:w.lat,elev:w.elev_m,label:w.label||'Waypoint'});
-      addWpMarker({lng:w.lng,lat:w.lat,label:w.label||'Waypoint'});
+      var wp={id:w.id||null,lng:w.lng,lat:w.lat,elev:w.elev_m,label:w.label||'Waypoint'};
+      waypoints.push(wp); addWpMarker(wp);
     });
   }
   // ---- 3D fly-through: animate the camera along the drawn route (FATMAP Flyover) ----
@@ -1281,8 +1371,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const cx = c.lng / 180 * WM;
     const cy = Math.log(Math.tan(Math.PI / 4 + c.lat * Math.PI / 360)) / Math.PI * WM;
     const inCore = coreRegions.some(cb => cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]);
-    zbadge.textContent = "z " + z.toFixed(1) + "  p " + Math.round(map.getPitch())
-      + "°  dem " + (inCore && z >= 13.5 ? "5m" : "30m");
+    zbadge.innerHTML = "z" + Math.round(z) + " · <b>" + (inCore && z >= 13.5 ? "5m" : "30m") + "</b>";
   };
   map.on("move", updZBadge);
   map.on("zoom", updZBadge);
@@ -1309,8 +1398,19 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       btn.className = kindVis[kind] ? "on" : "off";
     };
   };
-  bindLayerToggle("bSlope", "slope");
-  bindLayerToggle("bExtreme", "extreme");
+  // Single "Slope" toggle drives both baked steepness bands together
+  // (slope ≥30°, extreme ≥45°; 45⊂30 so "extreme only" was a dead state).
+  // V2-3 slope:// keeps this on/off gate; band colours move to setSlopeBands().
+  (function () {
+    const btn = document.getElementById("bSlope");
+    btn.onclick = () => {
+      const on = !kindVis.slope;
+      kindVis.slope = on; kindVis.extreme = on;
+      applyKindVis("slope"); applyKindVis("extreme");
+      btn.className = on ? "on" : "off";
+      var leg = document.getElementById("slope-legend"); if (leg) leg.classList.toggle("show", on);
+    };
+  })();
   bindLayerToggle("bForest", "forest");
 
   // ===================== Real sky (night stars + day sun) =====================
