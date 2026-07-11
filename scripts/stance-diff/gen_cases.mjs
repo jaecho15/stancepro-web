@@ -1,4 +1,5 @@
 // Generates the shared input grid for the Swift/TS differential test.
+// Usage: node gen_cases.mjs <snowboard|ski> <out.json>
 import { writeFileSync } from "node:fs";
 
 function mulberry32(seed) {
@@ -10,8 +11,103 @@ function mulberry32(seed) {
   };
 }
 
+const mode = process.argv[2];
+const outPath = process.argv[3];
+if ((mode !== "snowboard" && mode !== "ski") || !outPath) {
+  console.error("usage: node gen_cases.mjs <snowboard|ski> <out.json>");
+  process.exit(1);
+}
+
 const rand = mulberry32(20260710);
 const round1 = (x) => Math.round(x * 10) / 10;
+
+if (mode === "ski") {
+  const cases = [];
+  const aggr = [null, "conservative", "moderate", "aggressive", "AGGRESSIVE", "bogus"];
+  const ages = [null, 8, 25, 45, 55, 70];
+  const bsls = [null, 240, 260, 280, 300, 320, 340];
+
+  for (let skillLevelIndex = 0; skillLevelIndex < 3; skillLevelIndex++) {
+    for (let terrainFocusIndex = 0; terrainFocusIndex < 5; terrainFocusIndex++) {
+      for (const dinAggressivenessKey of aggr) {
+        for (const age of ages) {
+          for (const bootSoleLength of bsls) {
+            const height = round1(140 + rand() * 60);
+            cases.push({
+              height,
+              weight: round1(35 + rand() * 85),
+              age,
+              skillLevelIndex,
+              terrainFocusIndex,
+              legLength: round1(height * (0.42 + rand() * 0.13)),
+              hipWidth: null,
+              bootSoleLength,
+              dinAggressivenessKey,
+              hasInjury: rand() < 0.2,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Edge cases: bucket boundaries, out-of-range inputs, index overflow.
+  const base = {
+    height: 175,
+    weight: 75,
+    age: 30,
+    skillLevelIndex: 1,
+    terrainFocusIndex: 1,
+    legLength: 87.5,
+    hipWidth: null,
+    bootSoleLength: 295,
+    dinAggressivenessKey: null,
+    hasInjury: false,
+  };
+  cases.push({ ...base, weight: 9 }); // below weight table
+  cases.push({ ...base, weight: 10 });
+  cases.push({ ...base, weight: 13 });
+  cases.push({ ...base, weight: 13.5 }); // between integer buckets
+  cases.push({ ...base, weight: 14 });
+  cases.push({ ...base, weight: 94 });
+  cases.push({ ...base, weight: 95 });
+  cases.push({ ...base, weight: 200 });
+  cases.push({ ...base, height: 100 });
+  cases.push({ ...base, height: 148 });
+  cases.push({ ...base, height: 148.5 });
+  cases.push({ ...base, height: 149 });
+  cases.push({ ...base, height: 178 });
+  cases.push({ ...base, height: 179 });
+  cases.push({ ...base, height: 194 });
+  cases.push({ ...base, height: 195 });
+  cases.push({ ...base, height: 240 });
+  cases.push({ ...base, bootSoleLength: 250 });
+  cases.push({ ...base, bootSoleLength: 250.5 });
+  cases.push({ ...base, bootSoleLength: 251 });
+  cases.push({ ...base, bootSoleLength: 330 });
+  cases.push({ ...base, bootSoleLength: 331 });
+  cases.push({ ...base, bootSoleLength: 100 });
+  cases.push({ ...base, bootSoleLength: 400 });
+  cases.push({ ...base, age: 9 });
+  cases.push({ ...base, age: 10 });
+  cases.push({ ...base, age: 50 });
+  cases.push({ ...base, age: 51 });
+  cases.push({ ...base, age: 0 });
+  cases.push({ ...base, age: 100 });
+  // Light child + big boot → zero cells in the DIN table.
+  cases.push({ ...base, weight: 12, height: 120, age: 6, bootSoleLength: 340 });
+  cases.push({ ...base, weight: 20, height: 130, age: 8, bootSoleLength: 320 });
+  // Heavy + tiny boot → zero cells at the bottom-left of the table.
+  cases.push({ ...base, weight: 110, height: 190, bootSoleLength: 240, dinAggressivenessKey: "aggressive" });
+  cases.push({ ...base, skillLevelIndex: 9, terrainFocusIndex: 7 });
+  cases.push({ ...base, skillLevelIndex: -1, terrainFocusIndex: -1 });
+  cases.push({ ...base, skillLevelIndex: 2, terrainFocusIndex: 2 }); // advanced powder mount
+  cases.push({ ...base, skillLevelIndex: 0, terrainFocusIndex: 0 }); // beginner carving mount
+
+  writeFileSync(outPath, JSON.stringify(cases));
+  console.log(`generated ${cases.length} ski cases`);
+  process.exit(0);
+}
 
 const cases = [];
 const carvingTypes = [null, "neutralCarving", "forwardCarving"];
@@ -77,5 +173,5 @@ cases.push({ ...base, switchIndex: 5 });
 cases.push({ ...base, bodyFlexIndex: 9, coreStrengthIndex: 9, skillLevelIndex: 9 });
 cases.push({ ...base, styleIndex: -1, switchIndex: -1, skillLevelIndex: -1 });
 
-writeFileSync(process.argv[2], JSON.stringify(cases));
-console.log(`generated ${cases.length} cases`);
+writeFileSync(outPath, JSON.stringify(cases));
+console.log(`generated ${cases.length} snowboard cases`);

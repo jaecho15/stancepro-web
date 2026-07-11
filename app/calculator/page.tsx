@@ -1,18 +1,22 @@
 import type { Metadata } from "next";
-import { fetchSnowboardRules } from "@/lib/stance/fetch-rules";
-import { StanceCalculatorClient } from "@/components/calculator/StanceCalculatorClient";
+import { fetchSkiRules, fetchSnowboardRules } from "@/lib/stance/fetch-rules";
+import { CalculatorTabs } from "@/components/calculator/CalculatorTabs";
 
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Snowboard Stance Calculator - Width, Binding Angles & Board Length | StancePro",
+  title: "Ski & Snowboard Stance Calculator - Width, Angles, Length & DIN | StancePro",
   description:
-    "Calculate your ideal snowboard stance width, binding angles, board length and highback lean in seconds. The same science-backed engine as the StancePro app — free with a StancePro account.",
+    "Calculate your ideal snowboard stance width, binding angles and board length — or your ski length, mount point and DIN reference range. The same science-backed engine as the StancePro app — free with a StancePro account.",
   keywords: [
     "snowboard stance calculator",
     "binding angle calculator",
     "stance width",
     "snowboard size calculator",
+    "ski size calculator",
+    "ski length calculator",
+    "DIN calculator",
+    "ski binding mount point",
     "duck stance",
     "carving stance",
   ],
@@ -20,15 +24,18 @@ export const metadata: Metadata = {
     canonical: "/calculator",
   },
   openGraph: {
-    title: "Snowboard Stance Calculator | StancePro",
+    title: "Ski & Snowboard Stance Calculator | StancePro",
     description:
-      "Dial in stance width, binding angles and board length with the StancePro engine — free with a StancePro account.",
+      "Dial in your snowboard stance or ski length, mount point and DIN reference with the StancePro engine — free with a StancePro account.",
     url: "https://stance-pro.com/calculator",
   },
 };
 
 export default async function CalculatorPage() {
-  const rules = await fetchSnowboardRules();
+  const [snowboardRules, skiRules] = await Promise.all([
+    fetchSnowboardRules(),
+    fetchSkiRules(),
+  ]);
 
   return (
     <div className="relative overflow-hidden">
@@ -41,15 +48,16 @@ export default async function CalculatorPage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
             <h1 className="text-4xl md:text-5xl font-bold mb-4">
-              Snowboard <span className="gradient-text">Stance Calculator</span>
+              Ski &amp; Snowboard <span className="gradient-text">Stance Calculator</span>
             </h1>
             <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-              Your stance width, binding angles, board length and highback lean —
-              computed by the same engine that powers the StancePro app.
+              Snowboard stance width, binding angles and board length — or ski
+              length, mount point and DIN reference — computed by the same
+              engine that powers the StancePro app.
             </p>
           </div>
 
-          <StanceCalculatorClient rules={rules} />
+          <CalculatorTabs snowboardRules={snowboardRules} skiRules={skiRules} />
         </div>
       </section>
     </div>

@@ -1,4 +1,6 @@
-// Compares Swift and TS harness outputs case-by-case.
+// Compares Swift and TS harness outputs case-by-case over the union of
+// output keys. Swift's JSONEncoder omits nil fields while the TS side emits
+// explicit nulls, so undefined and null are treated as equal.
 import { readFileSync } from "node:fs";
 
 const swift = JSON.parse(readFileSync(process.argv[2], "utf8"));
@@ -10,11 +12,18 @@ if (swift.length !== ts.length) {
   process.exit(1);
 }
 
-const fields = ["width", "front", "rear", "method", "boardLength", "highback", "shape"];
+const norm = (v) => (v === undefined ? null : v);
+
+const fieldSet = new Set();
+for (const row of [...swift.slice(0, 50), ...ts.slice(0, 50)]) {
+  for (const k of Object.keys(row)) fieldSet.add(k);
+}
+const fields = [...fieldSet].sort();
+
 let mismatches = 0;
 for (let i = 0; i < swift.length; i++) {
-  for (const f of fields) {
-    if (swift[i][f] !== ts[i][f]) {
+  for (const f of new Set([...Object.keys(swift[i]), ...Object.keys(ts[i]), ...fields])) {
+    if (norm(swift[i][f]) !== norm(ts[i][f])) {
       mismatches++;
       if (mismatches <= 10) {
         console.error(

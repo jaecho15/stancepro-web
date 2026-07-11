@@ -11,10 +11,13 @@ enum SportContext: String, Codable, CaseIterable {
     case ski
 }
 
-struct SkiStanceResult: Codable {}
-
-enum SkiStanceCalculationService {
-    static let dinLookupTable: [String: [String: Double]] = [:]
+// The REAL SkiStanceCalculationService.swift + SkiStanceResult.swift are now
+// compiled into the harness (ski differential mode); it only needs the rules
+// repository, which we pin to the bundled defaults.
+final class CalculationRulesRepository {
+    static let shared = CalculationRulesRepository()
+    func skiRules() -> SkiCalculationRules { .bundledDefaults }
+    func snowboardRules() -> SnowboardCalculationRules { .bundledDefaults }
 }
 
 struct StanceSetup {}

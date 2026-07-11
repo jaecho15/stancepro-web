@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { ChevronDown, Ruler, Sparkles } from "lucide-react";
 import { calculateResult, recommendBoardShape } from "@/lib/stance/engine";
 import type { SnowboardCalculationRules } from "@/lib/stance/types";
+import { SnowboardVisualization, setbackCm } from "./SnowboardVisualization";
 
 const STYLE_DESCRIPTIONS: Record<string, string> = {
   "All-Mountain": "Versatile riding all over the hill",
@@ -59,58 +60,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function parseAngle(angle: string): number {
-  return parseInt(angle.replace("°", ""), 10) || 0;
-}
-
-function StanceDiagram({
-  front,
-  rear,
-  widthCm,
-}: {
-  front: string;
-  rear: string;
-  widthCm: number;
-}) {
-  const frontDeg = parseAngle(front);
-  const rearDeg = parseAngle(rear);
-  return (
-    <svg viewBox="0 0 360 120" className="w-full max-w-md mx-auto" aria-hidden>
-      {/* Board */}
-      <rect
-        x="10"
-        y="35"
-        width="340"
-        height="50"
-        rx="25"
-        className="fill-slate-800 stroke-slate-600"
-        strokeWidth="1.5"
-      />
-      {/* Rear binding (rider left, goofy-agnostic diagram) */}
-      <g transform={`translate(120 60) rotate(${-rearDeg})`}>
-        <rect x="-11" y="-24" width="22" height="48" rx="9" className="fill-brand-500/80" />
-      </g>
-      {/* Front binding */}
-      <g transform={`translate(240 60) rotate(${-frontDeg})`}>
-        <rect x="-11" y="-24" width="22" height="48" rx="9" className="fill-brand-400" />
-      </g>
-      <text x="120" y="20" textAnchor="middle" className="fill-slate-300 text-[13px] font-medium">
-        {rear}
-      </text>
-      <text x="240" y="20" textAnchor="middle" className="fill-slate-300 text-[13px] font-medium">
-        {front}
-      </text>
-      {/* Width marker */}
-      <line x1="120" y1="102" x2="240" y2="102" className="stroke-slate-500" strokeWidth="1" />
-      <line x1="120" y1="97" x2="120" y2="107" className="stroke-slate-500" strokeWidth="1" />
-      <line x1="240" y1="97" x2="240" y2="107" className="stroke-slate-500" strokeWidth="1" />
-      <text x="180" y="117" textAnchor="middle" className="fill-slate-400 text-[11px]">
-        {widthCm.toFixed(1)} cm
-      </text>
-    </svg>
-  );
-}
-
 export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationRules }) {
   const [heightUnit, setHeightUnit] = useState<"cm" | "in">("cm");
   const [weightUnit, setWeightUnit] = useState<"kg" | "lb">("kg");
@@ -122,6 +71,7 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
   const [bodyFlexIndex, setBodyFlexIndex] = useState(1);
   const [coreStrengthIndex, setCoreStrengthIndex] = useState(1);
   const [hasInjury, setHasInjury] = useState(false);
+  const [isGoofy, setIsGoofy] = useState(false);
   const [carvingStanceType, setCarvingStanceType] = useState(NEUTRAL_CARVING);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [legLengthValue, setLegLengthValue] = useState("");
@@ -291,6 +241,13 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
         </Field>
 
         <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="Stance direction">
+            <SegmentedControl
+              options={["Regular", "Goofy"]}
+              value={isGoofy ? 1 : 0}
+              onChange={(i) => setIsGoofy(i === 1)}
+            />
+          </Field>
           <Field label="Do you ride switch?">
             <SegmentedControl
               options={rules.switchOptions}
@@ -298,6 +255,9 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
               onChange={setSwitchIndex}
             />
           </Field>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Body flexibility">
             <SegmentedControl
               options={rules.flexibilityOptions}
@@ -305,9 +265,6 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
               onChange={setBodyFlexIndex}
             />
           </Field>
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Core strength">
             <SegmentedControl
               options={rules.coreStrengthOptions}
@@ -315,14 +272,15 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
               onChange={setCoreStrengthIndex}
             />
           </Field>
-          <Field label="Knee concerns / past injury">
-            <SegmentedControl
-              options={["No", "Yes"]}
-              value={hasInjury ? 1 : 0}
-              onChange={(i) => setHasInjury(i === 1)}
-            />
-          </Field>
         </div>
+
+        <Field label="Knee concerns / past injury">
+          <SegmentedControl
+            options={["No", "Yes"]}
+            value={hasInjury ? 1 : 0}
+            onChange={(i) => setHasInjury(i === 1)}
+          />
+        </Field>
 
         <div className="border-t border-slate-700/60 pt-4">
           <button
@@ -383,11 +341,18 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
       >
         {result ? (
           <div className="space-y-6">
-            <StanceDiagram
-              front={result.frontAngle}
-              rear={result.rearAngle}
+            <SnowboardVisualization
               widthCm={result.width}
+              frontAngle={result.frontAngle}
+              rearAngle={result.rearAngle}
+              ridingStyle={result.method}
+              isGoofy={isGoofy}
             />
+            {setbackCm(result.method) > 0 && (
+              <p className="text-xs text-slate-500 text-center -mt-3">
+                Setback {setbackCm(result.method).toFixed(1)} cm ({result.method} board)
+              </p>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl bg-slate-800/50 p-4">
