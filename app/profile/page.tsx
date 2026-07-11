@@ -19,12 +19,14 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 export default async function ProfilePage() {
   // Middleware guarantees a session; RLS scopes every query to this user.
   let data: MemberData | null = null;
+  let email: string | null = null;
   const supabase = await createClient();
   if (supabase) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (user) {
+      email = user.email ?? null;
       data = await fetchMemberData(supabase, user.id);
     }
   }
@@ -47,7 +49,7 @@ export default async function ProfilePage() {
           ) : (
             <>
               {data.profile ? (
-                <ProfileCard profile={data.profile} />
+                <ProfileCard profile={data.profile} email={email} />
               ) : (
                 <EmptyNote>
                   No profile yet — finish{" "}

@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { User } from "lucide-react";
+import { Mail, User } from "lucide-react";
 import type { MemberProfile } from "@/lib/profile/fetch";
 
 function ageFrom(birthDate: string | null): number | null {
@@ -25,7 +25,13 @@ function Stat({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function ProfileCard({ profile }: { profile: MemberProfile }) {
+export function ProfileCard({
+  profile,
+  email,
+}: {
+  profile: MemberProfile;
+  email: string | null;
+}) {
   const age = ageFrom(profile.birth_date);
   const gender = profile.gender
     ? profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1)
@@ -58,6 +64,12 @@ export function ProfileCard({ profile }: { profile: MemberProfile }) {
           <p className="text-sm text-slate-500 mt-0.5">
             {[gender, age !== null ? `${age} yrs` : null].filter(Boolean).join(" · ")}
           </p>
+          {email && (
+            <p className="text-sm text-slate-400 mt-1 flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">{email}</span>
+            </p>
+          )}
         </div>
       </div>
 
