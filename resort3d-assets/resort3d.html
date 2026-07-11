@@ -274,14 +274,14 @@ window.OffpisteDraw = (function(){
   // offline-download icon and the Route entry show. Route open adds Draw/Fly;
   // while drawing (active) adds Undo/Clear/Save.
   function updOpToolsVis(){
-    var open=routeOpen, edit=routeOpen&&active;
+    var open=routeOpen, edit=routeOpen&&(active||pinMode);
     if(el.routeBtn) el.routeBtn.classList.toggle("on",open);
     if(el.draw)  el.draw.style.display =open?"":"none";
     if(el.pin)   el.pin.style.display  =open?"":"none";
     if(el.fly)   el.fly.style.display  =open?"":"none";
     if(el.undo)  el.undo.style.display =edit?"":"none";
     if(el.clear) el.clear.style.display=edit?"":"none";
-    if(el.save)  el.save.style.display =edit?"":"none";
+    if(el.save)  el.save.style.display =(routeOpen&&active)?"":"none";
   }
   function flashOOB(){ el.oob.classList.add("show"); clearTimeout(flashOOB._t);
     flashOOB._t=setTimeout(function(){el.oob.classList.remove("show");},700); }
@@ -302,12 +302,11 @@ window.OffpisteDraw = (function(){
     map.on("click", function(e){
       if(!pinMode) return;
       var lng=e.lngLat.lng, lat=e.lngLat.lat, elev=sampleElev(lng,lat);
-      var label=(el.wpInput && el.wpInput.value.trim()) || ("Waypoint "+(waypoints.length+1));
-      var wp={lng:lng,lat:lat,elev:elev,label:label};
-      waypoints.push(wp); addWpMarker(wp); saveWaypoint(wp);
+      var wp={lng:lng,lat:lat,elev:elev,label:""};
+      waypoints.push(wp); addWpMarker(wp); openWpNameDialog(wp);
     });
-    el.undo.onclick=function(){ pts.pop(); refresh(); };
-    el.clear.onclick=function(){ pts=[]; refresh(); };
+    el.undo.onclick=function(){ if(pinMode) undoWaypoint(); else { pts.pop(); refresh(); } };
+    el.clear.onclick=function(){ if(pinMode) clearWaypoints(); else { pts=[]; refresh(); } };
     el.save.onclick=save;
     var canvasEl=byId("map");
     function rel(ev){ var r=map.getCanvas().getBoundingClientRect(); var p=ev.touches?ev.touches[0]:ev;
@@ -386,8 +385,22 @@ window.OffpisteDraw = (function(){
   }
   function save(){
     if(pts.length<2) return;
+    if(wpPopup){ wpPopup.remove(); wpPopup=null; }
+    var last=pts[pts.length-1];
+    var d=document.createElement('div'); d.className='op-wp-edit';
+    d.innerHTML='<input maxlength="80" placeholder="Route name"/>'
+      + '<div class="op-wp-edit-row"><button class="op-wp-edit-del">Cancel</button>'
+      + '<button class="op-wp-edit-save">Save</button></div>';
+    var inp=d.querySelector('input');
+    d.querySelector('.op-wp-edit-save').onclick=function(ev){ ev.stopPropagation(); commitRoute(inp.value.trim()); if(wpPopup){wpPopup.remove();wpPopup=null;} };
+    d.querySelector('.op-wp-edit-del').onclick=function(ev){ ev.stopPropagation(); if(wpPopup){wpPopup.remove();wpPopup=null;} };
+    wpPopup=new maplibregl.Popup({offset:12, closeButton:false, maxWidth:'260px'})
+      .setLngLat([last[0],last[1]]).setDOMContent(d).addTo(map);
+    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 50);
+  }
+  function commitRoute(name){
     var a=analyse();
-    var payload={ schema:"offpiste_route.v1", resort_id:meta.resort_id||null,
+    var payload={ schema:"offpiste_route.v1", resort_id:meta.resort_id||null, name:name||null,
       dem_source:meta.dem_source||null, res_m:meta.res_m||null, created_at:new Date().toISOString(),
       geometry:{type:"LineString",coordinates:pts.map(function(p){return [+p[0].toFixed(6),+p[1].toFixed(6),Math.round(p[2])];})},
       stats:{ length_m:Math.round(a.stats.len), drop_m:Math.round(a.stats.drop),
@@ -464,12 +477,40 @@ window.OffpisteDraw = (function(){
     try{ if(window.AndroidOffpiste&&AndroidOffpiste.onSaveWaypoint) AndroidOffpiste.onSaveWaypoint(JSON.stringify(payload)); }catch(e){}
     console.log("WAYPOINT_SAVE "+JSON.stringify(payload)); window.__LAST_WP__=payload;
   }
+  // New waypoint (B flow): place a provisional pin, name it in a popup, then Save.
+  function openWpNameDialog(wp){
+    if(wpPopup){ wpPopup.remove(); wpPopup=null; }
+    var d=document.createElement('div'); d.className='op-wp-edit';
+    d.innerHTML='<input maxlength="80" placeholder="Waypoint name"/>'
+      + '<div class="op-wp-edit-row"><button class="op-wp-edit-del">Cancel</button>'
+      + '<button class="op-wp-edit-save">Save</button></div>';
+    var inp=d.querySelector('input');
+    d.querySelector('.op-wp-edit-save').onclick=function(ev){ ev.stopPropagation();
+      wp.label=inp.value.trim() || ("Waypoint "+waypoints.length);
+      if(wp.lblEl) wp.lblEl.textContent=wp.label;
+      saveWaypoint(wp);
+      if(wpPopup){ wpPopup.remove(); wpPopup=null; } };
+    d.querySelector('.op-wp-edit-del').onclick=function(ev){ ev.stopPropagation();
+      removeWp(wp);
+      if(wpPopup){ wpPopup.remove(); wpPopup=null; } };
+    wpPopup=new maplibregl.Popup({offset:34, closeButton:false, maxWidth:'260px'})
+      .setLngLat([wp.lng,wp.lat]).setDOMContent(d).addTo(map);
+    setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 50);
+  }
+  function undoWaypoint(){
+    if(!waypoints.length) return;
+    var wp=waypoints[waypoints.length-1];
+    removeWp(wp); if(wp.id) sendWpMutation("delete", {id:wp.id});
+  }
+  function clearWaypoints(){
+    waypoints.slice().forEach(function(wp){ removeWp(wp); if(wp.id) sendWpMutation("delete", {id:wp.id}); });
+  }
   function togglePin(){
     if(!ready) return;
     pinMode=!pinMode;
     el.pin.classList.toggle("on",pinMode);
-    if(el.wpInput) el.wpInput.classList.toggle("show",pinMode);
     if(pinMode && active) toggle();   // leave draw mode; a single tap now places a pin
+    updOpToolsVis();
   }
   // Render the user's saved waypoints for this resort. Called by the native
   // host — with reset=true it REPLACES local pins with the server truth (used
