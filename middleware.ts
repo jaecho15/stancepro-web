@@ -88,6 +88,7 @@ export const config = {
     "/snow-outlook",
     "/resort-3d/:path*",
     "/resort-3d",
+    "/resort/:path*",
     "/home",
     "/onboarding",
   ],

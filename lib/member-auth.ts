@@ -8,6 +8,7 @@ export const GATED_PREFIXES = [
   "/snow-forecast",
   "/snow-outlook",
   "/resort-3d",
+  "/resort",
 ] as const;
 
 export const MEMBER_LOGIN_PATH = "/login";

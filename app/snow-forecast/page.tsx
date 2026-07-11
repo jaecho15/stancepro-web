@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { fetchResortIndex, fetchSeasonalOutlooks } from "@/lib/snow/fetch";
-import { ResortSearchList } from "@/components/snow/ResortSearchList";
+import { buildRegionBrowse } from "@/lib/snow/region-browse";
+import { SnowForecastBrowser } from "@/components/snow/SnowForecastBrowser";
 import { SeasonalTilesSection } from "@/components/snow/SeasonalTilesSection";
 
 export const revalidate = 21600; // resort list changes rarely
@@ -20,10 +21,11 @@ export const metadata: Metadata = {
 };
 
 export default async function SnowForecastIndexPage() {
-  const [resorts, seasonalRows] = await Promise.all([
+  const [index, seasonalRows] = await Promise.all([
     fetchResortIndex(),
     fetchSeasonalOutlooks(),
   ]);
+  const { regions, resorts } = buildRegionBrowse(index);
 
   return (
     <div className="relative overflow-hidden">
@@ -57,7 +59,7 @@ export default async function SnowForecastIndexPage() {
               Resort list is temporarily unavailable. Please check back later.
             </p>
           ) : (
-            <ResortSearchList resorts={resorts} />
+            <SnowForecastBrowser regions={regions} resorts={resorts} />
           )}
         </div>
       </section>
