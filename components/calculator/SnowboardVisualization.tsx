@@ -8,23 +8,27 @@
 // and goofy mirroring. Geometry constants match the SwiftUI original 1:1.
 
 const CM_TO_PX = 1.92;
-const BINDING_SIZE = 63;
+// Everything shares one scale (1.92 px/cm): the board is drawn at the
+// recommended board length, the stance markers at the computed width, and the
+// binding at a realistic ~25cm (PNG is 1004/1024 opaque vertically).
+const BINDING_SIZE = Math.round(25 * CM_TO_PX * (1024 / 1004));
 
-function boardImage(style: string | null): { src: string; w: number; h: number } {
+// aspect = natural PNG height/width, so length in cm fixes the drawn height.
+function boardImage(style: string | null): { src: string; aspect: number } {
   switch (style) {
     case "Ground-Tricks":
     case "Park":
-      return { src: "/calc/board_twin.png", w: 300, h: 100 };
+      return { src: "/calc/board_twin.png", aspect: 296 / 1454 };
     case "Freeride":
-      return { src: "/calc/board_directional.png", w: 300, h: 100 };
+      return { src: "/calc/board_directional.png", aspect: 485 / 2245 };
     case "Carving":
-      return { src: "/calc/board_carving.png", w: 315, h: 105 };
+      return { src: "/calc/board_carving.png", aspect: 208 / 1024 };
     case "Powder":
-      return { src: "/calc/board_powder.png", w: 300, h: 100 };
+      return { src: "/calc/board_powder.png", aspect: 492 / 2245 };
     case "All-Mountain":
-      return { src: "/calc/board_directional_twin.png", w: 300, h: 100 };
+      return { src: "/calc/board_directional_twin.png", aspect: 295 / 1536 };
     default:
-      return { src: "/calc/board_twin.png", w: 300, h: 100 };
+      return { src: "/calc/board_twin.png", aspect: 296 / 1454 };
   }
 }
 
@@ -64,18 +68,22 @@ function At({
 
 export function SnowboardVisualization({
   widthCm,
+  boardLengthCm,
   frontAngle,
   rearAngle,
   ridingStyle,
   isGoofy,
 }: {
   widthCm: number;
+  boardLengthCm: number;
   frontAngle: string;
   rearAngle: string;
   ridingStyle: string | null;
   isGoofy: boolean;
 }) {
   const board = boardImage(ridingStyle);
+  const boardW = boardLengthCm * CM_TO_PX;
+  const boardH = boardW * board.aspect;
   const setbackOffset = setbackCm(ridingStyle) * CM_TO_PX;
   const frontDeg = (180 - parseAngle(frontAngle, 15)) + 180;
   const rearDeg = (180 - parseAngle(rearAngle, -6)) + 180;
@@ -87,17 +95,17 @@ export function SnowboardVisualization({
 
   return (
     <div className="relative w-[340px] h-[240px] mx-auto rounded-[20px] bg-slate-800/50 max-[380px]:scale-90 select-none">
-      {/* Board */}
+      {/* Board, drawn at the recommended length on the shared cm scale */}
       <At x={0} y={0}>
         <img
           src={board.src}
           alt={`${ridingStyle ?? "Snowboard"} board`}
-          width={board.w}
-          height={board.h}
+          width={Math.round(boardW)}
+          height={Math.round(boardH)}
           className="drop-shadow-lg"
           style={{
-            width: board.w,
-            height: board.h,
+            width: boardW,
+            height: boardH,
             objectFit: "contain",
             transform: isGoofy ? "scaleX(-1)" : undefined,
           }}
@@ -143,13 +151,13 @@ export function SnowboardVisualization({
         </span>
       </At>
 
-      {/* Nose / tail labels */}
-      <At x={mirror(-120)} y={72}>
+      {/* Nose / tail labels, tracking the board tips */}
+      <At x={mirror(-boardW * 0.4)} y={72}>
         <span className="text-xs font-bold text-white bg-slate-900/80 rounded px-1.5 py-0.5">
           NOSE
         </span>
       </At>
-      <At x={mirror(120)} y={72}>
+      <At x={mirror(boardW * 0.4)} y={72}>
         <span className="text-xs font-bold text-white bg-slate-900/80 rounded px-1.5 py-0.5">
           TAIL
         </span>
