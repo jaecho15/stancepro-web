@@ -87,7 +87,7 @@ export function SkiVisualization({
               src={img}
               alt={`${terrainFocus ?? "All-Mountain"} ski`}
               className="opacity-95"
-              style={{ height: 330 * VIS_SCALE, width: "auto", objectFit: "contain" }}
+              style={{ maxWidth: "none", height: 330 * VIS_SCALE, width: "auto", objectFit: "contain" }}
             />
           </At>
         ))}
@@ -115,6 +115,7 @@ export function SkiVisualization({
               alt="Ski binding"
               className="drop-shadow"
               style={{
+                maxWidth: "none",
                 width: 50.4 * VIS_SCALE,
                 height: 93.6 * VIS_SCALE,
                 objectFit: "contain",

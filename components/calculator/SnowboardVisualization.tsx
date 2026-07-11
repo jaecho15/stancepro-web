@@ -104,6 +104,9 @@ export function SnowboardVisualization({
           height={Math.round(boardH)}
           className="drop-shadow-lg"
           style={{
+            // Preflight img{max-width:100%} + the shrink-to-fit abs-pos wrapper
+            // at left:50% caps layout width at half the container — undo it.
+            maxWidth: "none",
             width: boardW,
             height: boardH,
             objectFit: "contain",
@@ -171,6 +174,7 @@ export function SnowboardVisualization({
           width={BINDING_SIZE}
           height={BINDING_SIZE}
           style={{
+            maxWidth: "none",
             width: BINDING_SIZE,
             height: BINDING_SIZE,
             objectFit: "contain",
@@ -185,6 +189,7 @@ export function SnowboardVisualization({
           width={BINDING_SIZE}
           height={BINDING_SIZE}
           style={{
+            maxWidth: "none",
             width: BINDING_SIZE,
             height: BINDING_SIZE,
             objectFit: "contain",
