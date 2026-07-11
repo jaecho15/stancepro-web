@@ -3,6 +3,7 @@
 // same list so ?next= redirects can't become open redirects.
 
 export const GATED_PREFIXES = [
+  "/home",
   "/calculator",
   "/snow-forecast",
   "/snow-outlook",
@@ -22,10 +23,11 @@ export function isGatedPath(pathname: string): boolean {
   );
 }
 
-/** Only allow post-login redirects into the gated features (or home). */
+/** Only allow post-login redirects into the gated features; a plain sign-in
+ *  (no ?next) lands on the member hub. */
 export function sanitizeMemberNext(
   next: string | null | undefined,
-  fallback = "/"
+  fallback = "/home"
 ): string {
   if (!next) return fallback;
   if (next.startsWith("//") || next.includes("://")) return fallback;

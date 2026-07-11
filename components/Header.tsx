@@ -6,16 +6,28 @@ import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BrandLogo } from "@/components/BrandLogo";
 import { HeaderAuthButton } from "@/components/auth/HeaderAuthButton";
+import { useSignedIn } from "@/components/auth/useSignedIn";
 
-const navLinks = [
-  { href: "/calculator", label: "Calculator" },
-  { href: "/features", label: "Features" },
-  { href: "/download", label: "Download" },
-  { href: "/support", label: "Support" },
+// Marketing nav for visitors; the member tools take over once signed in
+// (Home is the hub). `wide: false` links hide below lg to keep the bar tidy.
+const PUBLIC_LINKS = [
+  { href: "/features", label: "Features", wide: false },
+  { href: "/download", label: "Download", wide: false },
+  { href: "/support", label: "Support", wide: false },
+];
+
+const MEMBER_LINKS = [
+  { href: "/home", label: "Home", wide: false },
+  { href: "/calculator", label: "Calculator", wide: false },
+  { href: "/snow-forecast", label: "Forecast", wide: false },
+  { href: "/snow-outlook", label: "Outlook", wide: true },
+  { href: "/resort-3d", label: "3D Maps", wide: true },
 ];
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const signedIn = useSignedIn();
+  const navLinks = signedIn ? MEMBER_LINKS : PUBLIC_LINKS;
 
   return (
     <>
@@ -34,7 +46,7 @@ export function Header() {
                   key={link.href}
                   href={link.href}
                   className={`text-slate-300 hover:text-white transition-colors ${
-                    link.href === "/calculator" ? "hidden lg:block" : ""
+                    link.wide ? "hidden lg:block" : ""
                   }`}
                 >
                   {link.label}

@@ -6,7 +6,7 @@ export function Footer() {
   return (
     <footer className="border-t border-white/10 bg-mountain-950/50">
       <div className="container mx-auto px-6 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center mb-4">
@@ -17,14 +17,22 @@ export function Footer() {
             </p>
           </div>
 
-          {/* Product */}
+          {/* Web tools (signed-in members) */}
           <div>
-            <h4 className="font-semibold mb-4">Product</h4>
+            <h4 className="font-semibold mb-4">Web tools</h4>
             <ul className="space-y-2 text-slate-400 text-sm">
+              <li><Link href="/home" className="hover:text-white transition-colors">Member home</Link></li>
               <li><Link href="/calculator" className="hover:text-white transition-colors">Stance Calculator</Link></li>
               <li><Link href="/snow-forecast" className="hover:text-white transition-colors">Snow Forecast</Link></li>
               <li><Link href="/snow-outlook" className="hover:text-white transition-colors">Seasonal Outlook</Link></li>
               <li><Link href="/resort-3d" className="hover:text-white transition-colors">3D Resort Maps</Link></li>
+            </ul>
+          </div>
+
+          {/* App */}
+          <div>
+            <h4 className="font-semibold mb-4">App</h4>
+            <ul className="space-y-2 text-slate-400 text-sm">
               <li><Link href="/features" className="hover:text-white transition-colors">Features</Link></li>
               <li><Link href="/download" className="hover:text-white transition-colors">Download</Link></li>
               <li><Link href="/features#coaching" className="hover:text-white transition-colors">Coaching</Link></li>

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 import {
   Calculator,
   Users,
@@ -14,11 +15,30 @@ import {
   MessageCircle,
   BookOpen,
   Award,
-  Zap
+  Zap,
+  CloudSnow,
+  Globe2,
+  Thermometer,
+  Satellite,
+  Map,
+  Route,
+  Gauge,
+  ArrowRight
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { AppStoreButtons } from "@/components/AppStoreButtons";
 
-const features = [
+interface Feature {
+  id: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  gradient: string;
+  webHref?: string; // set when the feature also runs on the web
+  details: { icon: LucideIcon; text: string }[];
+}
+
+const features: Feature[] = [
   {
     id: "coaching",
     title: "AI Coaching + Certified Trainers",
@@ -51,11 +71,67 @@ const features = [
     description: "Build personalized snowboard and ski recommendations from your body profile, riding style, terrain, and equipment context.",
     icon: Calculator,
     gradient: "from-orange-500 to-red-500",
+    webHref: "/calculator",
     details: [
       { icon: Ruler, text: "Profile-based stance width and sizing guidance" },
       { icon: Compass, text: "Snowboard angles, setback, and ski setup recommendations" },
       { icon: Sliders, text: "Saved setups you can revisit, edit, and compare" },
       { icon: Target, text: "QR share and import tools for quick handoff" },
+    ]
+  },
+  {
+    id: "snow-forecast",
+    title: "16-Day Resort Snow Forecasts",
+    description: "Multi-model snowfall forecasts for 3,466 resorts worldwide, resolved per elevation band so you know what's falling at the base, mid-mountain, and the summit.",
+    icon: CloudSnow,
+    gradient: "from-sky-500 to-blue-600",
+    webHref: "/snow-forecast",
+    details: [
+      { icon: CloudSnow, text: "Four-model ensemble with honest uncertainty ranges, 16 days out" },
+      { icon: Mountain, text: "Base, mid and top elevation bands forecast separately" },
+      { icon: Thermometer, text: "Time-of-day detail with rain risk and freezing level" },
+      { icon: TrendingUp, text: "Weeks 3–6 tendency from a 51-member ensemble" },
+    ]
+  },
+  {
+    id: "snow-outlook",
+    title: "Seasonal Snow Outlook",
+    description: "A world map of the winter ahead: probabilistic outlooks only where they're validated against 40+ years of winters, and live observed season status for the southern hemisphere.",
+    icon: Globe2,
+    gradient: "from-indigo-500 to-purple-600",
+    webHref: "/snow-outlook",
+    details: [
+      { icon: Globe2, text: "World map of every covered climate region at a glance" },
+      { icon: TrendingUp, text: "Validated ENSO signals with tercile probabilities — no guesswork" },
+      { icon: Satellite, text: "Southern winters tracked live: percentile, snowfall and satellite cover" },
+      { icon: BookOpen, text: "Analog winters show you the seasons that looked like this one" },
+    ]
+  },
+  {
+    id: "resort-3d",
+    title: "3D Resort Terrain Maps",
+    description: "Fly over any resort in interactive 3D — LiDAR-grade 5-metre terrain with runs, lifts, a cinematic intro sweep, and mountain-safety context like frozen alpine tarns.",
+    icon: Map,
+    gradient: "from-emerald-500 to-teal-600",
+    webHref: "/resort-3d",
+    details: [
+      { icon: Mountain, text: "LiDAR 5 m terrain where available, worldwide coverage everywhere" },
+      { icon: Route, text: "Runs, lifts and off-piste context draped over real relief" },
+      { icon: Video, text: "Cinematic entry sweep that lands on the trail-map view" },
+      { icon: Zap, text: "Frozen alpine tarns flagged with thin-ice caution" },
+    ]
+  },
+  {
+    id: "ride-tracker",
+    title: "Ride Tracker",
+    description: "Record your days on snow with automatic lift detection, turn and jump metrics, and session summaries that show how you actually rode.",
+    icon: Gauge,
+    gradient: "from-rose-500 to-orange-500",
+    details: [
+      { icon: Gauge, text: "Speed, vertical, distance and calories per session" },
+      { icon: TrendingUp, text: "Automatic lift and gondola detection on the mountain" },
+      { icon: Zap, text: "Jump airtime, spins and landing stability metrics" },
+      { icon: Map, text: "Session maps and highlights you can revisit anytime" },
     ]
   },
   {
@@ -167,6 +243,15 @@ export default function FeaturesPage() {
                     </div>
                   ))}
                 </div>
+
+                {feature.webHref && (
+                  <Link
+                    href={feature.webHref}
+                    className="inline-flex items-center gap-2 mt-8 px-5 py-2.5 rounded-full border border-brand-500/50 text-brand-300 hover:bg-brand-500/10 transition-all font-medium"
+                  >
+                    Try it in your browser <ArrowRight className="w-4 h-4" />
+                  </Link>
+                )}
               </div>
             </motion.div>
           ))}

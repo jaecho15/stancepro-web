@@ -14,6 +14,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { AppStoreButtons } from "@/components/AppStoreButtons";
+import { WebToolCards } from "@/components/WebToolCards";
 import { FeatureCard } from "@/components/FeatureCard";
 import { TestimonialCard } from "@/components/TestimonialCard";
 import { StatsSection } from "@/components/StatsSection";
@@ -135,6 +136,42 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Web tools — member features that run right in the browser */}
+      <section className="relative container mx-auto px-6 py-20">
+        <div className="max-w-5xl mx-auto">
+          <motion.div
+            className="text-center mb-10"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+              Now in <span className="gradient-text">Your Browser</span>
+            </h2>
+            <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+              Four StancePro tools run on the web with the same account you use
+              in the app — sign in and pick up where you left off.
+            </p>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.1 }}
+          >
+            <WebToolCards />
+            <p className="text-center mt-6">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-1.5 text-brand-400 hover:text-brand-300 font-medium"
+              >
+                Sign in to get started <ChevronRight className="w-4 h-4" />
+              </Link>
+            </p>
           </motion.div>
         </div>
       </section>
