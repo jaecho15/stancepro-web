@@ -3,11 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { fetchMemberData, type MemberData } from "@/lib/profile/fetch";
 import { ProfileCard } from "@/components/profile/ProfileCard";
-import {
-  GearSetupCard,
-  SkiSetupCard,
-  SnowboardSetupCard,
-} from "@/components/profile/SetupCards";
+import { ProfileSportTabs } from "@/components/profile/ProfileSportTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -15,22 +11,6 @@ export const metadata: Metadata = {
   title: "My Profile & Setups | StancePro",
   robots: { index: false, follow: false },
 };
-
-function SportHeading({ emoji, title }: { emoji: string; title: string }) {
-  return (
-    <h2 className="text-2xl font-bold text-white mt-14 mb-1 flex items-center gap-2.5 pb-3 border-b border-slate-700/60">
-      <span aria-hidden>{emoji}</span> {title}
-    </h2>
-  );
-}
-
-function SectionHeading({ title, count }: { title: string; count: number }) {
-  return (
-    <h3 className="text-lg font-semibold text-slate-200 mt-8 mb-4">
-      {title} <span className="text-slate-500 font-medium text-base">({count})</span>
-    </h3>
-  );
-}
 
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-slate-500">{children}</p>;
@@ -78,69 +58,13 @@ export default async function ProfilePage() {
                 </EmptyNote>
               )}
 
-              <SportHeading emoji="🏂" title="Snowboard" />
-
-              <SectionHeading title="Stance setups" count={data.snowboardSetups.length} />
-              {data.snowboardSetups.length === 0 ? (
-                <EmptyNote>
-                  Nothing saved yet — setups you save in the app show up here. Try the{" "}
-                  <Link href="/calculator" className="text-brand-400 hover:text-brand-300">
-                    web calculator
-                  </Link>{" "}
-                  in the meantime.
-                </EmptyNote>
-              ) : (
-                <div className="grid lg:grid-cols-2 gap-5">
-                  {data.snowboardSetups.map((setup) => (
-                    <SnowboardSetupCard
-                      key={setup.id}
-                      setup={setup}
-                      fallbackHeightCm={data.profile?.height ?? null}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <SectionHeading title="Gear" count={data.snowboardGear.length} />
-              {data.snowboardGear.length === 0 ? (
-                <EmptyNote>
-                  No snowboard gear saved yet — add your board, boots and bindings in the
-                  app&apos;s gear section.
-                </EmptyNote>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {data.snowboardGear.map((gear) => (
-                    <GearSetupCard key={gear.id} gear={gear} />
-                  ))}
-                </div>
-              )}
-
-              <SportHeading emoji="⛷️" title="Ski" />
-
-              <SectionHeading title="Setups" count={data.skiSetups.length} />
-              {data.skiSetups.length === 0 ? (
-                <EmptyNote>No ski setups saved in the app yet.</EmptyNote>
-              ) : (
-                <div className="grid lg:grid-cols-2 gap-5">
-                  {data.skiSetups.map((setup) => (
-                    <SkiSetupCard key={setup.id} setup={setup} />
-                  ))}
-                </div>
-              )}
-
-              <SectionHeading title="Gear" count={data.skiGear.length} />
-              {data.skiGear.length === 0 ? (
-                <EmptyNote>
-                  No ski gear saved yet — add your skis, boots and bindings in the app&apos;s
-                  gear section.
-                </EmptyNote>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {data.skiGear.map((gear) => (
-                    <GearSetupCard key={gear.id} gear={gear} />
-                  ))}
-                </div>
-              )}
+              <ProfileSportTabs
+                snowboardSetups={data.snowboardSetups}
+                skiSetups={data.skiSetups}
+                snowboardGear={data.snowboardGear}
+                skiGear={data.skiGear}
+                fallbackHeightCm={data.profile?.height ?? null}
+              />
 
               <p className="text-sm text-slate-500 mt-12">
                 Saving and editing happens in the StancePro app — this page mirrors your
