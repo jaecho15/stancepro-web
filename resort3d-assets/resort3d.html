@@ -209,7 +209,7 @@ window.OffpisteDraw = (function(){
       +   '<button id="op-offline" class="op-btn" disabled aria-label="Download for offline">⬇</button>'
       + '</div>'
       + '<div id="op-aspect-legend"></div>'
-      + '<div id="op-hint">1 finger: draw · 2 fingers: move map</div>'
+      + '<div id="op-hint">Draw from the line\u2019s end \u00b7 drag elsewhere to move</div>'
       + '<input id="op-wp-input" placeholder="Waypoint label — then tap the map"/>'
       + '<div id="op-oob">Outside LiDAR coverage — no accurate slope here</div>'
       + '<div id="op-dock">'
@@ -266,7 +266,7 @@ window.OffpisteDraw = (function(){
     if(active && pinMode) togglePin();   // draw and pin modes are mutually exclusive
     el.draw.classList.toggle("on",active);
     if(el.hint) el.hint.classList.toggle("show",active);
-    if(active){ map.dragPan.disable(); map.dragRotate.disable(); }
+    if(active){ map.dragPan.disable(); }
     else{ map.dragPan.enable(); map.dragRotate.enable(); }
     updOpToolsVis();
   }
@@ -321,14 +321,38 @@ window.OffpisteDraw = (function(){
     var canvasEl=byId("map");
     function rel(ev){ var r=map.getCanvas().getBoundingClientRect(); var p=ev.touches?ev.touches[0]:ev;
       return [p.clientX-r.left, p.clientY-r.top]; }
-    var lx=0, ly=0;
+    var lx=0, ly=0, panning=false, px=0, py=0;
     // One finger draws. Two+ fingers are a map gesture — bail (no preventDefault) so
     // MapLibre's touchZoomRotate handles pan/zoom/rotate even while in draw mode.
-    function down(ev){ if(!active) return; if(ev.touches && ev.touches.length!==1){ drawing=false; return; } drawing=true; var q=rel(ev); lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault(); }
-    function move(ev){ if(!active||!drawing) return; if(ev.touches && ev.touches.length!==1){ drawing=false; return; } var q=rel(ev); if(Math.hypot(q[0]-lx,q[1]-ly)<6) return; lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault(); }
-    function up(){ drawing=false; }
+    // Freehand draws only when the drag STARTS near the line's endpoint (or when
+    // there's no line yet). A drag starting away from the end pans the map, so you
+    // can reposition and keep drawing. Right-drag / 2-finger still rotate, scroll /
+    // pinch still zoom (native). Proximity threshold in screen px.
+    function down(ev){
+      if(!active) return;
+      if(ev.touches){ if(ev.touches.length!==1){ drawing=false; panning=false; return; } }
+      else if(ev.button!==0){ return; }
+      var q=rel(ev);
+      if(pts.length>0){
+        var lp=pts[pts.length-1], sp=map.project([lp[0],lp[1]]);
+        if(Math.hypot(q[0]-sp.x, q[1]-sp.y) > 40){ panning=true; px=q[0]; py=q[1]; ev.preventDefault(); return; }
+      }
+      drawing=true; lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault();
+    }
+    function move(ev){
+      if(!active) return;
+      if(panning){
+        if(ev.touches && ev.touches.length!==1){ panning=false; return; }
+        var qp=rel(ev); map.panBy([px-qp[0], py-qp[1]], {duration:0}); px=qp[0]; py=qp[1]; ev.preventDefault(); return;
+      }
+      if(!drawing) return;
+      if(ev.touches && ev.touches.length!==1){ drawing=false; return; }
+      var q=rel(ev); if(Math.hypot(q[0]-lx,q[1]-ly)<6) return; lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault();
+    }
+    function up(){ drawing=false; panning=false; }
     canvasEl.addEventListener("mousedown",down); window.addEventListener("mousemove",move); window.addEventListener("mouseup",up);
     canvasEl.addEventListener("touchstart",down,{passive:false}); canvasEl.addEventListener("touchmove",move,{passive:false}); window.addEventListener("touchend",up);
+    canvasEl.addEventListener("contextmenu",function(ev){ if(active) ev.preventDefault(); });
   }
 
   function distM(a,b){ var R=6378137, dLat=(b[1]-a[1])*Math.PI/180, dLon=(b[0]-a[0])*Math.PI/180,
