@@ -138,7 +138,7 @@
      2026-07-09. Keep iOS/Android bytes identical. ===== -->
 <script>
 window.OffpisteDraw = (function(){
-  var map, meta, art, elevImg=null, ready=false;
+  var map, meta, art, elevImg=null, ready=false, southern=false;
   var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
   var flying=false, flyRAF=null, savedCam=null, routeOpen=false;
   var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
@@ -578,9 +578,10 @@ window.OffpisteDraw = (function(){
   // FATMAP-style aspect palette (familiar to FATMAP users; encodes sun/shade):
   // N blue (cold/shaded, holds snow) → E white → S orange (sunny) → W black,
   // interpolated around the compass. Anchors: N NE E SE S SW W NW.
-  var ASPECT_ANCHORS=[[40,40,40],[20,40,120],[30,90,230],[90,170,235],
+  var ASPECT_ANCHORS=[[85,68,160],[20,40,120],[30,90,230],[90,170,235],
                       [240,240,240],[250,200,120],[245,140,40],[150,90,50]];
   function aspectColor(brg){
+    if(southern) brg=((180-brg)%360+360)%360;
     var seg=(((brg%360)+360)%360)/45, i=Math.floor(seg)%8, j=(i+1)%8, f=seg-Math.floor(seg);
     var a=ASPECT_ANCHORS[i], b=ASPECT_ANCHORS[j];
     return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)];
@@ -679,7 +680,7 @@ window.OffpisteDraw = (function(){
     try{ if(window.AndroidOffpiste&&AndroidOffpiste.onReady) AndroidOffpiste.onReady(rid); }catch(e){}
   }
   function init(_map,_meta,_art){
-    map=_map; meta=_meta||{}; art=_art;
+    map=_map; meta=_meta||{}; art=_art; southern=!!(meta.bounds_3857 && (meta.bounds_3857[1]+meta.bounds_3857[3])<0);
     injectCSS(); injectDOM(); grabEls(); addLayer(); wire(); renderBadge(); loadElev(); refresh(); notifyReady();
   }
   return { init:init, loadSaved:loadSaved, loadWaypoints:loadWaypoints, setOfflineState:setOfflineState, setDepth:setDepth,
