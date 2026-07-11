@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowRight, CircleUserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fetchSeasonalOutlooks } from "@/lib/snow/fetch";
 import { WebToolCards } from "@/components/WebToolCards";
@@ -56,6 +57,22 @@ export default async function MemberHomePage() {
               Your tools, synced with the same account you use in the app.
             </p>
           </div>
+
+          <Link
+            href="/profile"
+            className="glass rounded-2xl px-6 py-4 mb-6 flex items-center gap-4 border border-transparent hover:border-brand-500/50 transition-all group"
+          >
+            <CircleUserRound className="w-7 h-7 text-amber-400 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-lg font-semibold text-white">
+                My profile &amp; setups
+              </span>
+              <span className="block text-sm text-slate-400">
+                Your profile, saved stance setups and gear from the app.
+              </span>
+            </span>
+            <ArrowRight className="w-5 h-5 text-slate-500 ml-auto group-hover:text-brand-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+          </Link>
 
           <WebToolCards />
 

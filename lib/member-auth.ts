@@ -4,6 +4,7 @@
 
 export const GATED_PREFIXES = [
   "/home",
+  "/profile",
   "/calculator",
   "/snow-forecast",
   "/snow-outlook",

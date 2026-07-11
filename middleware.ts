@@ -90,6 +90,7 @@ export const config = {
     "/resort-3d",
     "/resort/:path*",
     "/home",
+    "/profile",
     "/onboarding",
   ],
 };
