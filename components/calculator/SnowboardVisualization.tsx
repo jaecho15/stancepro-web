@@ -8,10 +8,15 @@
 // and goofy mirroring. Geometry constants match the SwiftUI original 1:1.
 
 const CM_TO_PX = 1.92;
+
 // Everything shares one scale (1.92 px/cm): the board is drawn at the
 // recommended board length, the stance markers at the computed width, and the
-// binding at a realistic ~25cm (PNG is 1004/1024 opaque vertically).
-const BINDING_SIZE = Math.round(25 * CM_TO_PX * (1024 / 1004));
+// binding at the rider's boot size — foot ≈ 15% of height, snowboard boot
+// shell ≈ foot + 5cm. The binding PNG is 1004/1024 opaque vertically.
+function bindingPx(heightCm: number): number {
+  const bootCm = heightCm * 0.15 + 5;
+  return Math.round(bootCm * CM_TO_PX * (1024 / 1004));
+}
 
 // aspect = natural PNG height/width, so length in cm fixes the drawn height.
 function boardImage(style: string | null): { src: string; aspect: number } {
@@ -69,6 +74,7 @@ function At({
 export function SnowboardVisualization({
   widthCm,
   boardLengthCm,
+  riderHeightCm,
   frontAngle,
   rearAngle,
   ridingStyle,
@@ -76,12 +82,14 @@ export function SnowboardVisualization({
 }: {
   widthCm: number;
   boardLengthCm: number;
+  riderHeightCm: number;
   frontAngle: string;
   rearAngle: string;
   ridingStyle: string | null;
   isGoofy: boolean;
 }) {
   const board = boardImage(ridingStyle);
+  const bindingSize = bindingPx(riderHeightCm);
   const boardW = boardLengthCm * CM_TO_PX;
   const boardH = boardW * board.aspect;
   const setbackOffset = setbackCm(ridingStyle) * CM_TO_PX;
@@ -171,12 +179,12 @@ export function SnowboardVisualization({
         <img
           src="/calc/binding_front.png"
           alt="Front binding"
-          width={BINDING_SIZE}
-          height={BINDING_SIZE}
+          width={bindingSize}
+          height={bindingSize}
           style={{
             maxWidth: "none",
-            width: BINDING_SIZE,
-            height: BINDING_SIZE,
+            width: bindingSize,
+            height: bindingSize,
             objectFit: "contain",
             transform: `${isGoofy ? "scaleX(-1) " : ""}rotate(${frontDeg}deg)`,
           }}
@@ -186,12 +194,12 @@ export function SnowboardVisualization({
         <img
           src="/calc/binding_rear.png"
           alt="Rear binding"
-          width={BINDING_SIZE}
-          height={BINDING_SIZE}
+          width={bindingSize}
+          height={bindingSize}
           style={{
             maxWidth: "none",
-            width: BINDING_SIZE,
-            height: BINDING_SIZE,
+            width: bindingSize,
+            height: bindingSize,
             objectFit: "contain",
             transform: `${isGoofy ? "scaleX(-1) " : ""}rotate(${rearDeg}deg)`,
           }}

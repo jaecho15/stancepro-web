@@ -344,6 +344,7 @@ export function StanceCalculatorClient({ rules }: { rules: SnowboardCalculationR
             <SnowboardVisualization
               widthCm={result.width}
               boardLengthCm={result.boardLength}
+              riderHeightCm={heightCm ?? 175}
               frontAngle={result.frontAngle}
               rearAngle={result.rearAngle}
               ridingStyle={result.method}
