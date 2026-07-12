@@ -6,7 +6,7 @@ const POSTERS = [
   { slug: "ride_nav", label: "Ride nav — feature" },
 ] as const;
 
-const POSTER_ASSET_VERSION = "20260709-hero-phones";
+const POSTER_ASSET_VERSION = "20260712-production-wordmark";
 
 export default function PostersGalleryPage() {
   return (
