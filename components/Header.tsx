@@ -20,8 +20,7 @@ const MEMBER_LINKS = [
   { href: "/home", label: "Home", wide: false },
   { href: "/profile", label: "Profile", wide: false },
   { href: "/calculator", label: "Calculator", wide: false },
-  { href: "/snow-forecast", label: "Forecast", wide: false },
-  { href: "/snow-outlook", label: "Outlook", wide: true },
+  { href: "/snow-forecast", label: "Snow", wide: false },
   { href: "/resort-3d", label: "3D Maps", wide: true },
 ];
 

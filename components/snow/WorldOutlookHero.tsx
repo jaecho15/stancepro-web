@@ -45,7 +45,13 @@ const PIN_NUDGE: Record<string, [number, number]> = {
   nz_south_island: [-11, 6],
 };
 
-export function WorldOutlookHero({ rows }: { rows: SeasonalOutlookRow[] }) {
+export function WorldOutlookHero({
+  rows,
+  caption = "Hover a card to locate it — tap a pin to jump to its card",
+}: {
+  rows: SeasonalOutlookRow[];
+  caption?: string;
+}) {
   const zones = rows.map((row, i) => {
     const lean =
       row.payload.signal?.lean ??
@@ -141,9 +147,7 @@ export function WorldOutlookHero({ rows }: { rows: SeasonalOutlookRow[] }) {
           <span className="w-2.5 h-2.5 rounded-sm" style={{ background: LEAN_COLOR.near }} />
           Trend only
         </span>
-        <span className="text-slate-600">
-          Hover a card to locate it — tap a pin to jump to its card
-        </span>
+        <span className="text-slate-600">{caption}</span>
       </div>
     </div>
   );

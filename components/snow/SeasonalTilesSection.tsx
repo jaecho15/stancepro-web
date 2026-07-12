@@ -67,7 +67,7 @@ export function SeasonalTilesSection({ rows }: { rows: SeasonalOutlookRow[] }) {
           return (
             <Link
               key={row.climate_region}
-              href={`/snow-outlook#${encodeURIComponent(row.climate_region)}`}
+              href={`/snow-forecast?region=${encodeURIComponent(row.climate_region)}`}
               className="glass rounded-xl p-4 flex flex-col gap-2 border border-transparent hover:border-brand-500/50 transition-all"
             >
               <span className="flex items-start justify-between gap-1">
@@ -96,7 +96,7 @@ export function SeasonalTilesSection({ rows }: { rows: SeasonalOutlookRow[] }) {
       <p className="text-xs text-slate-500 mt-2">
         Northern regions show the validated winter outlook; southern regions
         show the season so far —{" "}
-        <Link href="/snow-outlook" className="text-brand-400 hover:text-brand-300">
+        <Link href="/snow-forecast" className="text-brand-400 hover:text-brand-300">
           full seasonal outlook →
         </Link>
       </p>

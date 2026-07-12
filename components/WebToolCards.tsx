@@ -1,11 +1,5 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  Calculator,
-  CloudSnow,
-  Globe2,
-  Mountain,
-} from "lucide-react";
+import { ArrowRight, Calculator, CloudSnow, Mountain } from "lucide-react";
 
 // The four member web tools — single source for the member hub, the landing
 // "in your browser" section, and anywhere else the tool grid appears.
@@ -20,19 +14,11 @@ export const WEB_TOOLS = [
   },
   {
     href: "/snow-forecast",
-    name: "Snow forecast",
+    name: "Snow forecast & outlook",
     description:
-      "16-day multi-model snowfall for 3,466 resorts, per elevation band with time-of-day detail.",
+      "One map: the validated seasonal outlook per region, then 16-day snowfall by elevation for any of 3,466 resorts.",
     icon: CloudSnow,
     accent: "text-sky-400",
-  },
-  {
-    href: "/snow-outlook",
-    name: "Seasonal outlook",
-    description:
-      "World map of the winter ahead — validated ENSO signals north, live season status south.",
-    icon: Globe2,
-    accent: "text-purple-400",
   },
   {
     href: "/resort-3d",

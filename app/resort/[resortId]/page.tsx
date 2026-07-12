@@ -109,7 +109,7 @@ export default async function ResortPage({ params }: Params) {
                   No seasonal outlook covers this region yet — the network only
                   serves regions where the signal (or, in southern winters, the
                   observed status) is validated.{" "}
-                  <Link href="/snow-outlook" className="text-brand-400 hover:text-brand-300">
+                  <Link href="/snow-forecast" className="text-brand-400 hover:text-brand-300">
                     See covered regions →
                   </Link>
                 </div>

@@ -99,7 +99,7 @@ const features: Feature[] = [
     description: "A world map of the winter ahead: probabilistic outlooks only where they're validated against 40+ years of winters, and live observed season status for the southern hemisphere.",
     icon: Globe2,
     gradient: "from-indigo-500 to-purple-600",
-    webHref: "/snow-outlook",
+    webHref: "/snow-forecast",
     details: [
       { icon: Globe2, text: "World map of every covered climate region at a glance" },
       { icon: TrendingUp, text: "Validated ENSO signals with tercile probabilities — no guesswork" },

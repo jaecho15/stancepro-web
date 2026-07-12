@@ -83,7 +83,7 @@ export default async function ResortForecastPage({ params }: Params) {
             <div className="mb-6">
               <SeasonalOutlookCard row={seasonal} compact />
               <p className="text-xs text-slate-500 mt-2 text-right">
-                <Link href="/snow-outlook" className="text-brand-400 hover:text-brand-300">
+                <Link href="/snow-forecast" className="text-brand-400 hover:text-brand-300">
                   All regions →
                 </Link>
               </p>

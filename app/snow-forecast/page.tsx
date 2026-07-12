@@ -1,21 +1,20 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { fetchResortIndex, fetchSeasonalOutlooks } from "@/lib/snow/fetch";
 import { buildRegionBrowse } from "@/lib/snow/region-browse";
-import { SnowForecastBrowser } from "@/components/snow/SnowForecastBrowser";
-import { SeasonalTilesSection } from "@/components/snow/SeasonalTilesSection";
+import { SnowBrowser } from "@/components/snow/SnowBrowser";
+import type { SeasonalOutlookRow } from "@/lib/snow/types";
 
-export const revalidate = 21600; // resort list changes rarely
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Snow Forecast by Ski Resort - 16-Day Snowfall by Elevation | StancePro",
+  title: "Snow Forecast & Seasonal Outlook by Ski Resort | StancePro",
   description:
-    "Multi-model 16-day snow forecasts for ski resorts worldwide: snowfall by elevation band (base / mid / top), time-of-day detail, rain risk and freezing level.",
+    "One map for the whole season and the next two weeks: a validated seasonal snow outlook per region, then 16-day multi-model snowfall by elevation band for any of 3,466 resorts.",
   alternates: { canonical: "/snow-forecast" },
   openGraph: {
-    title: "Snow Forecast by Ski Resort | StancePro",
+    title: "Snow Forecast & Seasonal Outlook | StancePro",
     description:
-      "16-day snowfall by elevation band, time-of-day detail, rain risk and freezing level.",
+      "Seasonal outlook per region plus 16-day snowfall by elevation for 3,466 resorts — one geographic browser.",
     url: "https://stance-pro.com/snow-forecast",
   },
 };
@@ -26,6 +25,30 @@ export default async function SnowForecastIndexPage() {
     fetchSeasonalOutlooks(),
   ]);
   const { regions, resorts } = buildRegionBrowse(index);
+
+  // Numbering runs north (validated forecasts) then south (in-season status),
+  // matching the map pins.
+  const forecastRows = seasonalRows.filter((r) => r.payload.mode !== "in_season_status");
+  const statusRows = seasonalRows.filter((r) => r.payload.mode === "in_season_status");
+  const mapRows: SeasonalOutlookRow[] = [...forecastRows, ...statusRows];
+
+  // Join seasonal outlooks to browse regions via shared region_ids.
+  const regionKeys = new Set(regions.map((r) => r.key));
+  const seasonalByRegionKey: Record<string, SeasonalOutlookRow> = {};
+  const climatePinToRegionKey: Record<string, string> = {};
+  const cardIndexByClimate: Record<string, number> = {};
+  mapRows.forEach((row, i) => {
+    cardIndexByClimate[row.climate_region] = i + 1;
+    for (const regionId of row.region_ids) {
+      const key = `r:${regionId}`;
+      if (regionKeys.has(key)) {
+        seasonalByRegionKey[key] = row;
+        if (!climatePinToRegionKey[row.climate_region]) {
+          climatePinToRegionKey[row.climate_region] = key;
+        }
+      }
+    }
+  });
 
   return (
     <div className="relative overflow-hidden">
@@ -38,28 +61,28 @@ export default async function SnowForecastIndexPage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-10">
             <h1 className="text-4xl md:text-5xl font-bold mb-4">
-              Resort <span className="gradient-text">Snow Forecast</span>
+              Snow <span className="gradient-text">Forecast &amp; Outlook</span>
             </h1>
             <p className="text-lg text-slate-400 max-w-3xl mx-auto">
-              16-day snowfall from a four-model ensemble, resolved per elevation band —
-              base, mid and top — with time-of-day detail, rain risk and freezing level.
-            </p>
-            <p className="text-sm text-slate-500 mt-3">
-              Planning a whole season?{" "}
-              <Link href="/snow-outlook" className="text-brand-400 hover:text-brand-300">
-                Seasonal snow outlook →
-              </Link>
+              Zoom out for the season, zoom in for the next two weeks. Pick a region for its
+              validated seasonal outlook, then a resort for the 16-day multi-model forecast by
+              elevation band.
             </p>
           </div>
-
-          <SeasonalTilesSection rows={seasonalRows} />
 
           {resorts.length === 0 ? (
             <p className="text-center text-slate-400">
               Resort list is temporarily unavailable. Please check back later.
             </p>
           ) : (
-            <SnowForecastBrowser regions={regions} resorts={resorts} />
+            <SnowBrowser
+              regions={regions}
+              resorts={resorts}
+              mapRows={mapRows}
+              seasonalByRegionKey={seasonalByRegionKey}
+              cardIndexByClimate={cardIndexByClimate}
+              climatePinToRegionKey={climatePinToRegionKey}
+            />
           )}
         </div>
       </section>

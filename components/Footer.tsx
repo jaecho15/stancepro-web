@@ -23,8 +23,7 @@ export function Footer() {
             <ul className="space-y-2 text-slate-400 text-sm">
               <li><Link href="/home" className="hover:text-white transition-colors">Member home</Link></li>
               <li><Link href="/calculator" className="hover:text-white transition-colors">Stance Calculator</Link></li>
-              <li><Link href="/snow-forecast" className="hover:text-white transition-colors">Snow Forecast</Link></li>
-              <li><Link href="/snow-outlook" className="hover:text-white transition-colors">Seasonal Outlook</Link></li>
+              <li><Link href="/snow-forecast" className="hover:text-white transition-colors">Snow Forecast &amp; Outlook</Link></li>
               <li><Link href="/resort-3d" className="hover:text-white transition-colors">3D Resort Maps</Link></li>
             </ul>
           </div>
