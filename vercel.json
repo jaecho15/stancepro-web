@@ -11,6 +11,9 @@
     },
     "api/update-season-status.py": {
       "maxDuration": 60
+    },
+    "api/update-annual-history.py": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -25,6 +28,10 @@
     {
       "path": "/api/update-season-status",
       "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/update-annual-history",
+      "schedule": "30 6 * * *"
     }
   ],
   "regions": ["sin1"]
