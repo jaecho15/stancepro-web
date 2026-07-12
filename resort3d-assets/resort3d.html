@@ -604,29 +604,59 @@ window.OffpisteDraw = (function(){
     flying=true; el.fly.classList.add("on");
     if(active) toggle();                                   // leave draw mode during fly
     var dur=Math.min(20000,Math.max(6000,total/15*1000)); // ~15 m/s virtual, 6–20 s
-    var t0=performance.now();
     // Terrain-safe chase cam (MapLibre 4.7 has no FreeCameraOptions): place the
-    // camera behind + above the point at an altitude ABOVE the *exaggerated*
-    // terrain (×EXAG) so it never clips through ridges, then let MapLibre's
-    // calculateCameraOptionsFromTo aim it at the descending line ahead.
-    var EXAG=1.15, camBack=220, camClear=200;
-    function frame(now){
-      if(!flying) return;
-      var p=Math.min(1,(now-t0)/dur), d=p*total;
+    // camera behind + above the point at an altitude above the rendered terrain
+    // (via queryTerrainElevation, the mesh's own frame) so it never clips through
+    // ridges, then let calculateCameraOptionsFromTo aim it at the line ahead.
+    var camBack=220, camClear=200, prevBrg=null;
+    // Chase-cam options for distance d along the route. The bearing is low-pass
+    // filtered (a winding route otherwise jitters the view left/right), and every
+    // elevation sample falls back to the route point then 0 — so a camera position
+    // that lands outside the loaded elev raster can't collapse the altitude to sea
+    // level and drop the camera underground / into the distance.
+    function camAt(d){
       var pos=pointAlong(coords,cum,d), ahead=pointAlong(coords,cum,Math.min(total,d+90));
-      var brg=bearingBetween(pos,ahead);
-      var camLL=offsetLL(pos,(brg+180)%360,camBack);
-      var tc=sampleElev(camLL[0],camLL[1]), tp=sampleElev(pos[0],pos[1]), ta=sampleElev(ahead[0],ahead[1]);
-      var altFrom=Math.max(tc||0,tp||0)*EXAG+camClear;   // camera above the exaggerated terrain
-      var altTo=(ta!=null?ta:(tp||0))*EXAG;              // look at the surface ahead
-      var opts=map.calculateCameraOptionsFromTo(
+      var raw=bearingBetween(pos,ahead);
+      if(prevBrg==null){ prevBrg=raw; }
+      else { var dB=((raw-prevBrg+540)%360)-180; prevBrg=((prevBrg+dB*0.25)%360+360)%360; }
+      var back=(prevBrg+180)%360;
+      // Camera altitude MUST live in the same frame as the rendered terrain mesh.
+      // queryTerrainElevation returns that frame (it's what the depth probe uses to
+      // land ON the surface); the elev_5m LiDAR raster (sampleElev) is a DIFFERENT
+      // datum ~1200 m off, which drove the camera straight through the mesh.
+      function te(a,b){ var e; try{ e=map.queryTerrainElevation([a,b]); }catch(x){} return (e==null?null:e); }
+      var pe=te(pos[0],pos[1]); if(pe==null) pe=0;
+      // Pull the camera in from camBack until it sits over terrain we can measure,
+      // then sit above the HIGHEST terrain between the subject and the camera (the
+      // slope behind rises on a descent), never just above the route point.
+      var effBack=camBack, camLL=offsetLL(pos,back,effBack);
+      while(effBack>0 && te(camLL[0],camLL[1])==null){ effBack=Math.max(0,effBack-40); camLL=offsetLL(pos,back,effBack); }
+      var mid=offsetLL(pos,back,effBack*0.5);
+      var ec=te(camLL[0],camLL[1]), em=te(mid[0],mid[1]), ta=te(ahead[0],ahead[1]);
+      var hi=Math.max(pe, ec!=null?ec:pe, em!=null?em:pe);
+      var altFrom=hi+camClear;                            // above the mesh (queryTerrainElevation is already in mesh frame)
+      var altTo=(ta!=null?ta:pe);                         // look at the surface ahead
+      return map.calculateCameraOptionsFromTo(
         new maplibregl.LngLat(camLL[0],camLL[1]), altFrom,
         new maplibregl.LngLat(ahead[0],ahead[1]), altTo);
-      map.jumpTo(opts);
+    }
+    var t0=0, started=false;
+    function frame(now){
+      if(!flying) return;
+      if(!t0) t0=now;
+      var p=Math.min(1,(now-t0)/dur);
+      map.jumpTo(camAt(p*total));
       if(p>=1){ endFly(); return; }
       flyRAF=requestAnimationFrame(frame);
     }
-    flyRAF=requestAnimationFrame(frame);
+    // Establishing shot: glide from wherever the user is looking to the p=0 chase
+    // pose (above/behind the start, aimed down the route), THEN start the follow
+    // loop from exactly that pose — no jump-cut teleport into the flight.
+    function startLoop(){ if(started||!flying) return; started=true; t0=0; flyRAF=requestAnimationFrame(frame); }
+    var startOpts=camAt(0);
+    map.once("moveend", startLoop);
+    setTimeout(startLoop, 1400);                          // fallback if the easeTo is a no-op
+    map.easeTo({center:startOpts.center, zoom:startOpts.zoom, bearing:startOpts.bearing, pitch:startOpts.pitch, duration:1200});
   }
   // ---- Aspect (which way a slope faces), from the loaded LiDAR elev_5m ----
   var mx2lon = function(x){ return x/WMx*180; };
