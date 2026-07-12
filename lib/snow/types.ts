@@ -180,6 +180,25 @@ export interface SeasonalStatus {
   snow_cover?: { covered: number; partial: number; bare: number } | null;
 }
 
+// Year-by-year record (annual_history_v1): per-season modeled snowfall from
+// the ERA5 reanalysis snowfall budget (precip + temp, tmean ≤ +1°C, SLR 10:1),
+// averaged over ≤3 curated mid-elevation resorts. Modeled, not measured.
+// NH years are labelled by the DJF end year; SH by the JJA year.
+export interface SeasonalHistoryPoint {
+  year: number;
+  snow_cm: number;
+}
+export interface SeasonalHistoryBaseline {
+  median_cm: number;
+  p10_cm: number;
+  p90_cm: number;
+}
+export interface SeasonalHistoryCurrent {
+  year: number;
+  snow_cm: number;
+  partial: boolean; // the in-progress season (SH only while NH is off-season)
+}
+
 export interface SeasonalPayload {
   region: string;
   label: string;
@@ -188,6 +207,9 @@ export interface SeasonalPayload {
   watch: SeasonalWatchFactor[];
   mode?: string; // "in_season_status" for observed SH rows; absent on forecasts
   status?: SeasonalStatus | null;
+  history?: SeasonalHistoryPoint[];
+  history_baseline?: SeasonalHistoryBaseline | null;
+  history_current?: SeasonalHistoryCurrent | null;
 }
 
 export interface SeasonalOutlookRow {

@@ -43,6 +43,16 @@ const PIN_NUDGE: Record<string, [number, number]> = {
   // NZ sits at the antimeridian edge — pull pins inward.
   nz_north_island: [-2, -8],
   nz_south_island: [-11, 6],
+  // The Alps pack five regions into a tiny world-scale box — fan them out
+  // (leader lines mark the true zone); Pyrenees/Sierra fan south, clear of them.
+  ch_northern_alps: [-17, -2],
+  fr_western_alps: [-5, -17],
+  at_northern_alps: [11, -13],
+  it_dolomites: [17, -2],
+  it_southern_alps: [8, 10],
+  ad_pyrenees: [7, 10],
+  es_pyrenees: [-8, 6],
+  es_sierra_nevada: [-6, 7],
 };
 
 export function WorldOutlookHero({

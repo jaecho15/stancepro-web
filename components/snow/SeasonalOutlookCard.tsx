@@ -7,6 +7,8 @@ import {
 import { regionContext } from "@/lib/snow/region-context";
 import { ordinal, statusHeadline, statusLean } from "@/lib/snow/season-status";
 import type {
+  SeasonalHistoryBaseline,
+  SeasonalHistoryPoint,
   SeasonalOutlookRow,
   SeasonalSignal,
   SeasonalStatus,
@@ -139,6 +141,112 @@ function Analogs({ signal, enso }: { signal: SeasonalSignal; enso: string }) {
 
 const Divider = () => <div className="border-t border-slate-700/50" />;
 
+// Year-by-year record: completed-season modeled snowfall (ERA5) as a line with
+// the normal range (p10–p90) shaded and the median dashed. Pure SVG so it
+// renders server-side. The in-progress season is intentionally omitted — a
+// partial total isn't comparable to full-season totals (StatusSection places
+// it among the record via the percentile gauge instead).
+function HistoryChart({
+  history,
+  baseline,
+}: {
+  history: SeasonalHistoryPoint[];
+  baseline: SeasonalHistoryBaseline | null;
+}) {
+  const W = 320;
+  const H = 116;
+  const padL = 4;
+  const padR = 4;
+  const padT = 10;
+  const padB = 16;
+  const minYear = Math.min(...history.map((p) => p.year));
+  const maxYear = Math.max(...history.map((p) => p.year));
+  const yMax =
+    Math.max(baseline?.p90_cm ?? 0, ...history.map((p) => p.snow_cm)) * 1.08 || 1;
+  const x = (yr: number) =>
+    padL + ((yr - minYear) / (maxYear - minYear || 1)) * (W - padL - padR);
+  const y = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
+  const linePath = history
+    .map((p, i) => `${i ? "L" : "M"}${x(p.year).toFixed(1)},${y(p.snow_cm).toFixed(1)}`)
+    .join(" ");
+  const dotColor = (v: number) =>
+    baseline && v >= baseline.p90_cm
+      ? "#38bdf8"
+      : baseline && v <= baseline.p10_cm
+        ? "#fbbf24"
+        : "#7dd3fc";
+
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
+        Year-by-year record
+      </p>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        role="img"
+        aria-label="Modeled season-total snowfall by year"
+      >
+        {baseline && (
+          <rect
+            x={padL}
+            width={W - padL - padR}
+            y={y(baseline.p90_cm)}
+            height={Math.max(0, y(baseline.p10_cm) - y(baseline.p90_cm))}
+            fill="#64748b"
+            fillOpacity="0.14"
+          />
+        )}
+        {baseline && (
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={y(baseline.median_cm)}
+            y2={y(baseline.median_cm)}
+            stroke="#94a3b8"
+            strokeWidth="0.6"
+            strokeDasharray="3 3"
+          />
+        )}
+        <path
+          d={linePath}
+          fill="none"
+          stroke="#38bdf8"
+          strokeOpacity="0.55"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {history.map((p) => (
+          <circle key={p.year} cx={x(p.year)} cy={y(p.snow_cm)} r="1.3" fill={dotColor(p.snow_cm)} />
+        ))}
+        {baseline && (
+          <text
+            x={W - padR}
+            y={y(baseline.median_cm) - 2}
+            textAnchor="end"
+            fontSize="7"
+            fill="#94a3b8"
+          >
+            median {baseline.median_cm} cm
+          </text>
+        )}
+        <text x={padL} y={H - 4} fontSize="7.5" fill="#64748b">
+          {minYear}
+        </text>
+        <text x={W - padR} y={H - 4} textAnchor="end" fontSize="7.5" fill="#64748b">
+          {maxYear}
+        </text>
+      </svg>
+      <p className="text-[11px] text-slate-600 mt-1">
+        Modeled season-total snowfall · ERA5 reanalysis · shaded band = normal range
+        (10th–90th percentile). Mid-elevation snowfall input, not snowpack or season
+        length.
+      </p>
+    </div>
+  );
+}
+
 // Observed season-so-far block for southern-hemisphere in-progress winters:
 // percentile gauge, season-to-date vs climatology, recent-two-week tendency,
 // satellite snow cover. Facts only — no probabilities.
@@ -260,6 +368,16 @@ export function SeasonalOutlookCard({
 
       <Divider />
       <TrendRow row={row} />
+
+      {!compact && payload.history && payload.history.length > 1 && (
+        <>
+          <Divider />
+          <HistoryChart
+            history={payload.history}
+            baseline={payload.history_baseline ?? null}
+          />
+        </>
+      )}
 
       {status ? (
         <>
