@@ -166,18 +166,27 @@ def _percentile(value: float, history: list[float]) -> int:
 
 
 def _trend(full_season_totals: list[tuple[int, float]]) -> dict:
-    """OLS trend of full-JJA totals, expressed as % of mean per decade."""
+    """OLS trend of full-JJA totals as % of mean per decade, SIGNIFICANCE-GATED
+    at ~2 SE (p<0.05): a short high-variance snowfall series (and ERA5 precip's
+    inhomogeneities) make an ungated slope noise-dominated, so a direction is
+    only claimed when the slope clears zero at the standard climate bar. Matches
+    the annual-history worker's gate."""
     n = len(full_season_totals)
     if n < 10:
         return {"direction": "stable", "pct_per_decade": 0.0}
-    xs = [y for y, _ in full_season_totals]
-    ys = [v for _, v in full_season_totals]
+    xs = [float(y) for y, _ in full_season_totals]
+    ys = [float(v) for _, v in full_season_totals]
     mx, my = sum(xs) / n, sum(ys) / n
     sxx = sum((x - mx) ** 2 for x in xs)
-    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    slope = sxy / sxx if sxx else 0.0
-    pct = (slope * 10.0 / my * 100.0) if my > 1e-9 else 0.0
-    direction = "increasing" if pct >= 3 else ("decreasing" if pct <= -3 else "stable")
+    if sxx <= 0 or my <= 1e-9:
+        return {"direction": "stable", "pct_per_decade": 0.0}
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    intercept = my - slope * mx
+    sse = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
+    se_slope = (sse / (n - 2) / sxx) ** 0.5 if n > 2 else float("inf")
+    pct = slope * 10.0 / my * 100.0
+    significant = se_slope > 0 and abs(slope) > 2.0 * se_slope
+    direction = ("increasing" if pct > 0 else "decreasing") if (significant and abs(pct) >= 3) else "stable"
     return {"direction": direction, "pct_per_decade": round(pct, 1)}
 
 

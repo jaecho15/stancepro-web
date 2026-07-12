@@ -60,7 +60,9 @@ POINTS_PER_REGION = 3
 SNOW_TMEAN_C = 1.0            # precip counts as snow at/below this daily mean
 SLR = 10.0                   # 1 mm water -> 1 cm snow
 STALE_DAYS = 80              # rebuild history older than this
-MAX_SEED_PER_RUN = 4         # cap expensive rebuilds per cron run
+MAX_SEED_PER_RUN = 2         # cap rebuilds/run so a 60s cron never times out
+                             # (36-yr archive pulls are slow; the daily cadence
+                             #  self-heals the rest)
 HEADERS_READ = {"apikey": READ_KEY, "Authorization": f"Bearer {READ_KEY}"}
 
 # European regions defined in the subregion geography but absent from the
@@ -88,15 +90,19 @@ TREND_ONLY_TARGET_SEASON = "2026-DJF"   # matches the NH validated rows' label
 
 
 def _get_json(url: str, params: dict) -> dict:
+    # Short, fail-fast backoff: when the archive's window is exhausted a region
+    # gives up in ~7 s (not 45 s) so a bounded run never hangs; the region just
+    # retries on the next run/cron.
     import time
-    for attempt in range(4):
+    for attempt in range(3):
         response = requests.get(url, params=params, timeout=TIMEOUT_S)
         if response.status_code in (429, 500, 502, 503, 504):
-            time.sleep(3.0 * (2 ** attempt))
+            if attempt == 2:
+                response.raise_for_status()
+            time.sleep(2.0 + 3.0 * attempt)
             continue
         response.raise_for_status()
         return response.json()
-    response.raise_for_status()
     return {}
 
 
@@ -147,19 +153,31 @@ def _shared_enso(rows: list[dict]) -> dict:
 
 
 def _trend(points: list[tuple[int, float]]) -> dict:
-    """OLS trend of season totals as % of mean per decade (same as the SH
-    status worker), for the trend-only card's `trend` field."""
+    """OLS trend of season totals as % of mean per decade, SIGNIFICANCE-GATED:
+    a direction is only claimed when the slope stands ~1.7 standard errors clear
+    of zero (~p<0.10) AND exceeds 3%/decade. Season-total snowfall is a short,
+    high-variance series (and ERA5 precip trends are inhomogeneity-prone), so an
+    ungated OLS slope is noise-dominated — reporting it as "increasing" would be
+    a false claim. pct_per_decade is still returned for transparency."""
     n = len(points)
     if n < 10:
         return {"direction": "stable", "pct_per_decade": 0.0}
-    xs = [y for y, _ in points]
-    ys = [v for _, v in points]
+    xs = [float(y) for y, _ in points]
+    ys = [float(v) for _, v in points]
     mx, my = sum(xs) / n, sum(ys) / n
     sxx = sum((x - mx) ** 2 for x in xs)
-    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    slope = sxy / sxx if sxx else 0.0
-    pct = (slope * 10.0 / my * 100.0) if my > 1e-9 else 0.0
-    direction = "increasing" if pct >= 3 else ("decreasing" if pct <= -3 else "stable")
+    if sxx <= 0 or my <= 1e-9:
+        return {"direction": "stable", "pct_per_decade": 0.0}
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    intercept = my - slope * mx
+    sse = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
+    se_slope = (sse / (n - 2) / sxx) ** 0.5 if n > 2 else float("inf")
+    pct = slope * 10.0 / my * 100.0
+    # ~2 SE ≈ p<0.05, the standard climate-trend bar (kept conservative because
+    # ERA5 winter-precip trends are inhomogeneity-prone — a lenient gate would
+    # surface artefacts as "increasing").
+    significant = se_slope > 0 and abs(slope) > 2.0 * se_slope
+    direction = ("increasing" if pct > 0 else "decreasing") if (significant and abs(pct) >= 3) else "stable"
     return {"direction": direction, "pct_per_decade": round(pct, 1)}
 
 
@@ -408,6 +426,11 @@ def run(seed_limit: int = MAX_SEED_PER_RUN) -> dict:
             payload = dict(existing_row.get("payload") or {})
             payload["history"] = hist["history"]
             payload["history_baseline"] = hist["baseline"]
+            # For OUR trend-only rows (Europe), keep the trend in sync with the
+            # gated method + latest history. Never touch trend on rows whose trend
+            # comes from another source (NH battle, SH status).
+            if existing_row.get("model_version") == TREND_ONLY_MODEL_VERSION:
+                payload["trend"] = _trend([(h["year"], h["snow_cm"]) for h in hist["history"]])
             try:
                 current = _current_point(existing_row, hemisphere, target["sampled"], today)
             except Exception:  # noqa: BLE001 — best-effort
