@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { History, ImageIcon, Wallet } from "lucide-react";
+import { History, ImageIcon, Mountain, Wallet } from "lucide-react";
 import { InternalChrome } from "@/components/internal/InternalChrome";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
 
@@ -64,6 +64,21 @@ export function InternalHub() {
               <p className="mt-1 text-sm text-slate-400">
                 Rate and comment on business cards, posters, and wordmark font
                 options.
+              </p>
+            </div>
+          </Link>
+          <Link
+            href="/internal/backfill"
+            className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-[#1a2e61]/40 p-6 transition-colors hover:border-brand-400/40 hover:bg-[#1a2e61]/70"
+          >
+            <div className="rounded-xl border border-white/10 bg-[#0f1c40] p-3 text-brand-300 group-hover:text-brand-200">
+              <Mountain className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Terrain Backfill</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Live progress of the Terrain V2 fleet DEM build — resorts, tiles,
+                per-country bars, and ETA.
               </p>
             </div>
           </Link>
