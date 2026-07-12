@@ -640,23 +640,33 @@ window.OffpisteDraw = (function(){
         new maplibregl.LngLat(camLL[0],camLL[1]), altFrom,
         new maplibregl.LngLat(ahead[0],ahead[1]), altTo);
     }
-    var t0=0, started=false;
+    var t0=0, EST_MS=1200;
+    function slerpB(a,b,k){ var d=((b-a+540)%360)-180; return ((a+d*k)%360+360)%360; }   // shortest-angle bearing lerp
+    function LL(c){ return (c && c.lng!==undefined) ? [c.lng,c.lat] : c; }
+    function blend(from,to,k){                            // interpolate a camera pose
+      var f=LL(from.center), t=LL(to.center);
+      return { center:[f[0]+(t[0]-f[0])*k, f[1]+(t[1]-f[1])*k],
+               zoom:from.zoom+(to.zoom-from.zoom)*k, bearing:slerpB(from.bearing,to.bearing,k), pitch:from.pitch+(to.pitch-from.pitch)*k };
+    }
+    // Single rAF loop. First EST_MS ms: an establishing blend from the saved view
+    // to the LIVE chase pose (camAt recomputed every frame). Then the follow.
+    // queryTerrainElevation drifts ~200 m with zoom/loaded tiles, so ANY pose
+    // precomputed at the overview zoom lands wrong once the camera reaches the fly
+    // zoom (that was the "second run starts below terrain" bug) — recomputing the
+    // target live every frame tracks the current terrain frame and self-corrects.
     function frame(now){
       if(!flying) return;
       if(!t0) t0=now;
-      var p=Math.min(1,(now-t0)/dur);
-      map.jumpTo(camAt(p*total));
-      if(p>=1){ endFly(); return; }
+      var el=now-t0;
+      if(el<EST_MS){ var k=el/EST_MS; k=k*k*(3-2*k); map.jumpTo(blend(savedCam, camAt(0), k)); }
+      else{
+        var p=Math.min(1,(el-EST_MS)/dur);
+        map.jumpTo(camAt(p*total));
+        if(p>=1){ endFly(); return; }
+      }
       flyRAF=requestAnimationFrame(frame);
     }
-    // Establishing shot: glide from wherever the user is looking to the p=0 chase
-    // pose (above/behind the start, aimed down the route), THEN start the follow
-    // loop from exactly that pose — no jump-cut teleport into the flight.
-    function startLoop(){ if(started||!flying) return; started=true; t0=0; flyRAF=requestAnimationFrame(frame); }
-    var startOpts=camAt(0);
-    map.once("moveend", startLoop);
-    setTimeout(startLoop, 1400);                          // fallback if the easeTo is a no-op
-    map.easeTo({center:startOpts.center, zoom:startOpts.zoom, bearing:startOpts.bearing, pitch:startOpts.pitch, duration:1200});
+    flyRAF=requestAnimationFrame(frame);
   }
   // ---- Aspect (which way a slope faces), from the loaded LiDAR elev_5m ----
   var mx2lon = function(x){ return x/WMx*180; };
