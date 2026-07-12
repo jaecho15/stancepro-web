@@ -98,6 +98,9 @@ export function SnowBrowser({
   const [tab, setTab] = useState<"regions" | "countries">("regions");
   const [country, setCountry] = useState<CountryGroup | null>(null);
   const [showAllRegions, setShowAllRegions] = useState(false);
+  // Narrow screens drill in (one pane at a time) instead of the 2-pane rail;
+  // ignored at lg+ where both panes always show.
+  const [mobileDetail, setMobileDetail] = useState(false);
   const my = useMyResorts();
   const mapRef = useRef<HTMLDivElement>(null);
 
@@ -148,6 +151,7 @@ export function SnowBrowser({
     setTab("regions");
     setCountry(null);
     setQuery("");
+    setMobileDetail(true);
   };
 
   // Deep link from the seasonal tiles: /snow-forecast?region=<climate_region>.
@@ -157,6 +161,7 @@ export function SnowBrowser({
     if (key && byKey.has(key)) {
       setRegionKey(key);
       setTab("regions");
+      setMobileDetail(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -240,9 +245,13 @@ export function SnowBrowser({
           )}
         </section>
       ) : (
-        <div className="grid lg:grid-cols-[220px_1fr] gap-6 items-start">
-          {/* Master rail */}
-          <div className="glass rounded-2xl p-2.5 lg:sticky lg:top-24">
+        <div className="grid lg:grid-cols-[200px_1fr] gap-6 items-start">
+          {/* Master rail (hidden on mobile once a region is opened) */}
+          <div
+            className={`glass rounded-2xl p-2.5 lg:sticky lg:top-24 ${
+              mobileDetail ? "hidden lg:block" : "block"
+            }`}
+          >
             <div className="flex rounded-xl bg-slate-800/60 p-1 mb-2.5">
               {(["regions", "countries"] as const).map((t) => (
                 <button
@@ -311,7 +320,10 @@ export function SnowBrowser({
                   <button
                     key={c.cc}
                     type="button"
-                    onClick={() => setCountry(c)}
+                    onClick={() => {
+                      setCountry(c);
+                      setMobileDetail(true);
+                    }}
                     className={`w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-all ${
                       country?.cc === c.cc
                         ? "bg-brand-500/15 text-white"
@@ -327,13 +339,16 @@ export function SnowBrowser({
             </div>
           </div>
 
-          {/* Detail */}
-          <div className="min-w-0">
+          {/* Detail (the only pane shown on mobile once opened) */}
+          <div className={`min-w-0 ${mobileDetail ? "block" : "hidden lg:block"}`}>
             {tab === "countries" && country ? (
               <section>
                 <button
                   type="button"
-                  onClick={() => setCountry(null)}
+                  onClick={() => {
+                    setCountry(null);
+                    setMobileDetail(false);
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-full bg-slate-800/60 border border-slate-700 px-3.5 py-1.5 text-sm text-slate-300 hover:text-white hover:border-slate-500 transition-all mb-4"
                 >
                   <ArrowLeft className="w-4 h-4" /> Countries
@@ -372,6 +387,13 @@ export function SnowBrowser({
               </section>
             ) : region ? (
               <section className="space-y-5">
+                <button
+                  type="button"
+                  onClick={() => setMobileDetail(false)}
+                  className="lg:hidden inline-flex items-center gap-1.5 rounded-full bg-slate-800/60 border border-slate-700 px-3.5 py-1.5 text-sm text-slate-300 hover:text-white hover:border-slate-500 transition-all"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Regions
+                </button>
                 <div className="flex items-baseline gap-3">
                   <h2 className="text-2xl font-bold text-white flex items-center gap-2.5">
                     <span aria-hidden>{region.flags || "🏔"}</span> {region.name}
@@ -392,7 +414,7 @@ export function SnowBrowser({
                   <p className="text-xs uppercase tracking-wide text-slate-500 mb-3">
                     Resorts — open for the 16-day forecast
                   </p>
-                  <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
                     {regionResorts.map((r) => (
                       <ResortRow
                         key={r.resort_id}
