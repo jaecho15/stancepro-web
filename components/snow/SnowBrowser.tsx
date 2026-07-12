@@ -194,27 +194,6 @@ export function SnowBrowser({
 
   return (
     <div className="space-y-6">
-      {/* My resorts — quick access at the top for returning members */}
-      {my.ready && my.resorts.length > 0 && (
-        <section>
-          <h2 className="text-xs uppercase tracking-wide text-slate-500 mb-2.5 flex items-center gap-2">
-            <Star className="w-3.5 h-3.5 text-amber-400" /> My resorts
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {my.resorts.map((saved) => (
-              <Link
-                key={saved.id}
-                href={`/resort/${saved.id}`}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-800/60 border border-slate-700 px-3.5 py-2 text-sm text-white hover:border-brand-500/50 hover:bg-slate-800 transition-all"
-              >
-                <Mountain className="w-4 h-4 text-brand-400 shrink-0" />
-                {saved.name}
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* World map — served regions, lean-coloured; tap a pin to open it */}
       <div ref={mapRef}>
         <WorldOutlookHero rows={mapRows} caption="Tap a region on the map, the list, or search a resort" />
@@ -241,6 +220,27 @@ export function SnowBrowser({
           </button>
         )}
       </div>
+
+      {/* My resorts — quick access, just under the search */}
+      {!searching && my.ready && my.resorts.length > 0 && (
+        <section>
+          <h2 className="text-xs uppercase tracking-wide text-slate-500 mb-2.5 flex items-center gap-2">
+            <Star className="w-3.5 h-3.5 text-amber-400" /> My resorts
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {my.resorts.map((saved) => (
+              <Link
+                key={saved.id}
+                href={`/resort/${saved.id}`}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-800/60 border border-slate-700 px-3.5 py-2 text-sm text-white hover:border-brand-500/50 hover:bg-slate-800 transition-all"
+              >
+                <Mountain className="w-4 h-4 text-brand-400 shrink-0" />
+                {saved.name}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {searching ? (
         <section>
