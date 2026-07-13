@@ -11,6 +11,9 @@ import type {
   SeasonalHistoryPoint,
   SeasonalOutlookRow,
   SeasonalSignal,
+  SeasonalSnowlineBaseline,
+  SeasonalSnowlinePoint,
+  SeasonalSnowlineTrend,
   SeasonalStatus,
 } from "@/lib/snow/types";
 
@@ -247,6 +250,150 @@ function HistoryChart({
   );
 }
 
+// Winter rain/snow-line elevation, from the same ERA5 pull as the snowfall
+// history. A SECOND stacked panel (shared year axis, its own metres axis — never
+// a dual axis): mid-elevation snowfall totals look flat under warming, but the
+// snow line rises. The dashed OLS fit + trend badge carry the honest signal;
+// absolute metres are modeled (assumed lapse rate).
+function SnowlineChart({
+  snowline,
+  baseline,
+  trend,
+}: {
+  snowline: SeasonalSnowlinePoint[];
+  baseline: SeasonalSnowlineBaseline | null;
+  trend: SeasonalSnowlineTrend | null;
+}) {
+  const W = 320;
+  const H = 116;
+  const padL = 4;
+  const padR = 4;
+  const padT = 10;
+  const padB = 16;
+  const minYear = Math.min(...snowline.map((p) => p.year));
+  const maxYear = Math.max(...snowline.map((p) => p.year));
+  const vals = snowline.map((p) => p.snowline_m);
+  const lo = Math.min(baseline?.p10_m ?? Infinity, ...vals);
+  const hi = Math.max(baseline?.p90_m ?? -Infinity, ...vals);
+  const span = hi - lo || 100;
+  const yMin = Math.max(0, lo - span * 0.12);
+  const yMax = hi + span * 0.12;
+  const x = (yr: number) =>
+    padL + ((yr - minYear) / (maxYear - minYear || 1)) * (W - padL - padR);
+  const y = (v: number) => padT + (1 - (v - yMin) / (yMax - yMin || 1)) * (H - padT - padB);
+  const linePath = snowline
+    .map((p, i) => `${i ? "L" : "M"}${x(p.year).toFixed(1)},${y(p.snowline_m).toFixed(1)}`)
+    .join(" ");
+  // OLS fit for the trend overlay (endpoints only).
+  const n = snowline.length;
+  const mx = snowline.reduce((a, p) => a + p.year, 0) / n;
+  const my = vals.reduce((a, v) => a + v, 0) / n;
+  let sxx = 0;
+  let sxy = 0;
+  for (const p of snowline) {
+    sxx += (p.year - mx) ** 2;
+    sxy += (p.year - mx) * (p.snowline_m - my);
+  }
+  const slope = sxx ? sxy / sxx : 0;
+  const fit = (yr: number) => my + slope * (yr - mx);
+  const dir = trend?.direction ?? "stable";
+  const perDecade = Math.abs(Math.round(trend?.m_per_decade ?? 0));
+  const [BadgeIcon, badgeText, badgeColor] =
+    dir === "rising"
+      ? [ArrowUpRight, `Snow line rising ~${perDecade} m per decade`, "text-orange-400"]
+      : dir === "falling"
+        ? [ArrowDownRight, `Snow line falling ~${perDecade} m per decade`, "text-sky-400"]
+        : [ArrowRight, "Snow line roughly stable decade to decade", "text-slate-400"];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          Winter snow line
+        </p>
+        <span className={`flex items-center gap-1 text-[11px] font-medium ${badgeColor}`}>
+          <BadgeIcon className="w-3 h-3 shrink-0" />
+          {badgeText}
+        </span>
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        role="img"
+        aria-label="Modeled winter rain/snow-line elevation by year"
+      >
+        {baseline && (
+          <rect
+            x={padL}
+            width={W - padL - padR}
+            y={y(baseline.p90_m)}
+            height={Math.max(0, y(baseline.p10_m) - y(baseline.p90_m))}
+            fill="#64748b"
+            fillOpacity="0.14"
+          />
+        )}
+        {baseline && (
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={y(baseline.median_m)}
+            y2={y(baseline.median_m)}
+            stroke="#94a3b8"
+            strokeWidth="0.6"
+            strokeDasharray="3 3"
+          />
+        )}
+        <path
+          d={linePath}
+          fill="none"
+          stroke="#cbd5e1"
+          strokeOpacity="0.7"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {snowline.map((p) => (
+          <circle key={p.year} cx={x(p.year)} cy={y(p.snowline_m)} r="1.3" fill="#e2e8f0" />
+        ))}
+        {dir !== "stable" && (
+          <line
+            x1={x(minYear)}
+            x2={x(maxYear)}
+            y1={y(fit(minYear))}
+            y2={y(fit(maxYear))}
+            stroke={dir === "rising" ? "#fb923c" : "#38bdf8"}
+            strokeWidth="1.6"
+            strokeDasharray="5 3"
+            strokeLinecap="round"
+          />
+        )}
+        {baseline && (
+          <text
+            x={W - padR}
+            y={y(baseline.median_m) - 2}
+            textAnchor="end"
+            fontSize="7"
+            fill="#94a3b8"
+          >
+            median {baseline.median_m} m
+          </text>
+        )}
+        <text x={padL} y={H - 4} fontSize="7.5" fill="#64748b">
+          {minYear}
+        </text>
+        <text x={W - padR} y={H - 4} textAnchor="end" fontSize="7.5" fill="#64748b">
+          {maxYear}
+        </text>
+      </svg>
+      <p className="text-[11px] text-slate-600 mt-1">
+        Where winter days cross the rain/snow threshold · ERA5 reanalysis. The line
+        tracks temperature, so it rises under warming even where snowfall looks flat.
+        Metres are modeled (assumed lapse rate); the trend is the signal.
+      </p>
+    </div>
+  );
+}
+
 // Observed season-so-far block for southern-hemisphere in-progress winters:
 // percentile gauge, season-to-date vs climatology, recent-two-week tendency,
 // satellite snow cover. Facts only — no probabilities.
@@ -375,6 +522,17 @@ export function SeasonalOutlookCard({
           <HistoryChart
             history={payload.history}
             baseline={payload.history_baseline ?? null}
+          />
+        </>
+      )}
+
+      {!compact && payload.snowline_history && payload.snowline_history.length > 1 && (
+        <>
+          <Divider />
+          <SnowlineChart
+            snowline={payload.snowline_history}
+            baseline={payload.snowline_baseline ?? null}
+            trend={payload.snowline_trend ?? null}
           />
         </>
       )}
