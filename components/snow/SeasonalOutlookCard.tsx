@@ -465,7 +465,8 @@ function SnowlineChart({
       <p className="text-[11px] text-slate-600 mt-1">
         Where winter days cross the rain/snow threshold · ERA5 reanalysis. The line
         tracks temperature, so it rises under warming even where snowfall looks flat.
-        Metres are modeled (assumed lapse rate); the trend is the signal.
+        Metres are modeled; a 35-year reanalysis trend is indicative, not definitive —
+        decadal swings (and coarse grids over small ranges) can move it.
       </p>
     </div>
   );
