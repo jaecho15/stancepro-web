@@ -862,7 +862,7 @@ fetch(V2_INDEX + "?v=" + VER).then(r => r.json()).then(ix => {
   }).catch(e => console.log("v2 index load failed", e));
 // slope:// — client-derived avalanche slope overlay from the SAME DEM tiles the
 // mesh uses (no baked webp); LiDAR-gated (aws-dominated → transparent); colours
-// via setSlopeBands (shared contract with the UI legend). Used only when USE_V2.
+// via setSlopeBands (shared contract with the UI legend).
 let SLOPE_BANDS = [[30, [242, 229, 10]], [35, [244, 111, 36]], [40, [222, 5, 91]], [45, [107, 33, 168]]];
 function setSlopeBands(arr) {
   SLOPE_BANDS = arr.map(b => [b.min, [parseInt(b.color.slice(1, 3), 16),
@@ -1147,102 +1147,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       if (v2Ready && (z === 14 || z === 15) && v2Have[z].has(v2Key(x, y)))
         return { url: V2_DEM + z + "/" + x + "/" + y + ".png?v=" + VER };
     }
-    // Drape (hill/slope/extreme) edge ring: tiles whose CENTRE is outside the
-    // resort's extent were never emitted — answer with a transparent 1×1 PNG
-    // instead of letting them 400-retry forever (see drapeExtents note).
-    const d = url.match(/terrain_offpiste_v1\/([^/]+)\/[^?]*?\/(?:hill|slope|extreme)\/(\d+)\/(\d+)\/(\d+)\.webp/);
-    if (d) {
-      const cb = drapeExtents[d[1]];
-      if (cb) {
-        const z = +d[2], x = +d[3], y = +d[4];
-        const sp = 2 * WM / (2 ** z);
-        const cx = -WM + (x + 0.5) * sp, cy = WM - (y + 0.5) * sp;
-        if (!(cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]))
-          return { url: TRANSPARENT_TILE };
-      }
-    }
     return { url };
   };
 
-  // Drape (hillshade/slope/cliff) sources + layers for a resort.
-  //  • hillshade → an XYZ RasterTileSource (meta.safety_native.hillshade_tiles):
-  //    MapLibre loads only the visible tiles (LOD → less memory/download) and no
-  //    single texture ever exceeds the GPU limit (fixes the clip on big resorts).
-  //  • slope/cliff → a single image, or PIECES (meta.safety_native.split) for the
-  //    few oversized resorts (opt-in layers, so tiling them isn't worth it).
-  //  • legacy fallback: no hillshade_tiles → single hillshade image.
-  // tag="" = focused resort (bare ids "hill"/"slope"/"extreme"); "__<id>" = a
-  // neighbour. Piece/neighbour ids carry "__" so applyKindVis/applyHillNight
-  // (prefix match) toggle/dim them like the singles.
-  const DRAPE_KINDS = [["hill", "hillshade", "hillshade_5m.png", 0.9, "visible"],
-                       ["slope", "slope", "slope_5m.png", 0.72, "none"],
-                       ["extreme", "extreme", "extreme_5m.png", 0.72, "none"]];
-  // Per-resort drape-tile extents for the request router: the tiles/{hill,slope,
-  // extreme} trees are emitted with a tile-CENTRE-in-bounds test, but MapLibre
-  // requests every tile INTERSECTING the source bounds — the edge ring (centre
-  // outside, extent overlapping) 400s and MapLibre re-requests it on every
-  // move: log spam, battery, and map.loaded() never settles. The router below
-  // answers those ring tiles with a transparent 1×1 PNG instead.
-  const drapeExtents = {};   // rid -> bounds_3857
-  const TRANSPARENT_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==";
-  function drapeSpec(tag, m, b, baseUrl) {
-    const sln = (m.safety_native && m.safety_native.layers) || {};
-    const tiles = m.safety_native && m.safety_native.tiles;   // {minzoom,maxzoom,tree,bounds}
-    const artFn = f => baseUrl + f + "?v=" + VER;
-    const sources = {}, layers = [];
-    const mkLayer = (id, vis, op) => ({ id, type: "raster", source: id,
-      ...(vis === "none" ? { layout: { visibility: "none" } } : {}), paint: { "raster-opacity": op } });
-    const box = (x0, x1, y0, y1) => { const w = m2lon(x0), e = m2lon(x1), n = m2lat(y1), s = m2lat(y0);
-      return [[w, n], [e, n], [e, s], [w, s]]; };
-    if (tiles) {
-      // The drape tiler emits tiles whose CENTRE lies in the tight real-data
-      // extent (dem_tiles.core_bounds); the padded grid bbox (bounds_3857) is
-      // ~100 m looser and lets edge-ring requests through to 400s.
-      const ext = (m.dem_tiles && m.dem_tiles.core_bounds) || b;
-      const rm = baseUrl.match(/terrain_offpiste_v1\/([^/]+)\//);
-      if (rm && ext) drapeExtents[rm[1]] = ext;
-    }
-    // Backcountry (bc-*) artifacts bake slope/extreme only when the source is a
-    // safety-grade DTM (meta.wrote_slope_extreme) and never a hillshade_5m (the
-    // dynamic demshade layer does the shading) — skip absent kinds instead of
-    // letting their image fetches 400.
-    const isBC = !!m.destination_id;
-    DRAPE_KINDS.forEach(([kind, key, def, op, vis]) => {
-      if (isBC && (kind === "hill" || !m.wrote_slope_extreme)) return;
-      const id0 = tag ? kind + tag : kind;
-      if (tiles) {   // hillshade + slope + cliff all as XYZ RasterTileSources (LOD, no clip)
-        // bounds cut most off-coverage requests (meta value, else the resort's
-        // own extent); the transformRequest router catches the edge ring.
-        const srcBounds = tiles.bounds || (b ? [m2lon(b[0]), m2lat(b[1]), m2lon(b[2]), m2lat(b[3])] : null);
-        sources[id0] = { type: "raster", tileSize: 256,
-          tiles: [baseUrl + (tiles.tree || "tiles") + "/" + kind + "/{z}/{x}/{y}.webp?v=" + VER],
-          minzoom: tiles.minzoom, maxzoom: tiles.maxzoom, ...(srcBounds ? { bounds: srcBounds } : {}) };
-      } else {       // legacy fallback: single image
-        sources[id0] = { type: "image", url: artFn(sln[key] || def), coordinates: box(b[0], b[2], b[1], b[3]) };
-      }
-      layers.push(mkLayer(id0, vis, op));
-      if (kind === "hill" && m.forest && m.forest.file) {
-        // Forest canopy drape (CHM-derived, alpha = canopy density) — sits
-        // ABOVE the hillshade, BELOW the slope/cliff safety overlays. Single
-        // image over the resort extent (median 71 KB). Default ON with an
-        // explicit user toggle (🌲 chip) — the toggle is a hard requirement.
-        const fid = tag ? "forest" + tag : "forest";
-        sources[fid] = { type: "image", url: artFn(m.forest.file),
-                         coordinates: box(b[0], b[2], b[1], b[3]) };
-        layers.push({ id: fid, type: "raster", source: fid,
-                      paint: { "raster-opacity": 0.55, "raster-fade-duration": 0 } });
-      }
-    });
-    return { sources, layers };
-  }
-  // Degraded (no LiDAR): no hillshade/slope/cliff drape at all — the mesh +
-  // OSM lines carry the preview; we deliberately show no computed overlay.
-  // USE_V2: drop the baked V1 hill/slope/extreme drapes (terrain_offpiste_v1)
-  // entirely — the dynamic demshade (hillshade off the V2 mesh) carries the
-  // shading and v2slope carries the steepness bands. Leaving the V1 hill drape
-  // on (it defaulted to visible, opacity 0.9) was why the surface still read as
-  // V1 even with USE_V2 true.
-  const focDrape = { sources: {}, layers: [] };   // V2: no baked V1 drape (slope/aspect are client-derived)
+  // No baked drape at all: the V2 mesh + demshade carry the shading, v2slope the
+  // steepness bands, aspect:// the aspect, and OSM lines the pistes/lifts.
+  const focDrape = { sources: {}, layers: [] };
 
   const map = new maplibregl.Map({
     container: "map",
@@ -1276,7 +1186,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       layers: [
         { id: "bg", type: "background", paint: { "background-color": "#EAF0F5" } },
         { id: "demshade", type: "hillshade", source: "dem",
-          // 0.5 (was 0.35): with the V1 hill drape gone under USE_V2, demshade is
+          // 0.5 (was 0.35): with no baked hill drape, demshade is
           // now the ONLY relief shading (focused + neighbours), so it needs more
           // presence than the subtle base it used to be under the baked drape.
           paint: { "hillshade-exaggeration": 0.5, "hillshade-shadow-color": "#3F5168",
@@ -1662,7 +1572,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // Shared by the focused resort AND on-demand neighbours: a chip toggles ALL
   // matching layers ("slope" + "slope__<neighbourId>", etc.), and newly-loaded
   // neighbours adopt the current state (see kindVis in loadNeighbor).
-  const kindVis = { slope: false, extreme: false, forest: true };   // forest: default ON (user-mandated explicit toggle)
+  const kindVis = { forest: true };   // forest: default ON (user-mandated explicit toggle)
   function applyKindVis(kind) {
     const on = kindVis[kind];
     map.getStyle().layers.forEach(L => {
@@ -2443,7 +2353,6 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         // hillshade/slope/cliff draped over this neighbour's bbox (single image,
         // or pieces if oversized), then synced to the current chip + night state.
         applyHillNight(isNightNow());          // dim the new neighbour hill(s)+forest at night
-        applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
         applyKindVis("forest");                // incl. the default-ON forest toggle
         if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); scheduleDemReload(); }
         slopeExtents.push((nm.dem_tiles && nm.dem_tiles.core_bounds) || b);   // clip slope to this neighbour too
