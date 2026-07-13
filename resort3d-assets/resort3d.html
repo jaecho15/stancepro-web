@@ -608,7 +608,7 @@ window.OffpisteDraw = (function(){
     // camera behind + above the point at an altitude above the rendered terrain
     // (via queryTerrainElevation, the mesh's own frame) so it never clips through
     // ridges, then let calculateCameraOptionsFromTo aim it at the line ahead.
-    var camBack=220, camClear=200, prevBrg=null;
+    var camBack=220, camClear=200, MINCLIP=45, prevBrg=null, lastPe=null;
     // Chase-cam options for distance d along the route. The bearing is low-pass
     // filtered (a winding route otherwise jitters the view left/right), and every
     // elevation sample falls back to the route point then 0 — so a camera position
@@ -625,16 +625,21 @@ window.OffpisteDraw = (function(){
       // land ON the surface); the elev_5m LiDAR raster (sampleElev) is a DIFFERENT
       // datum ~1200 m off, which drove the camera straight through the mesh.
       function te(a,b){ var e; try{ e=map.queryTerrainElevation([a,b]); }catch(x){} return (e==null?null:e); }
-      var pe=te(pos[0],pos[1]); if(pe==null) pe=0;
-      // Pull the camera in from camBack until it sits over terrain we can measure,
-      // then sit above the HIGHEST terrain between the subject and the camera (the
-      // slope behind rises on a descent), never just above the route point.
+      // null → last valid elevation, never 0: a transient null (common on the
+      // 2nd run before terrain re-settles) collapsed altFrom to camClear (~200 m)
+      // far below the real mesh → camera started underground.
+      var pe=te(pos[0],pos[1]); if(pe==null) pe=(lastPe!=null?lastPe:0); else lastPe=pe;
+      // Pull the camera in from camBack until it sits over terrain we can measure.
       var effBack=camBack, camLL=offsetLL(pos,back,effBack);
       while(effBack>0 && te(camLL[0],camLL[1])==null){ effBack=Math.max(0,effBack-40); camLL=offsetLL(pos,back,effBack); }
       var mid=offsetLL(pos,back,effBack*0.5);
       var ec=te(camLL[0],camLL[1]), em=te(mid[0],mid[1]), ta=te(ahead[0],ahead[1]);
-      var hi=Math.max(pe, ec!=null?ec:pe, em!=null?em:pe);
-      var altFrom=hi+camClear;                            // above the mesh (queryTerrainElevation is already in mesh frame)
+      // Hold a steady clearance over the FOLLOWED route point; only rise as much as
+      // needed to clear the (uphill, higher) terrain behind the camera. Anchoring the
+      // height to that behind terrain made the cam climb ever higher above the piste
+      // as the run dropped into lower ground.
+      var behind=Math.max(ec!=null?ec:pe, em!=null?em:pe);
+      var altFrom=Math.max(pe+camClear, behind+MINCLIP);
       var altTo=(ta!=null?ta:pe);                         // look at the surface ahead
       return map.calculateCameraOptionsFromTo(
         new maplibregl.LngLat(camLL[0],camLL[1]), altFrom,
@@ -654,9 +659,19 @@ window.OffpisteDraw = (function(){
     // precomputed at the overview zoom lands wrong once the camera reaches the fly
     // zoom (that was the "second run starts below terrain" bug) — recomputing the
     // target live every frame tracks the current terrain frame and self-corrects.
+    var waitFrames=0;
     function frame(now){
       if(!flying) return;
-      if(!t0) t0=now;
+      // Hold the current view until terrain elevation is measurable at the route
+      // start — else the establishing blend interpolates toward a pose whose
+      // altitude collapsed to camClear (2nd-run "starts below terrain"). Give up
+      // after ~1 s so a genuinely null-terrain resort still flies.
+      if(!t0){
+        var s0=pointAlong(coords,cum,0), e0;
+        try{ e0=map.queryTerrainElevation([s0[0],s0[1]]); }catch(x){}
+        if(e0==null && waitFrames++ < 60){ flyRAF=requestAnimationFrame(frame); return; }
+        t0=now;
+      }
       var el=now-t0;
       if(el<EST_MS){ var k=el/EST_MS; k=k*k*(3-2*k); map.jumpTo(blend(savedCam, camAt(0), k)); }
       else{
