@@ -742,7 +742,8 @@ window.OffpisteDraw = (function(){
     aspectOn=!aspectOn;
     el.aspect.classList.toggle("on",aspectOn);
     if(aspectOn && !aspectBuilt){
-      try{
+      if(map.getLayer("op-aspect-layer")){ buildLegend(); aspectBuilt=true; }   // V2: global tiled aspect:// already in the style
+      else try{   // V1/degraded fallback: focused-resort single image
         map.addSource("op-aspect",{type:"image",url:buildAspectImage(),coordinates:boundsCorners()});
         map.addLayer({id:"op-aspect-layer",type:"raster",source:"op-aspect",paint:{"raster-opacity":0.55}},"op-saved-line");
         buildLegend(); aspectBuilt=true;
@@ -870,6 +871,11 @@ function setSlopeBands(arr) {
   SLOPE_BANDS = arr.map(b => [b.min, [parseInt(b.color.slice(1, 3), 16),
     parseInt(b.color.slice(3, 5), 16), parseInt(b.color.slice(5, 7), 16)]]);
 }
+// Resort footprints (3857 bounds) the slope overlay is clipped to, so it marks
+// the resort — the SAME range the contours use — not the whole buffered DEM
+// domain (union+buffer+closing) that would flood the surroundings. Populated
+// with the focused resort + each loaded neighbour (core_bounds).
+let slopeExtents = [];
 if (typeof maplibregl !== "undefined" && maplibregl.addProtocol) {
   const slopeDemCache = new Map();
   const slopeDem = (z, x, y) => {
@@ -890,32 +896,113 @@ if (typeof maplibregl !== "undefined" && maplibregl.addProtocol) {
     slopeDemCache.set(k, p);
     return p;
   };
+  // Elevation sampler for a slope tile at ANY zoom: get(px,py) over px,py in
+  // [-1..256] (1-px halo for the gradient). z14/z15 read the DEM tile directly
+  // (halo from the right/bottom neighbour tiles); z12/z13 (zoomed out) derive
+  // from the covering z14 LiDAR tiles (z13←4, z12←16) so the overlay still
+  // shows when you pull back to see the whole mountain. null = no LiDAR here.
+  async function slopeGrid(z, x, y) {
+    if (z === 14 || z === 15) {
+      if (!v2LidarSafe(z, x, y)) return null;
+      const n = 1 << z;
+      const [c, rt, bt] = await Promise.all([slopeDem(z, x, y),
+        slopeDem(z, (x + 1) % n, y), slopeDem(z, x, Math.min(y + 1, n - 1))]);
+      if (!c) return null;
+      const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI;
+      const mpp = (2 * WM / n / 256) * Math.cos(lat * Math.PI / 180);
+      const get = (px, py) => {
+        if (px < 0) px = 0; if (py < 0) py = 0;
+        if (px < 256 && py < 256) return c[py * 256 + px];
+        if (px >= 256) return rt ? rt[py * 256 + (px - 256)] : c[py * 256 + 255];
+        return bt ? bt[(py - 256) * 256 + px] : c[255 * 256 + px];
+      };
+      return { get, mpp };
+    }
+    if (z === 12 || z === 13) {
+      const f = 14 - z, W = 1 << f, tx0 = x * W, ty0 = y * W;
+      const jobs = []; let anySafe = false;
+      for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) {
+        const tx = tx0 + i, ty = ty0 + j;
+        if (v2LidarSafe(14, tx, ty)) anySafe = true;
+        jobs.push([tx + "/" + ty, slopeDem(14, tx, ty)]);
+      }
+      if (!anySafe) return null;
+      const tiles = {};
+      await Promise.all(jobs.map(async ([k, p]) => { tiles[k] = await p; }));
+      const nz = 1 << z;
+      const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / nz))) * 180 / Math.PI;
+      const mpp = (2 * WM / nz / 256) * Math.cos(lat * Math.PI / 180);
+      const maxg = W * 256 - 1;
+      const get = (px, py) => {
+        let gx = px * W, gy = py * W;   // output px → z14 block px (stride W)
+        if (gx < 0) gx = 0; else if (gx > maxg) gx = maxg;
+        if (gy < 0) gy = 0; else if (gy > maxg) gy = maxg;
+        const t = tiles[(tx0 + (gx >> 8)) + "/" + (ty0 + (gy >> 8))];
+        return t ? t[(gy & 255) * 256 + (gx & 255)] : NaN;
+      };
+      return { get, mpp };
+    }
+    return null;
+  }
   maplibregl.addProtocol("slope", async (params) => {
     const mt = params.url.match(/slope:\/\/(\d+)\/(\d+)\/(\d+)/);
     const z = +mt[1], x = +mt[2], y = +mt[3];
     const out = new Uint8ClampedArray(65536 * 4);
-    if (v2LidarSafe(z, x, y)) {
-      const n = 1 << z;
-      const [c, rt, bt] = await Promise.all([slopeDem(z, x, y),
-        slopeDem(z, (x + 1) % n, y), slopeDem(z, x, Math.min(y + 1, n - 1))]);
-      if (c) {
-        const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI;
-        const mpp = (2 * 20037508.342789244 / n / 256) * Math.cos(lat * Math.PI / 180);
-        const inv = 1 / (2 * mpp), DEG = 180 / Math.PI;
-        const at = (px, py) => px < 256 && py < 256 ? c[py * 256 + px]
-          : px === 256 ? (rt ? rt[py * 256] : c[py * 256 + 255])
-          : (bt ? bt[px] : c[255 * 256 + px]);
-        for (let py = 0; py < 256; py++) for (let px = 0; px < 256; px++) {
-          const zL = px > 0 ? c[py * 256 + px - 1] : c[py * 256], zR = at(px + 1, py);
-          const zU = py > 0 ? c[(py - 1) * 256 + px] : c[px], zD = at(px, py + 1);
-          const s = Math.atan(Math.hypot((zR - zL) * inv, (zD - zU) * inv)) * DEG;
-          if (s >= SLOPE_BANDS[0][0]) {
-            let col = SLOPE_BANDS[0][1];
-            for (const b of SLOPE_BANDS) if (s >= b[0]) col = b[1];
-            const o = (py * 256 + px) * 4;
-            out[o] = col[0]; out[o + 1] = col[1]; out[o + 2] = col[2]; out[o + 3] = 184;
-          }
+    // Global LiDAR steepness (any v2Have tile) — NOT clipped to the resort
+    // footprint: the steep-terrain safety overlay is useful everywhere, incl.
+    // neighbours and the off-piste buffer. (slopeExtents stays available if a
+    // footprint clip is ever wanted.)
+    const grid = await slopeGrid(z, x, y);
+    if (grid) {
+      const inv = 1 / (2 * grid.mpp), DEG = 180 / Math.PI;
+      for (let py = 0; py < 256; py++) for (let px = 0; px < 256; px++) {
+        const zL = grid.get(px - 1, py), zR = grid.get(px + 1, py);
+        const zU = grid.get(px, py - 1), zD = grid.get(px, py + 1);
+        if (zL !== zL || zR !== zR || zU !== zU || zD !== zD) continue;
+        const s = Math.atan(Math.hypot((zR - zL) * inv, (zD - zU) * inv)) * DEG;
+        if (s >= SLOPE_BANDS[0][0]) {
+          let col = SLOPE_BANDS[0][1];
+          for (const b of SLOPE_BANDS) if (s >= b[0]) col = b[1];
+          const o = (py * 256 + px) * 4;
+          out[o] = col[0]; out[o + 1] = col[1]; out[o + 2] = col[2]; out[o + 3] = 184;
         }
+      }
+    }
+    const cv = new OffscreenCanvas(256, 256);
+    cv.getContext("2d").putImageData(new ImageData(out, 256, 256), 0, 0);
+    return { data: await (await cv.convertToBlob()).arrayBuffer() };
+  });
+  // aspect:// — client-derived slope aspect (which way a face points) from the
+  // SAME V2 DEM tiles, so it renders globally (focused + every neighbour) at all
+  // zooms — unlike the old op-aspect single image that only draped the focused
+  // resort. FATMAP palette; each tile picks hemisphere from its own latitude.
+  const ASPECT_ANCHORS = [[80, 62, 140], [55, 76, 185], [30, 90, 230], [135, 165, 235],
+                          [240, 240, 240], [243, 190, 140], [245, 140, 40], [163, 101, 90]];
+  const aspectRGB = (brg, southern) => {
+    if (southern) brg = ((180 - brg) % 360 + 360) % 360;
+    const seg = (((brg % 360) + 360) % 360) / 45, i = Math.floor(seg) % 8, j = (i + 1) % 8, f = seg - Math.floor(seg);
+    const a = ASPECT_ANCHORS[i], b = ASPECT_ANCHORS[j];
+    return [Math.round(a[0] + (b[0] - a[0]) * f), Math.round(a[1] + (b[1] - a[1]) * f), Math.round(a[2] + (b[2] - a[2]) * f)];
+  };
+  maplibregl.addProtocol("aspect", async (params) => {
+    const mt = params.url.match(/aspect:\/\/(\d+)\/(\d+)\/(\d+)/);
+    const z = +mt[1], x = +mt[2], y = +mt[3];
+    const out = new Uint8ClampedArray(65536 * 4);
+    const grid = await slopeGrid(z, x, y);
+    if (grid) {
+      const n = 1 << z;
+      const southern = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) < 0;
+      const DEG = 180 / Math.PI;
+      for (let py = 0; py < 256; py++) for (let px = 0; px < 256; px++) {
+        const zL = grid.get(px - 1, py), zR = grid.get(px + 1, py);
+        const zU = grid.get(px, py - 1), zD = grid.get(px, py + 1);
+        if (zL !== zL || zR !== zR || zU !== zU || zD !== zD) continue;
+        const gE = (zR - zL) / 2, gN = (zU - zD) / 2;   // img y is south → gN = north − south
+        if (Math.atan(Math.hypot(gE, gN) / grid.mpp) * DEG < 5) continue;   // flat → no aspect
+        const brg = (Math.atan2(-gE, -gN) * DEG + 360) % 360;   // downslope azimuth
+        const c = aspectRGB(brg, southern);
+        const o = (py * 256 + px) * 4;
+        out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; out[o + 3] = 150;
       }
     }
     const cv = new OffscreenCanvas(256, 256);
@@ -1055,6 +1142,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // CENTRE test mirrors emit_core_tiles exactly, so every routed tile exists.
   const coreRegions = [];
   if (meta.dem_tiles && meta.dem_tiles.core_bounds) coreRegions.push(meta.dem_tiles.core_bounds);
+  // Clip the slope overlay to this resort's footprint (contour range).
+  if (!degraded) slopeExtents.push((meta.dem_tiles && meta.dem_tiles.core_bounds) || meta.bounds_3857);
   const coreHasTile = (z, x, y) => {
     if (z < 14 || z > 15 || !coreRegions.length) return false;
     const sp = 2 * WM / (2 ** z);
@@ -1196,7 +1285,9 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         ...focDrape.sources,   // hillshade/slope/cliff — single image, or pieces if oversized
         // V2: one global client-derived slope overlay (slope:// protocol).
         ...(USE_V2 ? { v2slope: { type: "raster", tiles: ["slope://{z}/{x}/{y}"],
-                                  tileSize: 256, maxzoom: 15 } } : {}),
+                                  tileSize: 256, maxzoom: 15 },
+                       v2aspect: { type: "raster", tiles: ["aspect://{z}/{x}/{y}"],
+                                   tileSize: 256, maxzoom: 15 } } : {}),
         contours:{ type: "geojson", data: meta.destination_id ? { type: "FeatureCollection", features: [] } : art("contours.json") },   // bc-* has none baked (v1); exists for non-LiDAR resorts too (Terrarium-baked, reference-only)
         geometry:{ type: "geojson", data: { type: "FeatureCollection", features: [] } },
         nearby:  { type: "geojson", data: nearbyGeo }
@@ -1217,7 +1308,10 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         ...focDrape.layers,   // hill visible; slope/cliff opt-in OFF (single image or pieces)
         ...(USE_V2 ? [{ id: "v2slope", type: "raster", source: "v2slope",
               layout: { visibility: "none" },
-              paint: { "raster-opacity": 0.72, "raster-fade-duration": 0 } }] : []),
+              paint: { "raster-opacity": 0.72, "raster-fade-duration": 0 } },
+            { id: "op-aspect-layer", type: "raster", source: "v2aspect",
+              layout: { visibility: "none" },   // toggled by toggleAspect (block 1) — same layer id
+              paint: { "raster-opacity": 0.55, "raster-fade-duration": 0 } }] : []),
         { id: "c100", type: "line", source: "contours",
           filter: ["==", ["get", "cls"], "major"],
           paint: { "line-color": "#38485C", "line-width": 1.2, "line-opacity": 0.45 } },
@@ -2382,6 +2476,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
         applyKindVis("forest");                // incl. the default-ON forest toggle
         if (nm.dem_tiles && nm.dem_tiles.core_bounds) { coreRegions.push(nm.dem_tiles.core_bounds); scheduleDemReload(); }
+        slopeExtents.push((nm.dem_tiles && nm.dem_tiles.core_bounds) || b);   // clip slope to this neighbour too
         if (nm.destination_id) return;   // backcountry neighbour: mesh+drape only (no geometry/contours baked in v1)
         const geo = await (await fetch(base + "geometry.json?v=" + VER)).json();
         // Clip the neighbour's runs to ITS OWN terrain extent before adding —
