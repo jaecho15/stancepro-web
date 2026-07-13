@@ -144,6 +144,83 @@ function Analogs({ signal, enso }: { signal: SeasonalSignal; enso: string }) {
 
 const Divider = () => <div className="border-t border-slate-700/50" />;
 
+// Evenly-spaced round year ticks for the record charts' x-axis (no vertical
+// gridlines — that's the time-axis convention). ~5-year step over a 30-yr span.
+function axisTickYears(minYear: number, maxYear: number): number[] {
+  const span = maxYear - minYear;
+  const step = span <= 10 ? 2 : span <= 45 ? 5 : 10;
+  const ticks: number[] = [];
+  for (let y = Math.ceil(minYear / step) * step; y <= maxYear; y += step) ticks.push(y);
+  return ticks;
+}
+
+// SVG x-axis: round-year labels, edge ticks anchored inward so they never clip.
+function AxisTicks({
+  years,
+  x,
+  y,
+}: {
+  years: number[];
+  x: (yr: number) => number;
+  y: number;
+}) {
+  return (
+    <>
+      {years.map((yr, i) => (
+        <text
+          key={yr}
+          x={x(yr)}
+          y={y}
+          textAnchor={i === 0 ? "start" : i === years.length - 1 ? "end" : "middle"}
+          fontSize="7.5"
+          fill="#64748b"
+        >
+          {yr}
+        </text>
+      ))}
+    </>
+  );
+}
+
+// Callout for a record year (snowiest/least-snowy, highest/lowest line): a ring
+// + the year, placed above the point (below when it sits near the top edge).
+function RecordMarker({
+  cx,
+  cy,
+  label,
+  color,
+  W,
+}: {
+  cx: number;
+  cy: number;
+  label: string;
+  color: string;
+  W: number;
+}) {
+  const above = cy > 16;
+  const tx = Math.min(Math.max(cx, 12), W - 12);
+  return (
+    <>
+      <circle cx={cx} cy={cy} r="2.6" fill="none" stroke={color} strokeWidth="1" />
+      <text
+        x={tx}
+        y={above ? cy - 5 : cy + 10}
+        textAnchor="middle"
+        fontSize="7"
+        fontWeight="600"
+        fill={color}
+      >
+        {label}
+      </text>
+    </>
+  );
+}
+
+const argExtreme = <T,>(arr: T[], val: (t: T) => number, want: "max" | "min"): T =>
+  arr.reduce((best, cur) =>
+    (want === "max" ? val(cur) > val(best) : val(cur) < val(best)) ? cur : best
+  );
+
 // Year-by-year record: completed-season modeled snowfall (ERA5) as a line with
 // the normal range (p10–p90) shaded and the median dashed. Pure SVG so it
 // renders server-side. The in-progress season is intentionally omitted — a
@@ -178,6 +255,9 @@ function HistoryChart({
       : baseline && v <= baseline.p10_cm
         ? "#fbbf24"
         : "#7dd3fc";
+  const ticks = axisTickYears(minYear, maxYear);
+  const hi = argExtreme(history, (p) => p.snow_cm, "max");
+  const lo = argExtreme(history, (p) => p.snow_cm, "min");
 
   return (
     <div>
@@ -223,6 +303,8 @@ function HistoryChart({
         {history.map((p) => (
           <circle key={p.year} cx={x(p.year)} cy={y(p.snow_cm)} r="1.3" fill={dotColor(p.snow_cm)} />
         ))}
+        <RecordMarker cx={x(hi.year)} cy={y(hi.snow_cm)} label={String(hi.year)} color="#38bdf8" W={W} />
+        <RecordMarker cx={x(lo.year)} cy={y(lo.snow_cm)} label={String(lo.year)} color="#fbbf24" W={W} />
         {baseline && (
           <text
             x={W - padR}
@@ -234,12 +316,7 @@ function HistoryChart({
             median {baseline.median_cm} cm
           </text>
         )}
-        <text x={padL} y={H - 4} fontSize="7.5" fill="#64748b">
-          {minYear}
-        </text>
-        <text x={W - padR} y={H - 4} textAnchor="end" fontSize="7.5" fill="#64748b">
-          {maxYear}
-        </text>
+        <AxisTicks years={ticks} x={x} y={H - 4} />
       </svg>
       <p className="text-[11px] text-slate-600 mt-1">
         Modeled season-total snowfall · ERA5 reanalysis · shaded band = normal range
@@ -304,6 +381,9 @@ function SnowlineChart({
       : dir === "falling"
         ? [ArrowDownRight, `Snow line falling ~${perDecade} m per decade`, "text-sky-400"]
         : [ArrowRight, "Snow line roughly stable decade to decade", "text-slate-400"];
+  const ticks = axisTickYears(minYear, maxYear);
+  const hiLine = argExtreme(snowline, (p) => p.snowline_m, "max");
+  const loLine = argExtreme(snowline, (p) => p.snowline_m, "min");
 
   return (
     <div>
@@ -367,6 +447,8 @@ function SnowlineChart({
             strokeLinecap="round"
           />
         )}
+        <RecordMarker cx={x(hiLine.year)} cy={y(hiLine.snowline_m)} label={String(hiLine.year)} color="#fb923c" W={W} />
+        <RecordMarker cx={x(loLine.year)} cy={y(loLine.snowline_m)} label={String(loLine.year)} color="#38bdf8" W={W} />
         {baseline && (
           <text
             x={W - padR}
@@ -378,12 +460,7 @@ function SnowlineChart({
             median {baseline.median_m} m
           </text>
         )}
-        <text x={padL} y={H - 4} fontSize="7.5" fill="#64748b">
-          {minYear}
-        </text>
-        <text x={W - padR} y={H - 4} textAnchor="end" fontSize="7.5" fill="#64748b">
-          {maxYear}
-        </text>
+        <AxisTicks years={ticks} x={x} y={H - 4} />
       </svg>
       <p className="text-[11px] text-slate-600 mt-1">
         Where winter days cross the rain/snow threshold · ERA5 reanalysis. The line
