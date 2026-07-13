@@ -14,12 +14,21 @@ Two jobs, both idempotent:
      so a 60 s cron never blows its budget; the daily cadence finishes the rest.
 
   2. MERGE (daily/cheap): read every `seasonal_snow_outlooks` row and patch
-     payload.history / payload.history_baseline / payload.history_current onto
-     it (non-destructively — the rest of the payload is preserved), so the
-     seasonal cards can draw a year-by-year curve. history_current is the
-     in-progress season's to-date total (free from the SH status block; computed
-     for NH only during its Dec–Mar season). Re-runs after the monthly NH refresh
-     re-attach the history, so a full-row upsert elsewhere self-heals next day.
+     payload.history / payload.history_baseline / payload.history_current (and
+     the snow-line series, below) onto it (non-destructively — the rest of the
+     payload is preserved), so the seasonal cards can draw a year-by-year curve.
+     history_current is the in-progress season's to-date total (free from the SH
+     status block; computed for NH only during its Dec–Mar season). Re-runs after
+     the monthly NH refresh re-attach the history, so a full-row upsert elsewhere
+     self-heals next day.
+
+SNOW LINE: the seed also derives, from the SAME ERA5 pull, each winter's
+precip-weighted rain/snow-line elevation (where daily-mean temp crosses the +1°C
+threshold, 6.5°C/km lapse from mid elevation) — payload.snowline_history /
+snowline_baseline plus a metres-per-decade gated snowline_trend. This is the
+robust warming signal: the line tracks temperature (which ERA5 captures well),
+so it RISES even where mid-elevation snowfall totals look flat. Absolute metres
+assume the fixed lapse rate (approximate); the trend is the honest part.
 
 MODELED, NOT MEASURED: no open measured snowfall record exists for most regions
 (NZ, Andes), so this is a reanalysis estimate — renderers label it "modeled ·
@@ -59,6 +68,10 @@ WINDOW_YEARS = 35
 POINTS_PER_REGION = 3
 SNOW_TMEAN_C = 1.0            # precip counts as snow at/below this daily mean
 SLR = 10.0                   # 1 mm water -> 1 cm snow
+LAPSE_C_PER_M = 0.0065       # 6.5 C/km — elevation of the daily rain/snow line
+                             # from mid-elevation temp (snow line = where tmean
+                             # crosses SNOW_TMEAN_C). Absolute metres assume this
+                             # lapse rate; the TREND is the robust warming signal.
 STALE_DAYS = 80              # rebuild history older than this
 MAX_SEED_PER_RUN = 2         # cap rebuilds/run so a 60s cron never times out
                              # (36-yr archive pulls are slow; the daily cadence
@@ -152,10 +165,45 @@ def _shared_enso(rows: list[dict]) -> dict:
     return {"nino34": 0.0, "state": "neutral", "strength": "none", "latest_season": None}
 
 
+def _ols(points: list[tuple[int, float]]) -> tuple[float, float, float] | None:
+    """(slope per year, standard error of slope, mean-y). None if degenerate."""
+    n = len(points)
+    if n < 10:
+        return None
+    xs = [float(y) for y, _ in points]
+    ys = [float(v) for _, v in points]
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx <= 0:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    intercept = my - slope * mx
+    sse = sum((y - (intercept + slope * x)) ** 2 for x, y in zip(xs, ys))
+    se_slope = (sse / (n - 2) / sxx) ** 0.5 if n > 2 else float("inf")
+    return slope, se_slope, my
+
+
+def _snowline_trend(points: list[tuple[int, float]]) -> dict:
+    """Gated OLS trend of the winter snow line in METRES per decade. Same ~2 SE
+    (p<0.05) significance bar as _trend, but keyed on an absolute-metres change
+    (≥15 m/decade) rather than a percentage — the snow line tracks temperature,
+    which ERA5 reanalysis captures well, so this is the robust warming signal
+    (unlike mid-elevation snowfall totals). Rising line ⇒ warming."""
+    fit = _ols(points)
+    if fit is None:
+        return {"direction": "stable", "m_per_decade": 0.0}
+    slope, se_slope, _ = fit
+    m_per_decade = slope * 10.0
+    significant = se_slope > 0 and abs(slope) > 2.0 * se_slope
+    direction = ("rising" if m_per_decade > 0 else "falling") if (
+        significant and abs(m_per_decade) >= 15) else "stable"
+    return {"direction": direction, "m_per_decade": round(m_per_decade)}
+
+
 def _trend(points: list[tuple[int, float]]) -> dict:
     """OLS trend of season totals as % of mean per decade, SIGNIFICANCE-GATED:
-    a direction is only claimed when the slope stands ~1.7 standard errors clear
-    of zero (~p<0.10) AND exceeds 3%/decade. Season-total snowfall is a short,
+    a direction is only claimed when the slope stands ~2 standard errors clear
+    of zero (~p<0.05) AND exceeds 3%/decade. Season-total snowfall is a short,
     high-variance series (and ERA5 precip trends are inhomogeneity-prone), so an
     ungated OLS slope is noise-dominated — reporting it as "increasing" would be
     a false claim. pct_per_decade is still returned for transparency."""
@@ -197,7 +245,8 @@ def _resorts_by_id(resort_ids: list[str]) -> dict[str, dict]:
 def _existing_history() -> dict[str, dict]:
     response = requests.get(
         f"{SUPABASE_URL}/rest/v1/snow_annual_history",
-        params={"select": "region_id,hemisphere,history,baseline,updated_at"},
+        params={"select": "region_id,hemisphere,history,baseline,"
+                          "snowline_history,snowline_baseline,updated_at"},
         headers=HEADERS_READ, timeout=30)
     response.raise_for_status()
     return {r["region_id"]: r for r in response.json()}
@@ -221,9 +270,19 @@ def _season_windows(hemisphere: str, year: int) -> tuple[date, date]:
     return date(year - 1, 12, 1), date(year, 3, 1)
 
 
-def _annual_totals(resort: dict, hemisphere: str,
-                   window_start: int, window_end: int) -> dict[int, float]:
-    """Season-total snowfall per year at the resort's mid elevation, ERA5 budget."""
+def _snow_line_m(mid: int, tmean: float | None) -> float | None:
+    """Elevation where the daily-mean temp crosses the +1C snow threshold, from
+    the mid-elevation temp and a fixed lapse rate. Warmer day => line sits higher."""
+    if tmean is None:
+        return None
+    line = mid + (float(tmean) - SNOW_TMEAN_C) / LAPSE_C_PER_M
+    return max(0.0, min(line, 6000.0))       # clamp to plausible terrestrial range
+
+
+def _annual_totals(resort: dict, hemisphere: str, window_start: int,
+                   window_end: int) -> dict[int, tuple[float, float | None]]:
+    """Per year, at the resort's mid elevation from one ERA5 daily pull:
+    (season-total snowfall cm, precip-weighted season snow-line m)."""
     import time
     mid = round((float(resort["base_elevation_m"]) + float(resort["top_elevation_m"])) / 2)
     # The archive lags ~5 days and rejects future end dates — clamp so the NH
@@ -242,18 +301,31 @@ def _annual_totals(resort: dict, hemisphere: str,
     time.sleep(0.6)                          # pace: the archive throttles bursts
     daily = payload.get("daily") or {}
     dates = daily.get("time") or []
-    snow = _daily_snow_cm(daily.get("precipitation_sum") or [],
-                         daily.get("temperature_2m_mean") or [])
-    by_date = dict(zip(dates, snow))
-    totals: dict[int, float] = {}
+    precip = daily.get("precipitation_sum") or []
+    tmean = daily.get("temperature_2m_mean") or []
+    snow = _daily_snow_cm(precip, tmean)
+    # Per-day index into the parallel arrays so the season loop can reach both
+    # the snow budget and the precip-weighted snow line without re-zipping.
+    idx = {d: i for i, d in enumerate(dates)}
+    out: dict[int, tuple[float, float | None]] = {}
     for year in range(window_start, window_end + 1):
         start, end = _season_windows(hemisphere, year)
-        total, day = 0.0, start
+        total = 0.0
+        wsum = 0.0                           # precip weight for the snow-line mean
+        wline = 0.0
+        day = start
         while day < end:
-            total += by_date.get(day.isoformat(), 0.0)
+            i = idx.get(day.isoformat())
+            if i is not None:
+                total += snow[i]
+                p = float(precip[i] or 0.0)
+                line = _snow_line_m(mid, tmean[i] if i < len(tmean) else None)
+                if p > 0.5 and line is not None:   # weight by wet days only
+                    wsum += p
+                    wline += p * line
             day += timedelta(days=1)
-        totals[year] = total
-    return totals
+        out[year] = (total, (wline / wsum) if wsum > 0 else None)
+    return out
 
 
 def build_region_history(region: str, label: str, hemisphere: str,
@@ -262,16 +334,27 @@ def build_region_history(region: str, label: str, hemisphere: str,
     # tier throttles bursts; per-region seeding is already bounded per run.
     per_resort = [_annual_totals(r, hemisphere, window_start, window_end) for r in resorts]
     history = []
+    snowline_history = []
     for year in range(window_start, window_end + 1):
-        vals = [t[year] for t in per_resort if year in t]
-        if vals:
-            history.append({"year": year, "snow_cm": round(sum(vals) / len(vals))})
+        snow_vals = [t[year][0] for t in per_resort if year in t]
+        if snow_vals:
+            history.append({"year": year, "snow_cm": round(sum(snow_vals) / len(snow_vals))})
+        line_vals = [t[year][1] for t in per_resort if year in t and t[year][1] is not None]
+        if line_vals:
+            snowline_history.append({"year": year,
+                                     "snowline_m": round(sum(line_vals) / len(line_vals))})
     values = [h["snow_cm"] for h in history]
     baseline = {
         "median_cm": round(statistics.median(values)) if values else None,
         "p10_cm": round(_quantile(values, 0.10)) if values else None,
         "p90_cm": round(_quantile(values, 0.90)) if values else None,
     }
+    line_values = [h["snowline_m"] for h in snowline_history]
+    snowline_baseline = {
+        "median_m": round(statistics.median(line_values)) if line_values else None,
+        "p10_m": round(_quantile(line_values, 0.10)) if line_values else None,
+        "p90_m": round(_quantile(line_values, 0.90)) if line_values else None,
+    } if line_values else None
     return {
         "region_id": region,
         "label": label,
@@ -281,6 +364,8 @@ def build_region_history(region: str, label: str, hemisphere: str,
         "window_end": window_end,
         "history": history,
         "baseline": baseline,
+        "snowline_history": snowline_history,
+        "snowline_baseline": snowline_baseline,
         "points": len(resorts),
         "updated_at": datetime.now(tz=timezone.utc).isoformat(),
     }
@@ -391,11 +476,17 @@ def run(seed_limit: int = MAX_SEED_PER_RUN) -> dict:
             break
         prior = existing.get(region)
         if prior:
+            fresh = False
             try:
-                if datetime.fromisoformat(str(prior["updated_at"]).replace("Z", "+00:00")) >= cutoff:
-                    continue
+                fresh = datetime.fromisoformat(
+                    str(prior["updated_at"]).replace("Z", "+00:00")) >= cutoff
             except (TypeError, ValueError):
                 pass
+            # Re-seed a fresh row that predates the snow-line series (backfill),
+            # otherwise skip. A missing/empty snowline_history means the old
+            # snowfall-only builder wrote it.
+            if fresh and prior.get("snowline_history"):
+                continue
         sampled = target["sampled"]
         if not sampled:
             seed_errors[region] = "no curated resorts with elevation"
@@ -426,6 +517,12 @@ def run(seed_limit: int = MAX_SEED_PER_RUN) -> dict:
             payload = dict(existing_row.get("payload") or {})
             payload["history"] = hist["history"]
             payload["history_baseline"] = hist["baseline"]
+            sl_hist = hist.get("snowline_history") or []
+            if sl_hist:                      # additive; absent on pre-backfill rows
+                payload["snowline_history"] = sl_hist
+                payload["snowline_baseline"] = hist.get("snowline_baseline")
+                payload["snowline_trend"] = _snowline_trend(
+                    [(h["year"], h["snowline_m"]) for h in sl_hist])
             # For OUR trend-only rows (Europe), keep the trend in sync with the
             # gated method + latest history. Never touch trend on rows whose trend
             # comes from another source (NH battle, SH status).
@@ -461,6 +558,12 @@ def run(seed_limit: int = MAX_SEED_PER_RUN) -> dict:
                 "trend": trend, "signal": None, "watch": [],
                 "history": hist["history"], "history_baseline": hist["baseline"],
             }
+            sl_hist = hist.get("snowline_history") or []
+            if sl_hist:
+                payload["snowline_history"] = sl_hist
+                payload["snowline_baseline"] = hist.get("snowline_baseline")
+                payload["snowline_trend"] = _snowline_trend(
+                    [(h["year"], h["snowline_m"]) for h in sl_hist])
             out = {
                 "climate_region": region, "label": target["label"],
                 "region_ids": target["region_ids"], "resort_ids": target["resort_ids"],
