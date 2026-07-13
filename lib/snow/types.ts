@@ -199,6 +199,25 @@ export interface SeasonalHistoryCurrent {
   partial: boolean; // the in-progress season (SH only while NH is off-season)
 }
 
+// Winter rain/snow-line elevation, derived from the same ERA5 pull as the
+// snowfall history (precip-weighted, temp crosses +1°C, 6.5°C/km lapse from
+// mid elevation). Render as a SECOND stacked panel under the snowfall curve —
+// NOT a dual right-hand axis. Absolute metres are modeled (assumed lapse rate);
+// the rising trend is the robust warming signal even where snowfall looks flat.
+export interface SeasonalSnowlinePoint {
+  year: number;
+  snowline_m: number;
+}
+export interface SeasonalSnowlineBaseline {
+  median_m: number;
+  p10_m: number;
+  p90_m: number;
+}
+export interface SeasonalSnowlineTrend {
+  direction: "rising" | "falling" | "stable"; // "stable" when not p<0.05 significant
+  m_per_decade: number;
+}
+
 export interface SeasonalPayload {
   region: string;
   label: string;
@@ -210,6 +229,9 @@ export interface SeasonalPayload {
   history?: SeasonalHistoryPoint[];
   history_baseline?: SeasonalHistoryBaseline | null;
   history_current?: SeasonalHistoryCurrent | null;
+  snowline_history?: SeasonalSnowlinePoint[];
+  snowline_baseline?: SeasonalSnowlineBaseline | null;
+  snowline_trend?: SeasonalSnowlineTrend | null;
 }
 
 export interface SeasonalOutlookRow {
