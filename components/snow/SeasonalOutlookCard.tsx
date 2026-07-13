@@ -3,10 +3,12 @@ import {
   ArrowRight,
   ArrowUpRight,
   FlaskConical,
+  Sparkles,
 } from "lucide-react";
 import { regionContext } from "@/lib/snow/region-context";
 import { ordinal, statusHeadline, statusLean } from "@/lib/snow/season-status";
 import type {
+  ClimateDriver,
   SeasonalHistoryBaseline,
   SeasonalHistoryPoint,
   SeasonalOutlookRow,
@@ -472,6 +474,93 @@ function SnowlineChart({
   );
 }
 
+// Climate-driver strip: colours each winter of the record by its large-scale
+// index phase (aligned to the history chart above) + an honest one-liner and,
+// only in this region's winter, a "favorable now" flag. When there's no
+// serveable signal it says so plainly.
+function ClimateDriverStrip({ driver }: { driver: ClimateDriver }) {
+  if (!driver.index) {
+    return (
+      <div>
+        <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
+          Climate driver
+        </p>
+        <p className="text-xs text-slate-500">
+          No large-scale seasonal signal for this region — winter snow is driven by
+          local variability. The long-term trend above is the honest guide.
+        </p>
+      </div>
+    );
+  }
+  const series = driver.index_series ?? {};
+  const years = Object.keys(series).map(Number).sort((a, b) => a - b);
+  const minYear = years[0] ?? 0;
+  const maxYear = years[years.length - 1] ?? 1;
+  const W = 320;
+  const H = 16;
+  const padL = 4;
+  const padR = 4;
+  const bw = (W - padL - padR) / Math.max(years.length, 1);
+  const x = (yr: number) =>
+    padL + ((yr - minYear) / (maxYear - minYear || 1)) * (W - padL - padR);
+  const phaseColor = (v: number) => (v >= 0.5 ? "#e34948" : v <= -0.5 ? "#38bdf8" : "#475569");
+  const isEnso = driver.index === "ENSO";
+  const posLabel = isEnso ? "El Niño" : `${driver.index} +`;
+  const negLabel = isEnso ? "La Niña" : `${driver.index} −`;
+  const favWord =
+    driver.sign === "+"
+      ? isEnso ? "El Niño winters" : `positive ${driver.index}`
+      : isEnso ? "La Niña winters" : `negative ${driver.index}`;
+  const rTxt = driver.r != null ? `${driver.r > 0 ? "+" : ""}${driver.r.toFixed(2)}` : "";
+  const predTxt =
+    driver.predictability === "seasonal"
+      ? "seasonally forecastable"
+      : "not seasonal, but useful 2–4 weeks out";
+  const sig = driver.in_season ? driver.current_signal : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          Climate driver · {driver.index}
+        </p>
+        {sig === "positive" ? (
+          <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+            <Sparkles className="w-3 h-3 shrink-0" /> Favorable now
+          </span>
+        ) : driver.in_season && sig === "neutral" ? (
+          <span className="text-[11px] text-slate-500">Not favorable now</span>
+        ) : (
+          <span className="text-[11px] text-slate-600">Off-season</span>
+        )}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Each winter coloured by ${driver.index} phase`}>
+        {years.map((yr) => (
+          <rect
+            key={yr}
+            x={x(yr) - bw / 2}
+            width={Math.max(bw - 0.6, 1)}
+            y={2}
+            height={H - 4}
+            rx="0.5"
+            fill={phaseColor(series[String(yr)])}
+          />
+        ))}
+      </svg>
+      <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-[1px]" style={{ background: "#e34948" }} />{posLabel}</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-[1px]" style={{ background: "#475569" }} />neutral</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-[1px]" style={{ background: "#38bdf8" }} />{negLabel}</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1.5">
+        {driver.weak ? "Weak signal — " : ""}snowier in {favWord} (45-yr r {rTxt}) — {predTxt}.
+        {driver.predictability === "subseasonal" &&
+          " Shown as history + a near-term flag, not a months-ahead forecast."}
+      </p>
+    </div>
+  );
+}
+
 // Observed season-so-far block for southern-hemisphere in-progress winters:
 // percentile gauge, season-to-date vs climatology, recent-two-week tendency,
 // satellite snow cover. Facts only — no probabilities.
@@ -612,6 +701,13 @@ export function SeasonalOutlookCard({
             baseline={payload.snowline_baseline ?? null}
             trend={payload.snowline_trend ?? null}
           />
+        </>
+      )}
+
+      {!compact && payload.driver && (
+        <>
+          <Divider />
+          <ClimateDriverStrip driver={payload.driver} />
         </>
       )}
 

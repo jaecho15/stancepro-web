@@ -218,6 +218,26 @@ export interface SeasonalSnowlineTrend {
   m_per_decade: number;
 }
 
+// Climate-driver profile (driver_profiles): the large-scale index this region's
+// winter snow historically tracks, from a 45-yr ERA5 survey. Honest by design —
+// most regions have no serveable seasonal signal (index=null), and even where
+// there is one, subseasonal drivers (NAO/AO/SAM) are only usable at 2–4 weeks,
+// not months ahead. `index_series` colours each year on the history chart by its
+// index phase; `current_signal` lights a "favorable now" badge only in-season.
+export type ClimateIndex = "ENSO" | "NAO" | "AO" | "SAM";
+
+export interface ClimateDriver {
+  index: ClimateIndex | null;      // null = no serveable signal (region variability rules)
+  sign: "+" | "-" | null;          // + = snowier in the index's positive phase
+  r: number | null;                // correlation strength over the record
+  predictability: "seasonal" | "subseasonal" | null; // ENSO seasonal; NAO/AO/SAM 2–4wk
+  weak: boolean;                   // 0.25 ≤ |r| < 0.30 — show, but labelled weak
+  index_series?: Record<string, number>; // year → index value (chart colouring)
+  current_index?: number | null;   // latest index value
+  current_signal?: "positive" | "neutral" | null; // in-season favorable flag
+  in_season?: boolean;             // true only during this region's winter
+}
+
 export interface SeasonalPayload {
   region: string;
   label: string;
@@ -232,6 +252,7 @@ export interface SeasonalPayload {
   snowline_history?: SeasonalSnowlinePoint[];
   snowline_baseline?: SeasonalSnowlineBaseline | null;
   snowline_trend?: SeasonalSnowlineTrend | null;
+  driver?: ClimateDriver | null;
 }
 
 export interface SeasonalOutlookRow {
