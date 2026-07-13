@@ -1204,7 +1204,10 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       layers: [
         { id: "bg", type: "background", paint: { "background-color": "#EAF0F5" } },
         { id: "demshade", type: "hillshade", source: "dem",
-          paint: { "hillshade-exaggeration": 0.35, "hillshade-shadow-color": "#3F5168",
+          // 0.5 (was 0.35): with the V1 hill drape gone under USE_V2, demshade is
+          // now the ONLY relief shading (focused + neighbours), so it needs more
+          // presence than the subtle base it used to be under the baked drape.
+          paint: { "hillshade-exaggeration": 0.5, "hillshade-shadow-color": "#3F5168",
                    "hillshade-highlight-color": "#FFFFFF" } },
         { id: "water", type: "fill", source: "ofm", "source-layer": "water",
           paint: { "fill-color": "#3F86B0", "fill-opacity": 0.85 } },

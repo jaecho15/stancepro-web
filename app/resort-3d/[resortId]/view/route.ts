@@ -83,7 +83,11 @@ async function nearbyJSON(resortId: string): Promise<string> {
       .filter((x) => x.km <= 50)
       .sort((a, b) => a.km - b.km)
       .slice(0, 30)
-      .map((x) => ({ n: stripMarkup(x.r.display_name), la: x.r.lat, lo: x.r.lon }));
+      // `id` is REQUIRED: the engine's loadVisibleNeighbors gates on `r.id`
+      // (and builds the neighbour artifact URL from it), so omitting it meant
+      // loadNeighbor never ran on the web — neighbours got no shading/contours
+      // drape, only the focused resort's over-harvested lines bleeding in.
+      .map((x) => ({ id: x.r.resort_id, n: stripMarkup(x.r.display_name), la: x.r.lat, lo: x.r.lon }));
     return JSON.stringify(nearby);
   } catch {
     return "[]";
