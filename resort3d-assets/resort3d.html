@@ -1164,7 +1164,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   }
   // Degraded (no LiDAR): no hillshade/slope/cliff drape at all — the mesh +
   // OSM lines carry the preview; we deliberately show no computed overlay.
-  const focDrape = degraded ? { sources: {}, layers: [] }
+  // USE_V2: drop the baked V1 hill/slope/extreme drapes (terrain_offpiste_v1)
+  // entirely — the dynamic demshade (hillshade off the V2 mesh) carries the
+  // shading and v2slope carries the steepness bands. Leaving the V1 hill drape
+  // on (it defaulted to visible, opacity 0.9) was why the surface still read as
+  // V1 even with USE_V2 true.
+  const focDrape = (degraded || USE_V2) ? { sources: {}, layers: [] }
                             : drapeSpec("", meta, meta.bounds_3857, BASE);
 
   const map = new maplibregl.Map({
@@ -2365,9 +2370,11 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         nbInitGeo();
         // hillshade/slope/cliff draped over this neighbour's bbox (single image,
         // or pieces if oversized), then synced to the current chip + night state.
-        const nd = drapeSpec("__" + nb.id, nm, b, base);
-        Object.keys(nd.sources).forEach(id => { if (!map.getSource(id)) map.addSource(id, nd.sources[id]); });
-        nd.layers.forEach(L => { if (!map.getLayer(L.id)) map.addLayer(L, "c100"); });
+        if (!USE_V2) {   // V2 uses the global demshade+v2slope, no per-neighbour V1 drape
+          const nd = drapeSpec("__" + nb.id, nm, b, base);
+          Object.keys(nd.sources).forEach(id => { if (!map.getSource(id)) map.addSource(id, nd.sources[id]); });
+          nd.layers.forEach(L => { if (!map.getLayer(L.id)) map.addLayer(L, "c100"); });
+        }
         applyHillNight(isNightNow());          // dim the new neighbour hill(s)+forest at night
         applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
         applyKindVis("forest");                // incl. the default-ON forest toggle

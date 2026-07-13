@@ -12,7 +12,7 @@
 // Scope is deliberately narrow: two read-only artifact prefixes, GET only.
 // Site HTML/JS/API traffic is never touched.
 
-const CACHE = "resort3d-tiles-v1";
+const CACHE = "resort3d-tiles-v2";   // bump: evict any V1-era cached tiles (activate deletes old names)
 const PREFIXES = [
   "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/",
   "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/",
