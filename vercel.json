@@ -14,6 +14,9 @@
     },
     "api/update-annual-history.py": {
       "maxDuration": 60
+    },
+    "api/update-climate-drivers.py": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -32,6 +35,10 @@
     {
       "path": "/api/update-annual-history",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/update-climate-drivers",
+      "schedule": "50 6 * * *"
     }
   ],
   "regions": ["sin1"]
