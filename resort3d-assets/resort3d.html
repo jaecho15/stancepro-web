@@ -840,10 +840,9 @@ console.log("resort3d boot", RESORT_ID, APP_LANG, VER);
 const ART_TREE = RESORT_ID.indexOf("bc-") === 0 ? "terrain_backcountry_v1" : "terrain_offpiste_v1";
 const BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/" + ART_TREE + "/" + RESORT_ID + "/";
 const art = f => BASE + f + "?v=" + VER;
-// ---- Terrain V2: global tile-index DEM routing (behind USE_V2). Replaces the
-// per-resort core_bounds test with ONE global index of the z14/z15 DEM tiles we
-// published (terrain_v2/dem): routeDem hit → our tile, miss → AWS fallback. ----
-const USE_V2 = true;
+// ---- Terrain V2: global tile-index DEM routing. ONE global index of the z14/z15
+// DEM tiles we published (terrain_v2/dem): routeDem hit → our tile, miss → AWS
+// fallback. (V1 core routing + baked drapes removed — V2 is the only path now.) ----
 const V2_DEM = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/terrain_v2/dem/";
 const V2_INDEX = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/terrain_v2/index/v1.json";
 const v2Have = { 14: new Set(), 15: new Set() };
@@ -852,8 +851,7 @@ let v2Ready = false;
 const v2Key = (x, y) => x * 100000 + y;
 const v2LidarSafe = (z, x, y) =>
   (z === 14 || z === 15) && v2Have[z].has(v2Key(x, y)) && !v2Aws[z].has(v2Key(x, y));
-if (USE_V2) {
-  fetch(V2_INDEX + "?v=" + VER).then(r => r.json()).then(ix => {
+fetch(V2_INDEX + "?v=" + VER).then(r => r.json()).then(ix => {
     (ix.z15 || []).forEach(t => v2Have[15].add(v2Key(t[0], t[1])));
     (ix.z14 || []).forEach(t => v2Have[14].add(v2Key(t[0], t[1])));
     (ix.aws15 || []).forEach(t => v2Aws[15].add(v2Key(t[0], t[1])));
@@ -862,7 +860,6 @@ if (USE_V2) {
     console.log("v2 index", ix.counts);
     if (typeof scheduleDemReload === "function") scheduleDemReload();
   }).catch(e => console.log("v2 index load failed", e));
-}
 // slope:// — client-derived avalanche slope overlay from the SAME DEM tiles the
 // mesh uses (no baked webp); LiDAR-gated (aws-dominated → transparent); colours
 // via setSlopeBands (shared contract with the UI legend). Used only when USE_V2.
@@ -1132,10 +1129,9 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // backdrop is byte-identical to before (zero regression) while the resort
   // itself gets the sharp 5 m mesh. Only runs when the resort actually has
   // core tiles (meta.dem_tiles); otherwise every request stays Terrarium.
-  const CORE_BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/"
-                    + (meta.dem_tiles && meta.dem_tiles.tree ? meta.dem_tiles.tree : "terrain_dem_core_v1") + "/";
-  const hasCore = !!(meta.dem_tiles);
-  // Core regions the z14–15 router rewrites to the 5 m tree: the focused resort
+  // V1 core routing removed (V2 tiles are unconditional). coreRegions stays — the
+  // z-badge still uses it to label 5 m (in-resort) vs 30 m (horizon).
+  // Core regions = the focused resort
   // PLUS any neighbour loaded on-demand (all share the one global core tree).
   // Each region is the resort's REAL-data extent (resort+1 km), NOT the padded
   // bbox — the ~150 m fetch margin stays Terrarium (no fake fill). The TILE-
@@ -1144,24 +1140,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   if (meta.dem_tiles && meta.dem_tiles.core_bounds) coreRegions.push(meta.dem_tiles.core_bounds);
   // Clip the slope overlay to this resort's footprint (contour range).
   if (!degraded) slopeExtents.push((meta.dem_tiles && meta.dem_tiles.core_bounds) || meta.bounds_3857);
-  const coreHasTile = (z, x, y) => {
-    if (z < 14 || z > 15 || !coreRegions.length) return false;
-    const sp = 2 * WM / (2 ** z);
-    const cx = -WM + (x + 0.5) * sp, cy = WM - (y + 0.5) * sp;   // tile centre
-    for (const cb of coreRegions)
-      if (cx >= cb[0] && cx <= cb[2] && cy >= cb[1] && cy <= cb[3]) return true;
-    return false;
-  };
   const routeDem = (url) => {
     const m = url.match(/terrarium\/(\d+)\/(\d+)\/(\d+)\.png/);
     if (m) {
       const z = +m[1], x = +m[2], y = +m[3];
-      if (USE_V2) {
-        if (v2Ready && (z === 14 || z === 15) && v2Have[z].has(v2Key(x, y)))
-          return { url: V2_DEM + z + "/" + x + "/" + y + ".png?v=" + VER };
-      } else if (coreHasTile(z, x, y)) {
-        return { url: CORE_BASE + z + "/" + x + "/" + y + ".png?v=" + VER };
-      }
+      if (v2Ready && (z === 14 || z === 15) && v2Have[z].has(v2Key(x, y)))
+        return { url: V2_DEM + z + "/" + x + "/" + y + ".png?v=" + VER };
     }
     // Drape (hill/slope/extreme) edge ring: tiles whose CENTRE is outside the
     // resort's extent were never emitted — answer with a transparent 1×1 PNG
@@ -1258,8 +1242,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // shading and v2slope carries the steepness bands. Leaving the V1 hill drape
   // on (it defaulted to visible, opacity 0.9) was why the surface still read as
   // V1 even with USE_V2 true.
-  const focDrape = (degraded || USE_V2) ? { sources: {}, layers: [] }
-                            : drapeSpec("", meta, meta.bounds_3857, BASE);
+  const focDrape = { sources: {}, layers: [] };   // V2: no baked V1 drape (slope/aspect are client-derived)
 
   const map = new maplibregl.Map({
     container: "map",
@@ -1284,10 +1267,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
                attribution: "© OpenStreetMap contributors · OpenFreeMap" },
         ...focDrape.sources,   // hillshade/slope/cliff — single image, or pieces if oversized
         // V2: one global client-derived slope overlay (slope:// protocol).
-        ...(USE_V2 ? { v2slope: { type: "raster", tiles: ["slope://{z}/{x}/{y}"],
-                                  tileSize: 256, maxzoom: 15 },
-                       v2aspect: { type: "raster", tiles: ["aspect://{z}/{x}/{y}"],
-                                   tileSize: 256, maxzoom: 15 } } : {}),
+        v2slope: { type: "raster", tiles: ["slope://{z}/{x}/{y}"], tileSize: 256, maxzoom: 15 },
+        v2aspect: { type: "raster", tiles: ["aspect://{z}/{x}/{y}"], tileSize: 256, maxzoom: 15 },
         contours:{ type: "geojson", data: meta.destination_id ? { type: "FeatureCollection", features: [] } : art("contours.json") },   // bc-* has none baked (v1); exists for non-LiDAR resorts too (Terrarium-baked, reference-only)
         geometry:{ type: "geojson", data: { type: "FeatureCollection", features: [] } },
         nearby:  { type: "geojson", data: nearbyGeo }
@@ -1306,12 +1287,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
           paint: { "line-color": "#3F86B0", "line-opacity": 0.9,
                    "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1, 15, 3] } },
         ...focDrape.layers,   // hill visible; slope/cliff opt-in OFF (single image or pieces)
-        ...(USE_V2 ? [{ id: "v2slope", type: "raster", source: "v2slope",
-              layout: { visibility: "none" },
-              paint: { "raster-opacity": 0.72, "raster-fade-duration": 0 } },
-            { id: "op-aspect-layer", type: "raster", source: "v2aspect",
-              layout: { visibility: "none" },   // toggled by toggleAspect (block 1) — same layer id
-              paint: { "raster-opacity": 0.55, "raster-fade-duration": 0 } }] : []),
+        { id: "v2slope", type: "raster", source: "v2slope",
+          layout: { visibility: "none" },
+          paint: { "raster-opacity": 0.72, "raster-fade-duration": 0 } },
+        { id: "op-aspect-layer", type: "raster", source: "v2aspect",   // toggled by toggleAspect (block 1)
+          layout: { visibility: "none" },
+          paint: { "raster-opacity": 0.55, "raster-fade-duration": 0 } },
         { id: "c100", type: "line", source: "contours",
           filter: ["==", ["get", "cls"], "major"],
           paint: { "line-color": "#38485C", "line-width": 1.2, "line-opacity": 0.45 } },
@@ -1704,14 +1685,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const btn = document.getElementById("bSlope");
     btn.onclick = () => {
       let on;
-      if (USE_V2) {
-        on = map.getLayoutProperty("v2slope", "visibility") !== "visible";
-        map.setLayoutProperty("v2slope", "visibility", on ? "visible" : "none");
-      } else {
-        on = !kindVis.slope;
-        kindVis.slope = on; kindVis.extreme = on;
-        applyKindVis("slope"); applyKindVis("extreme");
-      }
+      on = map.getLayoutProperty("v2slope", "visibility") !== "visible";
+      map.setLayoutProperty("v2slope", "visibility", on ? "visible" : "none");
       btn.className = on ? "on" : "off";
       var leg = document.getElementById("slope-legend"); if (leg) leg.classList.toggle("show", on);
     };
@@ -2467,11 +2442,6 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         nbInitGeo();
         // hillshade/slope/cliff draped over this neighbour's bbox (single image,
         // or pieces if oversized), then synced to the current chip + night state.
-        if (!USE_V2) {   // V2 uses the global demshade+v2slope, no per-neighbour V1 drape
-          const nd = drapeSpec("__" + nb.id, nm, b, base);
-          Object.keys(nd.sources).forEach(id => { if (!map.getSource(id)) map.addSource(id, nd.sources[id]); });
-          nd.layers.forEach(L => { if (!map.getLayer(L.id)) map.addLayer(L, "c100"); });
-        }
         applyHillNight(isNightNow());          // dim the new neighbour hill(s)+forest at night
         applyKindVis("slope"); applyKindVis("extreme");   // match the current chip state
         applyKindVis("forest");                // incl. the default-ON forest toggle
