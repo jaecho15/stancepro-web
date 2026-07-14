@@ -10,7 +10,7 @@ import { WorldOutlookHero } from "./WorldOutlookHero";
 import { SeasonalOutlookCard } from "./SeasonalOutlookCard";
 import { ClimateNotesGuide, RegionClimateNotes } from "./RegionClimateNotes";
 import { SnowIndicatorsPanel } from "./SnowIndicatorsPanel";
-import { snowIndicatorPanel } from "@/lib/snow/snow-indicators";
+import { buildSnowIndicatorPanel } from "@/lib/snow/snow-indicators";
 import { useMyResorts } from "./useMyResorts";
 
 // Unified geographic browser for /snow-forecast (merges the seasonal outlook):
@@ -435,9 +435,7 @@ export function SnowBrowser({
                 )}
 
                 {(() => {
-                  const panel = snowIndicatorPanel(
-                    regionKey ? regionKey.replace(/^r:/, "") : null
-                  );
+                  const panel = buildSnowIndicatorPanel(seasonalRow);
                   return panel ? <SnowIndicatorsPanel panel={panel} /> : null;
                 })()}
 

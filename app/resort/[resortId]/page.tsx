@@ -9,7 +9,7 @@ import {
 } from "@/lib/snow/fetch";
 import { regionIdFor } from "@/lib/snow/region-locator";
 import { regionClimate } from "@/lib/snow/region-climate";
-import { snowIndicatorPanel } from "@/lib/snow/snow-indicators";
+import { buildSnowIndicatorPanel } from "@/lib/snow/snow-indicators";
 import { countryName } from "@/lib/snow/country-name";
 import { ForecastView } from "@/components/snow/ForecastView";
 import { SeasonalOutlookCard } from "@/components/snow/SeasonalOutlookCard";
@@ -41,7 +41,7 @@ export default async function ResortPage({ params }: Params) {
   const seasonalRows = await fetchSeasonalOutlooks();
   const locatedRegionId = resort.region_id ?? regionIdFor(resort.lat, resort.lon);
   const seasonal = seasonalOutlookForResort(seasonalRows, resort, locatedRegionId);
-  const indicatorPanel = snowIndicatorPanel(locatedRegionId);
+  const indicatorPanel = buildSnowIndicatorPanel(seasonal);
   const climate = regionClimate(locatedRegionId);
   const hasSeasonContent = Boolean(seasonal || indicatorPanel || climate);
 
