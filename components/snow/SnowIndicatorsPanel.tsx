@@ -148,6 +148,65 @@ function IndicatorCard({ ind }: { ind: SnowIndicator }) {
   );
 }
 
+// Traffic-light colour per snow contribution (green = favourable → red =
+// unfavourable, grey = no data). Used only for the at-a-glance dots; the
+// detailed stages keep icon + text for colour-blind readers.
+const LIGHT: Record<IndicatorStatus, string> = {
+  favourable: "#22c55e",
+  slightly_favourable: "#86efac",
+  neutral: "#f59e0b",
+  slightly_unfavourable: "#fb923c",
+  unfavourable: "#ef4444",
+  unknown: "#64748b",
+};
+
+// At-a-glance overview: a small traffic light per indicator, grouped by stage,
+// so the picture reads without expanding each stage.
+function AtAGlance({ stages }: { stages: SnowSignalStage[] }) {
+  return (
+    <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-3 space-y-1.5">
+      <p className="text-[10px] uppercase tracking-wide text-slate-500">Indicators at a glance</p>
+      {stages.map((stage) => (
+        <div key={stage.id} className="flex items-start gap-2">
+          <span className="w-20 shrink-0 text-[10px] uppercase tracking-wide text-slate-500 pt-0.5">
+            {stage.title.replace(" Background", "").replace(" Pattern", "")}
+          </span>
+          <span className="flex flex-wrap gap-x-3 gap-y-1 min-w-0">
+            {stage.indicators.map((ind) => (
+              <span
+                key={ind.id}
+                className="inline-flex items-center gap-1.5 text-[11px] text-slate-300"
+                title={`${ind.label} — ${CONTRIBUTION[ind.snowContribution].label}`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: LIGHT[ind.snowContribution] }}
+                />
+                {ind.label}
+              </span>
+            ))}
+          </span>
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-1 text-[10px] text-slate-500">
+        {(
+          [
+            ["#22c55e", "favourable"],
+            ["#f59e0b", "neutral"],
+            ["#ef4444", "unfavourable"],
+            ["#64748b", "no data"],
+          ] as const
+        ).map(([c, lbl]) => (
+          <span key={lbl} className="inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: c }} />
+            {lbl}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StageRow({ stage }: { stage: SnowSignalStage }) {
   const Icon = STAGE_ICON[stage.id];
   return (
@@ -202,6 +261,8 @@ export function SnowIndicatorsPanel({ panel }: { panel: RegionalSnowIndicatorPan
           a snowfall amount or a chance-of-snow number.
         </p>
       </div>
+
+      <AtAGlance stages={panel.stages} />
 
       <div className="space-y-2">
         {panel.stages.map((stage) => (
