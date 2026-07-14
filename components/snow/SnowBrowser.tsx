@@ -8,6 +8,7 @@ import type { BrowseResort, RegionGroup } from "@/lib/snow/region-browse";
 import type { SeasonalOutlookRow } from "@/lib/snow/types";
 import { WorldOutlookHero } from "./WorldOutlookHero";
 import { SeasonalOutlookCard } from "./SeasonalOutlookCard";
+import { RegionClimateNotes } from "./RegionClimateNotes";
 import { useMyResorts } from "./useMyResorts";
 
 // Unified geographic browser for /snow-forecast (merges the seasonal outlook):
@@ -430,6 +431,8 @@ export function SnowBrowser({
                     index={cardIndexByClimate[seasonalRow.climate_region] ?? 0}
                   />
                 )}
+
+                <RegionClimateNotes regionId={regionKey ? regionKey.replace(/^r:/, "") : null} />
 
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-500 mb-3">
