@@ -105,9 +105,14 @@ def _upsert(rows: list[dict]) -> None:
 def build_driver(region: str, profile: dict, enso_nino34: float | None,
                  current_idx: dict[str, float | None], month: int) -> dict:
     idx = profile.get("index")
+    # historical_relevance = STABILITY of the region's historical index↔snow link
+    # (distinct from predictability/confidence). Curated per verified analysis;
+    # NEVER auto-derived from raw r (trend/reanalysis artifacts overstate it).
+    relevance = profile.get("historical_relevance", "insufficient_data")
     if not idx:
         return {"index": None, "sign": None, "r": None, "predictability": None,
-                "weak": False, "in_season": _in_season(profile["hemi"], month),
+                "weak": False, "historical_relevance": relevance,
+                "in_season": _in_season(profile["hemi"], month),
                 "current_index": None, "current_signal": None, "index_series": {}}
     cur = enso_nino34 if idx == "ENSO" else current_idx.get(idx)
     in_season = _in_season(profile["hemi"], month)
@@ -118,6 +123,7 @@ def build_driver(region: str, profile: dict, enso_nino34: float | None,
     return {
         "index": idx, "sign": profile["sign"], "r": profile["r"],
         "predictability": profile["predictability"], "weak": profile["weak"],
+        "historical_relevance": relevance,
         "in_season": in_season, "current_index": cur, "current_signal": signal,
         "index_series": profile.get("index_series", {}),
     }

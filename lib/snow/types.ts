@@ -232,6 +232,9 @@ export interface ClimateDriver {
   r: number | null;                // correlation strength over the record
   predictability: "seasonal" | "subseasonal" | null; // ENSO seasonal; NAO/AO/SAM 2–4wk
   weak: boolean;                   // 0.25 ≤ |r| < 0.30 — show, but labelled weak
+  // Stability of the historical index↔snow link (distinct from predictability).
+  // Curated from verified detrend/CV analysis — never auto-derived from raw r.
+  historical_relevance?: "strong" | "moderate" | "weak" | "unstable" | "insufficient_data";
   index_series?: Record<string, number>; // year → index value (chart colouring)
   current_index?: number | null;   // latest index value
   current_signal?: "positive" | "neutral" | null; // in-season favorable flag
