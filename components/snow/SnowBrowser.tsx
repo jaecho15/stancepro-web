@@ -8,7 +8,7 @@ import type { BrowseResort, RegionGroup } from "@/lib/snow/region-browse";
 import type { SeasonalOutlookRow } from "@/lib/snow/types";
 import { WorldOutlookHero } from "./WorldOutlookHero";
 import { SeasonalOutlookCard } from "./SeasonalOutlookCard";
-import { RegionClimateNotes } from "./RegionClimateNotes";
+import { ClimateNotesGuide, RegionClimateNotes } from "./RegionClimateNotes";
 import { useMyResorts } from "./useMyResorts";
 
 // Unified geographic browser for /snow-forecast (merges the seasonal outlook):
@@ -456,6 +456,8 @@ export function SnowBrowser({
           </div>
         </div>
       )}
+
+      {!searching && <ClimateNotesGuide />}
     </div>
   );
 }

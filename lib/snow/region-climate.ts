@@ -1,16 +1,17 @@
 // Regional snowfall-climate reference notes for the seasonal outlook.
 // IMPORTANT: this is NOT a forecast. It describes the meteorological / oceanic /
 // atmospheric drivers that have historically shaped snowfall variability in each
-// region, in plain-but-technical English. Each region has ≤3 factors, and each
-// factor names the indicator, how it works, and how to read it with care. SST is
-// always framed as an incremental moisture variable given the low-level thermal
-// and circulation state — never a standalone predictor. Content is keyed by a
-// stable contentKey; REGION_ID_TO_CLIMATE maps each served region_id to one.
+// region. Each region has ≤3 factors; each factor carries a short scannable
+// label, one plain sentence of how it works (technical terms folded in), and a
+// short read-with-care caveat. SST is always framed as an incremental moisture
+// variable given the low-level thermal and circulation state — never a
+// standalone predictor. Content is keyed by a stable contentKey;
+// REGION_ID_TO_CLIMATE maps each served region_id to one.
 
 export interface ClimateFactor {
-  indicator: string;
-  mechanism: string;
-  caveat: string;
+  label: string; // short, scannable (bold in the UI)
+  mechanism: string; // one plain sentence, technical terms folded in
+  caveat: string; // how to read it with care
 }
 
 export interface RegionClimate {
@@ -18,7 +19,8 @@ export interface RegionClimate {
   factors: ClimateFactor[];
 }
 
-// Shared across every region (the card format's fixed parts).
+// Shared "how to read these" guidance — shown ONCE at page level, not repeated
+// in every region panel.
 export const WHAT_TO_LOOK_FOR = [
   "Season snowfall trend — standardized against the long-term average (z-score), not raw totals.",
   "Conditional snowfall distribution for each key index (e.g. El Niño / neutral / La Niña), with the sample size shown.",
@@ -29,7 +31,7 @@ export const RESORT_CAVEAT =
   "At the resort scale, elevation, slope aspect, and windward/leeward position relative to the range can change these outcomes substantially — neighboring resorts often differ.";
 
 export const CLIMATE_CAUTION =
-  "This is historical reference information describing the region's snowfall climate. It does not predict or guarantee any particular season's snowfall.";
+  "These are historical reference notes describing each region's snowfall climate. They do not predict or guarantee any particular season's snowfall.";
 
 const CONTENT: Record<string, RegionClimate> = {
   hokkaido: {
@@ -37,23 +39,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "Cold Siberian air crossing the relatively warm Sea of Japan and lifting over Hokkaido's ranges drives the region's famously frequent, low-density powder.",
     factors: [
       {
-        indicator: "Siberian High–Aleutian Low pressure gradient & 850 hPa northwesterly flow",
+        label: "Winter monsoon (NW flow)",
         mechanism:
-          "A strong winter monsoon (the wind roughly 1.5 km up) pushes cold air across the Sea of Japan, where it takes up moisture and builds snow-cloud bands over Hokkaido.",
+          "A strong Siberian-High–Aleutian-Low pressure gradient drives northwesterly winds (around 1.5 km up, the 850 hPa level) that pick up moisture crossing the Sea of Japan and build snow bands over Hokkaido.",
         caveat:
           "If the flow tilts too far west or north, the heaviest snow can shift to different resorts.",
       },
       {
-        indicator: "850 hPa temperature & the sea-surface-to-air temperature difference",
+        label: "Cold air over a mild sea",
         mechanism:
-          "The larger the contrast between cold air aloft and the milder sea, the stronger the heat and moisture exchange that fuels sea-effect snow.",
+          "The larger the gap between the 850 hPa air temperature and the warmer sea surface, the stronger the heat-and-moisture exchange that fuels sea-effect snow.",
         caveat:
           "A warm sea does not guarantee snow — without enough low-level cold the same setup brings rain or heavy wet snow.",
       },
       {
-        indicator: "Sea of Japan SST, sea ice & moisture flux",
+        label: "Sea moisture supply",
         mechanism:
-          "Sea-surface warmth and open water set how much moisture is available to the incoming cold air.",
+          "Sea-surface temperature (SST), sea ice and moisture flux set how much moisture the incoming cold air can tap.",
         caveat:
           "Treat SST as an add-on, not the headline — weigh it only alongside T850, wind speed and direction, and check whether it actually improves the snowfall picture.",
       },
@@ -64,25 +66,25 @@ const CONTENT: Record<string, RegionClimate> = {
       "Moist Sea-of-Japan air forced up against the mountains piles snow on the windward side, and convergence bands can bury a narrow strip.",
     factors: [
       {
-        indicator: "Northwest monsoon & the cross-range wind component",
+        label: "Cross-range winds",
         mechanism:
-          "Humid air off the Sea of Japan rises where it meets the ranges, dumping snow on the windward slopes; for the same wind speed, the part blowing perpendicular to the range matters most.",
+          "Humid Sea-of-Japan air rises where the northwest monsoon meets the ranges; for a given wind speed, the component blowing perpendicular to the range drives the windward dumps.",
         caveat:
-          "Two resorts a short distance apart can see very different totals depending on their angle to the flow.",
+          "Two resorts a short distance apart can differ sharply depending on their angle to the flow.",
       },
       {
-        indicator: "Japan-Sea Polar-air Convergence Zone (JPCZ) — position & duration",
+        label: "Convergence bands (JPCZ)",
         mechanism:
-          "Where winds converge, an intense snow-cloud band forms and concentrates heavy snow on a narrow zone.",
+          "When winds converge over the Sea of Japan (the JPCZ), an intense snow-cloud band forms and concentrates heavy snow on a narrow zone.",
         caveat:
-          "The band wanders a lot, so whether it passes over your resort matters more than the regional average.",
+          "The band wanders, so whether it passes over your resort matters more than the regional average.",
       },
       {
-        indicator: "850 hPa temperature, wet-bulb temperature & precipitation type",
+        label: "Snow-vs-rain line",
         mechanism:
-          "It can rain on the coast and lowlands while it snows up high.",
+          "It can rain on the coast and lowlands (set by the 850 hPa and wet-bulb temperature) while it snows up high.",
         caveat:
-          "When comparing seasons, look at the rain-vs-snow split and snow density, not just total precipitation.",
+          "Compare the rain-vs-snow split and snow density between seasons, not just total precipitation.",
       },
     ],
   },
@@ -91,23 +93,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "A mix of Sea-of-Japan sea-effect snow and passing low-pressure systems, sorted by which valleys and ridges face the wind.",
     factors: [
       {
-        indicator: "Sea-of-Japan lows & the winter-monsoon track",
+        label: "Two storm types",
         mechanism:
-          "Both sea-effect snow and traveling low-pressure systems deliver snow here.",
+          "Both Sea-of-Japan sea-effect snow and passing lows deliver snow here.",
         caveat:
-          "It helps to separate the two storm types — they behave differently, so analyze big-snow events by type.",
+          "Separate the two — they behave differently, so analyze big-snow events by type.",
       },
       {
-        indicator: "Orographic lift by wind direction & range sheltering",
+        label: "Wind direction & shelter",
         mechanism:
           "Whether the wind is northwest, west or southwest decides which valleys and ridges load up.",
-        caveat:
-          "Even neighboring resorts can have very different snowfall correlation.",
+        caveat: "Even neighboring resorts can correlate poorly.",
       },
       {
-        indicator: "Sub-freezing layer depth & the 0 °C level",
+        label: "Freezing level",
         mechanism:
-          "In milder spells the share falling as snow — not the precipitation total — decides the snowpack.",
+          "In mild spells the share falling as snow — set by the sub-freezing layer depth and 0 °C level — decides the snowpack, not the precipitation total.",
         caveat: "Especially important for lower-base resorts.",
       },
     ],
@@ -117,23 +118,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "Atlantic storms on a westerly/northwesterly track lift moist air onto the north-facing Alps for broad snowfalls.",
     factors: [
       {
-        indicator: "North Atlantic storm track & W/NW moisture transport",
+        label: "Atlantic westerlies",
         mechanism:
-          "When Atlantic moisture feeds the north side of the Alps, snow falls over a wide area.",
+          "West/northwesterly moisture transport from North Atlantic storms feeds the north side of the Alps for broad snowfalls.",
         caveat:
-          "If the storm track shifts north it turns milder and rain can mix in.",
+          "A northward-shifted storm track turns it milder and rain can mix in.",
       },
       {
-        indicator: "North Atlantic Oscillation (NAO) & Atlantic circulation",
+        label: "NAO background",
         mechanism:
-          "A background index for how the winter westerlies and storm track are arranged.",
+          "The North Atlantic Oscillation (NAO) sets how the winter westerlies and storm track are arranged.",
         caveat:
-          "The NAO–snowfall link varies by month and by resort, so it should not be used as a direct predictor.",
+          "The NAO–snowfall link varies by month and resort — not a direct predictor.",
       },
       {
-        indicator: "0 °C level, wet-bulb freezing level & low-level temperature",
+        label: "Snow-line height",
         mechanism:
-          "In the Alps the snow-line height can matter more than precipitation totals for natural snow and base depth.",
+          "The 0 °C level, wet-bulb freezing level and low-level temperature often matter more than precipitation totals for natural snow and base depth.",
         caveat: "Read high-altitude and valley resorts separately.",
       },
     ],
@@ -143,22 +144,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "Mediterranean lows drive southerly moisture onto the south-facing Alps — often the mirror image of the north side.",
     factors: [
       {
-        indicator: "Mediterranean lows & S/SW moisture transport",
+        label: "Mediterranean moisture",
         mechanism:
-          "Moist Mediterranean air rising on the south slopes produces heavy snow.",
+          "South/southwesterly flow from Mediterranean lows rises on the south slopes to make heavy snow.",
         caveat: "The pattern can run opposite to the northern Alps.",
       },
       {
-        indicator: "Genoa lows & Mediterranean cyclone tracks",
+        label: "Genoa lows",
         mechanism:
-          "The low center and front position produce very localized heavy snow.",
+          "The center and fronts of Genoa lows and Mediterranean cyclones produce very localized heavy snow.",
         caveat:
-          "Following the cyclone track works better than a simple regional mean sea-level pressure.",
+          "Follow the cyclone track rather than a regional mean pressure.",
       },
       {
-        indicator: "Foehn occurrence",
+        label: "Foehn split",
         mechanism:
-          "When it snows on the south side, the north side can turn dry and warm — and the reverse also happens.",
+          "When it snows on the south side, Foehn can leave the north side dry and warm — and vice versa.",
         caveat: "Don't lump the whole Alps under one index.",
       },
     ],
@@ -168,22 +169,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "Caught between Atlantic westerlies and Mediterranean easterlies — the two sides of the range snow for different reasons.",
     factors: [
       {
-        indicator: "Atlantic W/NW flow & Mediterranean easterlies",
+        label: "Two-sided flow",
         mechanism:
-          "The north and south sides get their snow from different directions.",
-        caveat: "Split the area into at least north and south Pyrenees.",
+          "The north side snows on Atlantic west/northwesterlies, the south side on Mediterranean easterlies.",
+        caveat: "Split into at least north and south Pyrenees.",
       },
       {
-        indicator: "NAO & storm track",
+        label: "NAO & storm track",
         mechanism:
-          "Describes the frequency and path of westerly storms.",
+          "The NAO describes the frequency and path of westerly storms.",
         caveat:
-          "A positive NAO does not always mean more snow at a given resort.",
+          "A positive NAO doesn't always mean more snow at a given resort.",
       },
       {
-        indicator: "0 °C level & dry-air intrusions",
+        label: "Precip-type sensitivity",
         mechanism:
-          "Being relatively far south, it is sensitive to precipitation-type changes.",
+          "Being relatively far south, the 0 °C level and dry-air intrusions swing snow versus rain.",
         caveat: "Show total precipitation and natural-snow depth separately.",
       },
     ],
@@ -193,24 +194,25 @@ const CONTENT: Record<string, RegionClimate> = {
       "Maritime Atlantic storms and orographic lift dominate; the balance of moisture and cold sets snow versus rain.",
     factors: [
       {
-        indicator: "North Atlantic storms & westerly moisture transport",
+        label: "Atlantic storms",
         mechanism:
-          "Western Norway is strongly shaped by ocean storms and orographic lift.",
+          "North Atlantic storms and westerly moisture transport, lifted by terrain, drive western-Norway snow.",
         caveat:
           "Even with heavy precipitation, coastal lowlands can see rain.",
       },
       {
-        indicator: "NAO / Arctic Oscillation & storm-belt position",
-        mechanism: "Sets the seasonal-scale circulation background.",
+        label: "NAO / AO background",
+        mechanism:
+          "The NAO and Arctic Oscillation set the seasonal-scale storm-belt position.",
         caveat:
           "Effects can differ between northern and southern Scandinavia.",
       },
       {
-        indicator: "SST coupled with low-level temperature",
+        label: "Warm sea, warm air",
         mechanism:
-          "A warm ocean supplies moisture but can also raise temperatures.",
+          "A warm ocean (SST) supplies moisture but can also raise temperatures.",
         caveat:
-          "Snow-line height and low-level thermal structure often matter more for snowfall than SST alone.",
+          "Snow-line height and low-level thermal structure often matter more for snow than SST alone.",
       },
     ],
   },
@@ -219,23 +221,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "Pacific storms and atmospheric rivers meet the mountains for large precipitation; the freezing level decides how much falls as snow.",
     factors: [
       {
-        indicator: "Pacific storm track & atmospheric rivers",
+        label: "Atmospheric rivers",
         mechanism:
-          "Strong moisture transport hitting the terrain makes large-scale precipitation.",
+          "Pacific storm tracks and atmospheric rivers deliver strong moisture transport onto the terrain for large precipitation.",
         caveat:
-          "Even with big totals, a warm atmospheric river can bring rain to the resort base.",
+          "A warm atmospheric river can bring rain to the resort base even with big totals.",
       },
       {
-        indicator: "ENSO & North Pacific circulation",
+        label: "ENSO background",
         mechanism:
-          "El Niño and La Niña shift the storm track and temperatures statistically, but the relationship varies by area and stage of the season.",
-        caveat:
-          "Don't decide the season's snow from a single index.",
+          "El Niño and La Niña shift the storm track and temperatures statistically, but the relationship varies by area and season stage.",
+        caveat: "Don't decide the season from a single index.",
       },
       {
-        indicator: "Snow-line height, wet-bulb temperature & elevation",
+        label: "Freezing level",
         mechanism:
-          "In a maritime climate the snow fraction matters more than the precipitation total.",
+          "In this maritime climate the snow fraction (snow-line height, wet-bulb temperature) matters more than the precipitation total.",
         caveat: "Read summit, mid and base separately.",
       },
     ],
@@ -245,23 +246,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "A few big atmospheric-river storms can make most of the season; wet, dense 'Sierra cement' is common.",
     factors: [
       {
-        indicator: "Atmospheric rivers & integrated vapor transport (IVT)",
+        label: "Big AR events",
         mechanism:
-          "A handful of strong storms can supply a large share of the season's snow.",
+          "A few strong atmospheric rivers — measured by integrated vapor transport (IVT) — can supply most of the season's snow.",
         caveat:
           "Event-by-event vapor transport matters more than the average number of snowy days.",
       },
       {
-        indicator: "ENSO & PDO with the Pacific storm track",
+        label: "ENSO & PDO",
         mechanism:
-          "A background for north–south shifts of the storm track.",
+          "ENSO and the Pacific Decadal Oscillation (PDO) form a background for north–south storm-track shifts.",
         caveat:
-          "The relationship is non-linear and modulated by decadal variability — avoid a simple El Niño formula.",
+          "The link is non-linear and decadally modulated — avoid a simple El Niño formula.",
       },
       {
-        indicator: "Precipitation type & snow density",
+        label: "Wet snow",
         mechanism:
-          "The Sierra sees a high share of wet snow, and the rain–snow line moves a lot in warm storms.",
+          "The Sierra sees lots of wet snow, and warm storms move the rain–snow line a lot.",
         caveat: "Show both snow depth and water content (SWE).",
       },
     ],
@@ -271,23 +272,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "Pacific air that has crossed several ranges arrives drier; cold temperatures make deep, light snow from modest moisture.",
     factors: [
       {
-        indicator: "North Pacific storms & inland moisture transport",
+        label: "Wrung-out Pacific air",
         mechanism:
-          "Air loses moisture crossing range after range, so the storm track and windward/leeward position matter.",
+          "Air loses moisture crossing range after range, so storm track and windward/leeward position govern totals.",
         caveat:
           "The same storm can be generous for one range and dry for the next.",
       },
       {
-        indicator: "ENSO & jet-stream position",
+        label: "ENSO & the jet",
         mechanism:
-          "The northern and southern Rockies can respond in opposite ways.",
+          "ENSO and jet-stream position can push the northern and southern Rockies opposite ways.",
         caveat:
           "Don't explain the whole US Rockies with one ENSO relationship.",
       },
       {
-        indicator: "Northwesterly orographic lift & snow-to-water ratio",
+        label: "Cold, light snow",
         mechanism:
-          "In cold air, little moisture can still stack up as deep, light snow.",
+          "In cold air, little moisture still stacks up deep and light (a high snow-to-water ratio).",
         caveat: "Always distinguish snow depth from SWE.",
       },
     ],
@@ -297,24 +298,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "Pacific moisture wrung out over successive ranges reloads and lifts again over the interior mountains.",
     factors: [
       {
-        indicator: "Pacific moisture & passage over successive ranges",
+        label: "Reloading moisture",
         mechanism:
-          "Moisture that crossed the coast ranges rises again over the interior ranges to make snow.",
+          "Pacific moisture wrung out over the coast ranges rises again over the interior ranges to snow.",
         caveat: "How much moisture is lost along each path matters.",
       },
       {
-        indicator: "Wind direction & range orientation",
+        label: "Wind & range angle",
         mechanism:
-          "West, southwest or northwest winds give specific resorts a strong windward effect.",
-        caveat:
-          "A resort-by-resort wind composite is more useful than a regional average.",
+          "West/southwest/northwest winds give specific resorts a strong windward effect.",
+        caveat: "A resort-by-resort wind composite beats a regional average.",
       },
       {
-        indicator: "ENSO / PNA & western-North-America circulation",
+        label: "ENSO / PNA background",
         mechanism:
-          "Provides seasonal-scale temperature and storm-track background.",
+          "ENSO and the Pacific–North American (PNA) pattern set seasonal temperature and storm-track background.",
         caveat:
-          "Individual storms are set directly by short-term lows and moisture transport.",
+          "Individual storms are set by short-term lows and moisture transport.",
       },
     ],
   },
@@ -323,20 +323,21 @@ const CONTENT: Record<string, RegionClimate> = {
       "Coastal 'Nor'easters' pairing Atlantic moisture with inland cold — plus lake-effect snow in places.",
     factors: [
       {
-        indicator: "Nor'easter track & coastal cyclogenesis",
+        label: "Nor'easters",
         mechanism:
-          "Heavy snow comes when Atlantic moisture meets inland cold air.",
+          "Coastal cyclogenesis pairs Atlantic moisture with inland cold for heavy snow.",
         caveat:
           "A small shift in the low's track hugely changes the snow / rain / ice split.",
       },
       {
-        indicator: "Arctic Oscillation (AO) / NAO & cold-air supply",
-        mechanism: "Sets whether cold air can lodge over the east.",
+        label: "Cold-air supply (AO/NAO)",
+        mechanism:
+          "The Arctic Oscillation and NAO set whether cold air can lodge over the east.",
         caveat:
-          "A negative index doesn't always mean big snow — you still need moisture and the right storm track.",
+          "A negative index alone isn't enough — you still need moisture and the right track.",
       },
       {
-        indicator: "Lake-effect & low-level thermal structure",
+        label: "Lake-effect",
         mechanism: "Some areas get lake-effect snow.",
         caveat:
           "Read the lake-to-850 hPa temperature difference, wind direction and lake ice together.",
@@ -348,23 +349,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "Southern-Ocean lows and the westerly belt feed the Southern Alps; western windward and eastern lee resorts differ.",
     factors: [
       {
-        indicator: "Southern-Ocean lows & westerly-belt position",
+        label: "Westerly belt",
         mechanism:
-          "Westerly fronts and lows supply precipitation to the Southern Alps.",
+          "Southern-Ocean lows and westerly fronts supply the Southern Alps.",
         caveat:
           "West-windward and eastern resorts respond differently.",
       },
       {
-        indicator: "Southern Annular Mode (SAM) & ENSO",
+        label: "SAM & ENSO",
         mechanism:
-          "A background for north–south shifts of the SH westerlies and circulation around New Zealand.",
+          "The Southern Annular Mode (SAM) and ENSO shift the SH westerlies and circulation around New Zealand.",
         caveat:
           "Effects vary by region and season — not a standalone predictor.",
       },
       {
-        indicator: "Snow-line height & Foehn effect",
+        label: "Foehn & snow line",
         mechanism:
-          "Eastern resorts can see air dry and warm as it crosses the Alps.",
+          "Eastern resorts can see air dry and warm crossing the Alps (Foehn).",
         caveat:
           "Front direction, temperature and the crossing process matter more than total precipitation.",
       },
@@ -375,23 +376,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "Cold fronts off the Southern Ocean bring the main natural-snow events; small temperature changes decide snow versus rain.",
     factors: [
       {
-        indicator: "Southern-Ocean cold fronts & southwesterly flow",
+        label: "Cold fronts",
         mechanism:
-          "The main natural-snow events come when cold air and moisture arrive together.",
-        caveat:
-          "Cold air alone, without moisture, gives limited snow.",
+          "Southern-Ocean cold fronts with southwesterly flow bring the main natural-snow events when cold and moisture arrive together.",
+        caveat: "Cold air without moisture gives limited snow.",
       },
       {
-        indicator: "SAM, ENSO & the Indian Ocean Dipole (IOD)",
+        label: "SAM / ENSO / IOD",
         mechanism:
-          "These can shape southeast-Australian precipitation and temperature.",
+          "The SAM, ENSO and Indian Ocean Dipole (IOD) can shape southeast-Australian precipitation and temperature.",
         caveat:
-          "The signal depends on season and the combination of indices — don't use one index.",
+          "The signal depends on season and index combination — don't use one index.",
       },
       {
-        indicator: "Wet-bulb temperature & low resort elevations",
+        label: "Marginal temperatures",
         mechanism:
-          "Small temperature changes strongly affect rain versus snow.",
+          "At these low elevations, small wet-bulb temperature changes swing rain versus snow.",
         caveat:
           "Separate natural snow, snow retention and snowmaking conditions.",
       },
@@ -402,21 +402,21 @@ const CONTENT: Record<string, RegionClimate> = {
       "Winter lows and fronts on the westerlies deliver the main snow; huge year-to-year swings are the norm.",
     factors: [
       {
-        indicator: "Southeast Pacific storm track & westerlies",
+        label: "Westerly storms",
         mechanism:
-          "Winter lows and fronts reaching the Andes bring the main snowfall.",
+          "Winter lows and fronts on the southeast-Pacific storm track bring the main snowfall.",
         caveat: "The storm belt's north–south position matters.",
       },
       {
-        indicator: "ENSO & southeast-Pacific circulation",
+        label: "El Niño tendency",
         mechanism:
           "Some El Niño winters tend to be wetter in central Chile.",
         caveat:
-          "Not every El Niño means a big season — this is a statistical tendency, not a rule.",
+          "Not every El Niño means a big season — a statistical tendency, not a rule.",
       },
       {
-        indicator: "Elevation temperature & extreme interannual variability",
-        mechanism: "The Andes have very large year-to-year swings.",
+        label: "Extreme swings",
+        mechanism: "The Andes have very large year-to-year variability.",
         caveat:
           "Show median, quantiles and dry spells, not just the average.",
       },
@@ -427,24 +427,23 @@ const CONTENT: Record<string, RegionClimate> = {
       "The Southern-Hemisphere westerlies force strong orographic precipitation on the west; the east lies in a rain shadow.",
     factors: [
       {
-        indicator: "SH westerlies & South Pacific storms",
+        label: "Orographic west, dry east",
         mechanism:
-          "Westerlies make strong orographic precipitation on the west slopes, while the east can sit in a strong rain shadow.",
-        caveat:
-          "West- and east-side resorts are almost different climates.",
+          "The SH westerlies force strong orographic precipitation on the west slopes while the east sits in a rain shadow.",
+        caveat: "West- and east-side resorts are almost different climates.",
       },
       {
-        indicator: "SAM & storm-belt latitude",
+        label: "SAM & latitude",
         mechanism:
-          "As the westerlies shift north and south, storm frequency and precipitation location change.",
+          "As the SAM shifts the westerlies north and south, storm frequency and precipitation location change.",
         caveat: "Account for latitude-dependent responses.",
       },
       {
-        indicator: "Pacific moisture, temperature & wind direction",
+        label: "Moisture & wind angle",
         mechanism:
-          "Snowfall depends on moisture inflow plus cold air and the wind's angle to the range.",
+          "Snowfall depends on Pacific moisture plus cold air and the wind's angle to the range.",
         caveat:
-          "Correlation with any single index is weaker than the direct storm-by-storm setup.",
+          "Any single index correlates weakly versus the direct storm-by-storm setup.",
       },
     ],
   },
@@ -453,24 +452,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "Westerly disturbances bring limited but cold moisture far from any ocean; low temperatures keep the snow light.",
     factors: [
       {
-        indicator: "Westerly anomalies & Central Asian lows",
+        label: "Westerly disturbances",
         mechanism:
-          "Moisture and lows arriving from the west are the main snow source.",
-        caveat:
-          "Far from oceans, moisture pathways are limited.",
+          "Lows and moisture arriving from the west are the main snow source.",
+        caveat: "Far from oceans, moisture pathways are limited.",
       },
       {
-        indicator: "North Atlantic / Eurasian teleconnections & the jet stream",
+        label: "Jet & teleconnections",
         mechanism:
-          "Large-scale circulation can steer Central Asian storm tracks.",
-        caveat:
-          "Reading 500 hPa heights and moisture transport directly beats any single index.",
+          "Large-scale circulation — read via 500 hPa heights and moisture transport — steers Central Asian storm tracks.",
+        caveat: "Direct fields beat any single teleconnection index.",
       },
       {
-        indicator: "Tien Shan orographic lift & extreme cold",
-        mechanism: "Low temperatures make low-density snow.",
-        caveat:
-          "But with limited moisture, snowfall frequency and snow depth are separate questions.",
+        label: "Cold but dry",
+        mechanism:
+          "Extreme cold makes low-density snow, but moisture is scarce.",
+        caveat: "Snowfall frequency and snow depth are separate questions here.",
       },
     ],
   },
@@ -479,24 +476,22 @@ const CONTENT: Record<string, RegionClimate> = {
       "The East Asian winter monsoon supplies cold northwesterly flow; the seas add moisture and passing lows can broaden snowfall.",
     factors: [
       {
-        indicator: "East Asian winter monsoon & northwesterly flow",
+        label: "Winter monsoon",
         mechanism:
-          "The Siberian High and East Asian pressure pattern supply cold air and wind.",
-        caveat:
-          "Korea's east coast and inland resorts respond differently.",
+          "The Siberian High and East Asian pressure pattern supply cold northwesterly flow.",
+        caveat: "Korea's east coast and inland resorts respond differently.",
       },
       {
-        indicator: "Sea of Japan / Yellow Sea moisture & sea-air difference",
+        label: "Sea moisture & sea-air gap",
         mechanism:
-          "Snow clouds forming over the seas drop snow on particular coasts and mountains depending on wind direction.",
+          "Snow clouds forming over the Sea of Japan / Yellow Sea drop snow on particular coasts and mountains by wind direction.",
         caveat: "Read SST together with low-level cold.",
       },
       {
-        indicator: "Southern-sea / East China Sea low tracks",
+        label: "Passing lows",
         mechanism:
-          "Traveling lows can bring broad natural snow.",
-        caveat:
-          "Depending on the low's track it can be rain, snow or dry.",
+          "Traveling lows on southern-sea / East China Sea tracks can bring broad natural snow.",
+        caveat: "By the low's track it can be rain, snow or dry.",
       },
     ],
   },
