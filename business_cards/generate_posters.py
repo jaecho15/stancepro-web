@@ -74,7 +74,7 @@ HEX_SIZE_REF = 145
 LOCKUP_SCALE = 0.972
 LOCKUP_SIZE_SCALE = 0.8  # logo + wordmark 20% smaller
 POSTER_LOGO_SIZE_SCALE = 1.1  # poster lockup +10%
-POSTER_WORDMARK_SIZE_SCALE = 1.32  # poster wordmark +32% (20% + 10% more)
+POSTER_WORDMARK_SIZE_SCALE = 1.0  # wordmark ink height = hexagon side length
 
 SMART_DOWNLOAD_URL = "https://stance-pro.com/d"
 

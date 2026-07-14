@@ -45,7 +45,7 @@ BLUE_LIGHT = (0, 122, 230)
 MUTED_WHITE = (255, 255, 255, 190)
 
 HORIZONTAL_STICKER_LOGO_SCALE = 0.8
-STICKER_WORDMARK_SCALE = 1.8
+STICKER_WORDMARK_SCALE = 1.0  # wordmark ink height = hexagon side length
 
 
 def fnt(path: str, size: int, index: int = 0) -> ImageFont.FreeTypeFont:
@@ -211,16 +211,14 @@ def paste_sticker_lockup(
     cy = h // 2
     base_hex_h = int(h * hex_h_ratio)
     content = _logo_content(logo)
-    base_hex_w = max(1, int(round(content.width * (base_hex_h / content.height))))
     hex_h = int(round(base_hex_h * HORIZONTAL_STICKER_LOGO_SCALE * lockup_scale))
     hex_w = max(1, int(round(content.width * (hex_h / content.height))))
     gap = px(gap_in)
     wm_h = int(round(
-        wm_v5.wordmark_height_for_hex_bbox((0, 0, base_hex_w, base_hex_h), logo_path)
+        wm_v5.wordmark_height_for_hex_bbox((0, 0, hex_w, hex_h), logo_path)
         * STICKER_WORDMARK_SCALE
-        * lockup_scale
     ))
-    max_wm_w = max(50, int(round((w - base_hex_w - gap - px(0.16)) * lockup_scale)))
+    max_wm_w = max(50, w - hex_w - gap - px(0.16))
     wordmark = load_wordmark(on_dark, wm_h, max_w=max_wm_w)
     total_w = hex_w + gap + wordmark.width
     hex_x = (w - total_w) // 2

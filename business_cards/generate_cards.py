@@ -30,7 +30,7 @@ CARD_H = int(2.0 * DPI)   # 600
 MARGIN = 60               # ~5mm safe margin
 LOCKUP_SIZE_SCALE = 0.8   # logo + wordmark 20% smaller
 LOCKUP_GAP = 8            # horizontal gap hex → wordmark (was 24)
-FRONT_WORDMARK_SCALE = 1.2   # front wordmark +20%
+FRONT_WORDMARK_SCALE = 1.0   # wordmark ink height = hexagon side length
 BACK_LOCKUP_SCALE = 0.64     # back logo + wordmark vs front (−20% × −20%)
 
 # brand colors
