@@ -154,7 +154,7 @@ class MerchSpec:
 
 
 SPECS = {
-    "snowboard": MerchSpec("sticker_snowboard", 6.0, 2.0, "Snowboard sticker"),
+    "snowboard": MerchSpec("sticker_snowboard", 6.0, 1.5, "Snowboard sticker"),
     "helmet": MerchSpec("sticker_helmet", 2.5, 2.5, "Helmet sticker"),
     "shop_qr": MerchSpec("sticker_shop_qr", 3.0, 3.0, "Shop counter QR"),
     "tee": MerchSpec("tee_chest", 11.0, 14.0, "T-shirt chest print"),
@@ -326,7 +326,7 @@ def render_snowboard_sticker_navy() -> Image.Image:
     canvas = Image.new("RGBA", (w, h), NAVY + (255,))
     draw = ImageDraw.Draw(canvas)
 
-    margin = px(0.18)
+    margin = px(0.12)
     draw_rounded_rect(
         draw,
         (margin, margin, w - margin, h - margin),
@@ -337,7 +337,11 @@ def render_snowboard_sticker_navy() -> Image.Image:
     )
 
     paste_sticker_lockup(
-        canvas, on_dark=True, lockup_scale=0.9, safe_margin_in=0.22
+        canvas,
+        on_dark=True,
+        hex_h_ratio=0.76,
+        lockup_scale=0.9,
+        safe_margin_in=0.30,
     )
     return canvas
 
@@ -348,7 +352,7 @@ def render_snowboard_sticker_white() -> Image.Image:
     canvas = Image.new("RGBA", (w, h), WHITE + (255,))
     draw = ImageDraw.Draw(canvas)
 
-    margin = px(0.18)
+    margin = px(0.12)
     draw_rounded_rect(
         draw,
         (margin, margin, w - margin, h - margin),
@@ -359,7 +363,11 @@ def render_snowboard_sticker_white() -> Image.Image:
     )
 
     paste_sticker_lockup(
-        canvas, on_dark=False, lockup_scale=0.9, safe_margin_in=0.22
+        canvas,
+        on_dark=False,
+        hex_h_ratio=0.76,
+        lockup_scale=0.9,
+        safe_margin_in=0.30,
     )
     return canvas
 
@@ -371,7 +379,13 @@ def render_snowboard_sticker_diecut(*, dark_board: bool = False) -> Image.Image:
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
-    paste_sticker_lockup(canvas, on_dark=dark_board, hex_h_ratio=0.68, gap_in=0.1)
+    paste_sticker_lockup(
+        canvas,
+        on_dark=dark_board,
+        hex_h_ratio=0.68,
+        gap_in=0.1,
+        safe_margin_in=0.30,
+    )
 
     # Cut contour hint (magenta hairline — hide when printing)
     bbox = canvas.getbbox()
@@ -561,8 +575,8 @@ def _preview_on_mat(img: Image.Image, target_w: int, label: str) -> Image.Image:
 def build_sticker_preview_sheet() -> Image.Image:
     """Composite all sticker variants for brand review (2-column layout)."""
     items: list[tuple[str, Image.Image]] = [
-        ("Snowboard — navy 6×2 in", render_snowboard_sticker_navy()),
-        ("Snowboard — white 6×2 in", render_snowboard_sticker_white()),
+        ("Snowboard — navy 6×1.5 in", render_snowboard_sticker_navy()),
+        ("Snowboard — white 6×1.5 in", render_snowboard_sticker_white()),
         ("Snowboard — die-cut vinyl (light board)", render_snowboard_sticker_diecut()),
         ("Snowboard — die-cut vinyl (dark board)", render_snowboard_sticker_diecut(dark_board=True)),
         ("Helmet — full-color hex", render_helmet_sticker_hex()),
@@ -598,10 +612,10 @@ def build_sticker_preview_sheet() -> Image.Image:
 
 def main() -> None:
     outputs = [
-        ("sticker_snowboard_navy_6x2in_300dpi.png", render_snowboard_sticker_navy()),
-        ("sticker_snowboard_white_6x2in_300dpi.png", render_snowboard_sticker_white()),
-        ("sticker_snowboard_diecut_6x2in_300dpi.png", render_snowboard_sticker_diecut()),
-        ("sticker_snowboard_diecut_dark_board_6x2in_300dpi.png", render_snowboard_sticker_diecut(dark_board=True)),
+        ("sticker_snowboard_navy_6x1.5in_300dpi.png", render_snowboard_sticker_navy()),
+        ("sticker_snowboard_white_6x1.5in_300dpi.png", render_snowboard_sticker_white()),
+        ("sticker_snowboard_diecut_6x1.5in_300dpi.png", render_snowboard_sticker_diecut()),
+        ("sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png", render_snowboard_sticker_diecut(dark_board=True)),
         ("sticker_helmet_hex_2.5in_300dpi.png", render_helmet_sticker_hex()),
         ("sticker_helmet_white_2.5in_300dpi.png", render_helmet_sticker_white()),
         ("sticker_helmet_badge_2.5in_300dpi.png", render_helmet_sticker_badge()),
