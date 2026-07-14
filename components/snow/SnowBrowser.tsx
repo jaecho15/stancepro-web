@@ -9,6 +9,8 @@ import type { SeasonalOutlookRow } from "@/lib/snow/types";
 import { WorldOutlookHero } from "./WorldOutlookHero";
 import { SeasonalOutlookCard } from "./SeasonalOutlookCard";
 import { ClimateNotesGuide, RegionClimateNotes } from "./RegionClimateNotes";
+import { SnowIndicatorsPanel } from "./SnowIndicatorsPanel";
+import { snowIndicatorPanel } from "@/lib/snow/snow-indicators";
 import { useMyResorts } from "./useMyResorts";
 
 // Unified geographic browser for /snow-forecast (merges the seasonal outlook):
@@ -431,6 +433,13 @@ export function SnowBrowser({
                     index={cardIndexByClimate[seasonalRow.climate_region] ?? 0}
                   />
                 )}
+
+                {(() => {
+                  const panel = snowIndicatorPanel(
+                    regionKey ? regionKey.replace(/^r:/, "") : null
+                  );
+                  return panel ? <SnowIndicatorsPanel panel={panel} /> : null;
+                })()}
 
                 <RegionClimateNotes regionId={regionKey ? regionKey.replace(/^r:/, "") : null} />
 
