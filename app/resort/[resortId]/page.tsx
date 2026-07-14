@@ -8,9 +8,13 @@ import {
   seasonalOutlookForResort,
 } from "@/lib/snow/fetch";
 import { regionIdFor } from "@/lib/snow/region-locator";
+import { regionClimate } from "@/lib/snow/region-climate";
+import { snowIndicatorPanel } from "@/lib/snow/snow-indicators";
 import { countryName } from "@/lib/snow/country-name";
 import { ForecastView } from "@/components/snow/ForecastView";
 import { SeasonalOutlookCard } from "@/components/snow/SeasonalOutlookCard";
+import { SnowIndicatorsPanel } from "@/components/snow/SnowIndicatorsPanel";
+import { ClimateNotesGuide, RegionClimateNotes } from "@/components/snow/RegionClimateNotes";
 import { SaveResortButton } from "@/components/snow/SaveResortButton";
 import { ResortTabs } from "@/components/resort/ResortTabs";
 
@@ -37,6 +41,9 @@ export default async function ResortPage({ params }: Params) {
   const seasonalRows = await fetchSeasonalOutlooks();
   const locatedRegionId = resort.region_id ?? regionIdFor(resort.lat, resort.lon);
   const seasonal = seasonalOutlookForResort(seasonalRows, resort, locatedRegionId);
+  const indicatorPanel = snowIndicatorPanel(locatedRegionId);
+  const climate = regionClimate(locatedRegionId);
+  const hasSeasonContent = Boolean(seasonal || indicatorPanel || climate);
 
   const facts: { label: string; value: string }[] = [
     { label: "Country", value: countryName(resort.country_code) },
@@ -102,8 +109,13 @@ export default async function ResortPage({ params }: Params) {
             resortName={resort.display_name}
             forecast={<ForecastView resort={resort} />}
             season={
-              seasonal ? (
-                <SeasonalOutlookCard row={seasonal} />
+              hasSeasonContent ? (
+                <div className="space-y-5">
+                  {seasonal && <SeasonalOutlookCard row={seasonal} />}
+                  {indicatorPanel && <SnowIndicatorsPanel panel={indicatorPanel} />}
+                  {climate && <RegionClimateNotes regionId={locatedRegionId} />}
+                  {climate && <ClimateNotesGuide />}
+                </div>
               ) : (
                 <div className="glass rounded-2xl p-8 text-slate-400">
                   No seasonal outlook covers this region yet — the network only
