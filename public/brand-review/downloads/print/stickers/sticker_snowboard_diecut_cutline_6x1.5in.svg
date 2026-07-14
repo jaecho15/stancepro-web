@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+  width="6in" height="1.5in"
+  viewBox="0 0 1800 450">
+  <rect id="CutContour" x="75.5" y="66.5"
+    width="1650" height="318"
+    rx="30" ry="30" fill="none"
+    stroke="#FF00FF" stroke-width="1.04167" />
+</svg>

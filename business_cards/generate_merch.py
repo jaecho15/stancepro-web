@@ -376,7 +376,10 @@ def render_snowboard_sticker_white() -> Image.Image:
 
 
 def render_snowboard_sticker_diecut(
-    *, dark_board: bool = False, spec_key: str = "snowboard"
+    *,
+    dark_board: bool = False,
+    spec_key: str = "snowboard",
+    include_cut_contour: bool = False,
 ) -> Image.Image:
     """Transparent background for vinyl on boards; light ink variant reads on dark boards."""
     spec = SPECS[spec_key]
@@ -392,16 +395,17 @@ def render_snowboard_sticker_diecut(
         safe_margin_in=0.30,
     )
 
-    # Cut contour hint (magenta hairline — hide when printing)
-    bbox = canvas.getbbox()
-    if bbox:
-        pad = px(0.125)
-        draw.rounded_rectangle(
-            (bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad),
-            radius=px(0.1),
-            outline=(255, 0, 255, 180),
-            width=1,
-        )
+    if include_cut_contour:
+        # Review-only contour hint. Production artwork keeps this line separate.
+        bbox = canvas.getbbox()
+        if bbox:
+            pad = px(0.125)
+            draw.rounded_rectangle(
+                (bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad),
+                radius=px(0.1),
+                outline=(255, 0, 255, 180),
+                width=1,
+            )
     return canvas
 
 
@@ -582,16 +586,28 @@ def build_sticker_preview_sheet() -> Image.Image:
     items: list[tuple[str, Image.Image]] = [
         ("Snowboard — navy 6×1.5 in", render_snowboard_sticker_navy()),
         ("Snowboard — white 6×1.5 in", render_snowboard_sticker_white()),
-        ("Die-cut 6×1.5 — light board", render_snowboard_sticker_diecut()),
-        ("Die-cut 6×1.5 — dark board", render_snowboard_sticker_diecut(dark_board=True)),
+        (
+            "Die-cut 6×1.5 — light board",
+            render_snowboard_sticker_diecut(include_cut_contour=True),
+        ),
+        (
+            "Die-cut 6×1.5 — dark board",
+            render_snowboard_sticker_diecut(
+                dark_board=True, include_cut_contour=True
+            ),
+        ),
         (
             "Die-cut 10×2.5 — light board",
-            render_snowboard_sticker_diecut(spec_key="snowboard_large"),
+            render_snowboard_sticker_diecut(
+                spec_key="snowboard_large", include_cut_contour=True
+            ),
         ),
         (
             "Die-cut 10×2.5 — dark board",
             render_snowboard_sticker_diecut(
-                dark_board=True, spec_key="snowboard_large"
+                dark_board=True,
+                spec_key="snowboard_large",
+                include_cut_contour=True,
             ),
         ),
         ("Helmet — full-color hex", render_helmet_sticker_hex()),

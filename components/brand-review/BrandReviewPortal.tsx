@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MessageSquare, Star } from "lucide-react";
+import { Download, FileArchive, MessageSquare, Star } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { InternalChrome } from "@/components/internal/InternalChrome";
 import { useInternalAuth } from "@/hooks/useInternalAuth";
@@ -16,6 +16,7 @@ import {
 import {
   BRAND_REVIEW_ASSETS,
   BRAND_REVIEW_CATEGORY_LABELS,
+  BRAND_PRINT_PACKAGES,
   type BrandReviewAsset,
   type BrandReviewCategory,
 } from "@/lib/brand-review-assets";
@@ -182,6 +183,22 @@ function AssetReviewCard({
           <h3 className="text-lg font-semibold text-white">{asset.label}</h3>
           <p className="text-xs text-slate-400">{asset.slug}</p>
         </div>
+
+        {asset.printFiles?.length ? (
+          <div className="flex flex-wrap gap-2">
+            {asset.printFiles.map((file) => (
+              <a
+                key={file.path}
+                href={file.path}
+                download
+                className="inline-flex items-center gap-2 rounded-lg border border-brand-400/40 bg-brand-500/10 px-3 py-2 text-sm font-medium text-brand-200 transition-colors hover:bg-brand-500/20"
+              >
+                <Download className="h-4 w-4" />
+                {file.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
 
         <TeamAverage value={teamAverage} />
 
@@ -408,6 +425,31 @@ export function BrandReviewPortal() {
           to pick Michroma v5 vs Microgramma — business cards and posters
           separately.
         </p>
+
+        <section className="mb-8 rounded-2xl border border-brand-400/25 bg-[#1a2e61]/50 p-5">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-white">
+              Print-ready downloads
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Original print files, separated die-cut contours, and printer
+              notes.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {BRAND_PRINT_PACKAGES.map((pack) => (
+              <a
+                key={pack.path}
+                href={pack.path}
+                download
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-500"
+              >
+                <FileArchive className="h-4 w-4" />
+                {pack.label}
+              </a>
+            ))}
+          </div>
+        </section>
 
         <div className="mb-8 flex flex-wrap gap-2">
           <FilterPill
