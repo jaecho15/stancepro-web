@@ -153,6 +153,10 @@ export interface SeasonalSignal {
   probabilities: { above: number; near: number; below: number };
   analogs: SeasonalAnalog[];
   analog_summary: { above: number; near: number; below: number; mean_pct: number };
+  // Developing-event context: the tercile probabilities stay on the calibrated
+  // 3-month ONI (`oni`); `monthly` (latest month) leads it when an event is
+  // fast-changing. Shown as a note, never folded into the probabilities.
+  momentum?: { state: "strengthening" | "steady" | "weakening"; monthly: number; oni: number };
 }
 
 export interface SeasonalWatchFactor {

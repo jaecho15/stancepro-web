@@ -55,6 +55,8 @@ IDX_URL = {
     "SAM": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/aao/monthly.aao.index.b79.current.ascii",
 }
 ONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
+# Monthly Niño-3.4 (fresher than the 3-month ONI) — for the developing-event note.
+NINO34_MTH_URL = "https://www.cpc.ncep.noaa.gov/data/indices/ersst5.nino.mth.91-20.ascii"
 # "Favorable now" needs the index to actually be in a phase, not just off zero.
 PHASE_MIN = {"ENSO": 0.5, "NAO": 0.3, "AO": 0.3, "SAM": 0.3}
 
@@ -76,8 +78,8 @@ def _latest3(url: str) -> float | None:
         return None
 
 
-def _current_oni() -> float | None:
-    """Latest ONI (3-month ERSST Niño-3.4 anomaly) — the live ENSO state."""
+def _oni_series() -> list[float]:
+    """ONI (3-month ERSST Niño-3.4 anomaly) series, oldest→newest."""
     try:
         vals = []
         for line in requests.get(ONI_URL, timeout=TIMEOUT_S).text.split("\n")[1:]:
@@ -87,20 +89,61 @@ def _current_oni() -> float | None:
                     vals.append(float(p[3]))
                 except ValueError:
                     continue
-        return round(vals[-1], 2) if vals else None
+        return vals
+    except requests.RequestException:
+        return []
+
+
+def _current_oni() -> float | None:
+    s = _oni_series()
+    return round(s[-1], 2) if s else None
+
+
+def _latest_nino34_monthly() -> float | None:
+    """Latest MONTHLY Niño-3.4 anomaly (last column) — leads the 3-month ONI."""
+    try:
+        anom = []
+        for line in requests.get(NINO34_MTH_URL, timeout=TIMEOUT_S).text.split("\n")[1:]:
+            p = line.split()
+            if len(p) == 10:
+                try:
+                    anom.append(float(p[9]))
+                except ValueError:
+                    continue
+        return round(anom[-1], 2) if anom else None
     except requests.RequestException:
         return None
+
+
+def enso_momentum(oni_series: list[float], monthly: float | None) -> dict | None:
+    """Honest developing-event context — the 3-month ONI lags a fast-changing
+    event, so flag when the latest month diverges from it. Does NOT alter the
+    calibrated tercile probabilities (those stay on the 3-month ONI)."""
+    if not oni_series or monthly is None:
+        return None
+    oni = oni_series[-1]
+    trend = oni - oni_series[-3] if len(oni_series) >= 3 else 0.0
+    gap = monthly - oni
+    if gap > 0.25 and trend > 0.1:
+        state = "strengthening"
+    elif gap < -0.25 and trend < -0.1:
+        state = "weakening"
+    else:
+        state = "steady"
+    return {"state": state, "monthly": round(monthly, 2), "oni": round(oni, 2)}
 
 
 def _normal_cdf(x: float) -> float:
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
-def enso_signal(profile: dict, nino34: float | None) -> dict | None:
+def enso_signal(profile: dict, nino34: float | None, momentum: dict | None = None) -> dict | None:
     """Served ENSO tercile lean for seasonal-predictable ENSO regions (Andes).
     Mirrors the Vercel enso-network core: mu = slope*(nino/nino_sd); tercile
     probabilities from the region's ERA5-Land-derived boundaries + residual.
-    Fires only on a real ENSO event. slope is the LOOCV-shrunk (honest) effect."""
+    Fires only on a real ENSO event. slope is the LOOCV-shrunk (honest) effect.
+    `momentum` is attached as developing-event context only — probabilities stay
+    on the calibrated 3-month ONI (nino34)."""
     s = profile.get("enso_serving")
     if not s or profile.get("index") != "ENSO" or nino34 is None or abs(nino34) < PHASE_MIN["ENSO"]:
         return None
@@ -113,11 +156,14 @@ def enso_signal(profile: dict, nino34: float | None) -> dict | None:
             else "below" if p_below > p_above + 0.05 else "near")
     # Andes lean is regression-based (not analog-matched); ship empty analogs so
     # the SeasonalSignal contract holds and the card's analog section stays hidden.
-    return {"driver": "enso",
-            "probabilities": {"above": round(p_above, 3), "near": round(p_near, 3),
-                              "below": round(p_below, 3)},
-            "lean": lean, "confidence": s.get("confidence", "medium"),
-            "analogs": [], "analog_summary": {"above": 0, "near": 0, "below": 0, "mean_pct": 0.0}}
+    out = {"driver": "enso",
+           "probabilities": {"above": round(p_above, 3), "near": round(p_near, 3),
+                             "below": round(p_below, 3)},
+           "lean": lean, "confidence": s.get("confidence", "medium"),
+           "analogs": [], "analog_summary": {"above": 0, "near": 0, "below": 0, "mean_pct": 0.0}}
+    if momentum is not None:
+        out["momentum"] = momentum
+    return out
 
 
 def _in_season(hemi: str, month: int) -> bool:
@@ -181,7 +227,9 @@ def run() -> dict:
     month = datetime.now(tz=timezone.utc).month
     now = datetime.now(tz=timezone.utc).isoformat()
     current_idx = {k: _latest3(u) for k, u in IDX_URL.items()}
-    nino34_live = _current_oni()
+    oni_series = _oni_series()
+    nino34_live = round(oni_series[-1], 2) if oni_series else None
+    momentum = enso_momentum(oni_series, _latest_nino34_monthly())
     rows = _seasonal_rows()
     merged, skipped, errors, signalled = [], 0, {}, []
     out_rows = []
@@ -199,7 +247,7 @@ def run() -> dict:
         payload["driver"] = driver
         # Validated seasonal ENSO tercile lean (Andes El Niño→wet); preserves the
         # existing driver/history/in-season blocks (no clobber of the other layers).
-        sig = enso_signal(profile, enso)
+        sig = enso_signal(profile, enso, momentum)
         if sig is not None:
             payload["signal"] = sig
             signalled.append(region)
@@ -217,7 +265,8 @@ def run() -> dict:
     except Exception as exc:  # noqa: BLE001
         errors["upsert"] = f"{type(exc).__name__}: {exc}"
     return {"merged": merged, "skipped_no_profile": skipped, "signalled": signalled,
-            "current_index": current_idx, "nino34": nino34_live, "month": month, "errors": errors}
+            "current_index": current_idx, "nino34": nino34_live, "momentum": momentum,
+            "month": month, "errors": errors}
 
 
 class handler(BaseHTTPRequestHandler):

@@ -725,6 +725,17 @@ export function SeasonalOutlookCard({
         <>
           <Divider />
           <TercileBar signal={signal} />
+          {signal.momentum && signal.momentum.state !== "steady" && (
+            <p className="text-[11px] text-amber-500/80">
+              {signal.momentum.oni > 0 ? "El Niño" : "La Niña"}{" "}
+              {signal.momentum.state === "strengthening" ? "strengthening" : "easing"} — latest
+              month {signal.momentum.monthly > 0 ? "+" : ""}
+              {signal.momentum.monthly.toFixed(1)} vs 3-mo{" "}
+              {signal.momentum.oni > 0 ? "+" : ""}
+              {signal.momentum.oni.toFixed(1)}. The lean uses the 3-month value; a{" "}
+              {signal.momentum.state === "strengthening" ? "firming" : "fading"} event may shift it.
+            </p>
+          )}
           {!compact && signal.analogs.length > 0 && (
             <>
               <Divider />
