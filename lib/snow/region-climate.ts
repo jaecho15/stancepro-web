@@ -36,12 +36,12 @@ export const CLIMATE_CAUTION =
 const CONTENT: Record<string, RegionClimate> = {
   hokkaido: {
     summary:
-      "Cold Siberian air crossing the relatively warm Sea of Japan and lifting over Hokkaido's ranges drives the region's famously frequent, low-density powder.",
+      "Cold Siberian air crossing the relatively warm East Sea / Sea of Japan and lifting over Hokkaido's ranges drives the region's famously frequent, low-density powder.",
     factors: [
       {
         label: "Winter monsoon (NW flow)",
         mechanism:
-          "A strong Siberian-High–Aleutian-Low pressure gradient drives northwesterly winds (around 1.5 km up, the 850 hPa level) that pick up moisture crossing the Sea of Japan and build snow bands over Hokkaido.",
+          "A strong Siberian-High–Aleutian-Low pressure gradient drives northwesterly winds (around 1.5 km up, the 850 hPa level) that pick up moisture crossing the East Sea / Sea of Japan and build snow bands over Hokkaido.",
         caveat:
           "If the flow tilts too far west or north, the heaviest snow can shift to different resorts.",
       },
@@ -63,19 +63,19 @@ const CONTENT: Record<string, RegionClimate> = {
   },
   tohoku: {
     summary:
-      "Moist Sea-of-Japan air forced up against the mountains piles snow on the windward side, and convergence bands can bury a narrow strip.",
+      "Moist air off the East Sea / Sea of Japan, forced up against the mountains, piles snow on the windward side, and convergence bands can bury a narrow strip.",
     factors: [
       {
         label: "Cross-range winds",
         mechanism:
-          "Humid Sea-of-Japan air rises where the northwest monsoon meets the ranges; for a given wind speed, the component blowing perpendicular to the range drives the windward dumps.",
+          "Humid air off the East Sea / Sea of Japan rises where the northwest monsoon meets the ranges; for a given wind speed, the component blowing perpendicular to the range drives the windward dumps.",
         caveat:
           "Two resorts a short distance apart can differ sharply depending on their angle to the flow.",
       },
       {
         label: "Convergence bands (JPCZ)",
         mechanism:
-          "When winds converge over the Sea of Japan (the JPCZ), an intense snow-cloud band forms and concentrates heavy snow on a narrow zone.",
+          "When winds converge over the East Sea / Sea of Japan (the JPCZ), an intense snow-cloud band forms and concentrates heavy snow on a narrow zone.",
         caveat:
           "The band wanders, so whether it passes over your resort matters more than the regional average.",
       },
@@ -90,12 +90,12 @@ const CONTENT: Record<string, RegionClimate> = {
   },
   central_japan: {
     summary:
-      "A mix of Sea-of-Japan sea-effect snow and passing low-pressure systems, sorted by which valleys and ridges face the wind.",
+      "A mix of East Sea / Sea of Japan sea-effect snow and passing low-pressure systems, sorted by which valleys and ridges face the wind.",
     factors: [
       {
         label: "Two storm types",
         mechanism:
-          "Both Sea-of-Japan sea-effect snow and passing lows deliver snow here.",
+          "Both East Sea / Sea of Japan sea-effect snow and passing lows deliver snow here.",
         caveat:
           "Separate the two — they behave differently, so analyze big-snow events by type.",
       },
@@ -484,7 +484,7 @@ const CONTENT: Record<string, RegionClimate> = {
       {
         label: "Sea moisture & sea-air gap",
         mechanism:
-          "Snow clouds forming over the Sea of Japan / Yellow Sea drop snow on particular coasts and mountains by wind direction.",
+          "Snow clouds forming over the East Sea / Sea of Japan and the Yellow Sea drop snow on particular coasts and mountains by wind direction.",
         caveat: "Read SST together with low-level cold.",
       },
       {

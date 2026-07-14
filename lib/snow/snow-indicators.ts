@@ -104,42 +104,30 @@ function stageStatus(stages: SnowSignalStage[], id: StageId): SignalStageStatus 
   return stages.find((s) => s.id === id)?.status ?? null;
 }
 
+// Two-stage summary: seasonal background + developing (2–6 week) pattern. The
+// short range (next ~2 weeks) is the resort's 16-day forecast, so summaries
+// point there rather than restating it.
 export function generateOverallSummary(stages: SnowSignalStage[]): string {
   const seasonal = stageStatus(stages, "seasonal");
   const developing = stageStatus(stages, "developing");
-  const setup = stageStatus(stages, "snow_setup");
+  const shortRange = " For the next two weeks, see the resort's 16-day forecast.";
 
-  if (setup === "active") {
-    return "A snow-supporting setup is active in the short range — see the resort's 16-day forecast for detail.";
+  if (developing === "conflicting") {
+    return "Medium-range signals are present but the models disagree, so confidence is low." + shortRange;
   }
-  if (developing === "conflicting" || setup === "conflicting") {
-    return "Some snow indicators are present, but the models disagree, so confidence in the current signal is low.";
+  if (seasonal === "favourable" && (developing === "detected" || developing === "emerging")) {
+    return "The seasonal background is favourable and a medium-range pattern is starting to support it." + shortRange;
   }
-  if (
-    seasonal === "favourable" &&
-    (developing === "emerging" || developing === "detected" || developing === "weak") &&
-    (setup === "not_detected" || setup === "incomplete")
-  ) {
-    return "The seasonal background is relatively favourable, but no near-term pattern to support actual snowfall has established yet.";
+  if (seasonal === "favourable") {
+    return "The seasonal background is relatively favourable, but no medium-range pattern to support it has established yet." + shortRange;
   }
-  if (
-    (seasonal === "neutral" || seasonal === "mixed") &&
-    developing === "detected" &&
-    setup === "possible"
-  ) {
-    return "The seasonal background is neutral, but over the coming weeks cold air and storm tracks are showing signs of aligning for snow.";
+  if ((seasonal === "neutral" || seasonal === "mixed") && (developing === "detected" || developing === "emerging")) {
+    return "The seasonal background is neutral, but a medium-range pattern is showing signs of turning favourable." + shortRange;
   }
-  if (setup === "possible" || setup === "incomplete") {
-    return "Parts of a snow setup are appearing in the medium range, but not all of the ingredients are in place yet.";
+  if (seasonal === "unfavourable") {
+    return "The seasonal background is leaning unfavourable this season." + shortRange;
   }
-  if (
-    (seasonal === "unfavourable" || seasonal === "neutral") &&
-    (developing === "not_detected" || developing === "weak") &&
-    setup === "not_detected"
-  ) {
-    return "No supportive signals stand out across the seasonal, medium- or short-range windows right now.";
-  }
-  return "Signals are mixed across the three lead times — expand the stages below for the detail.";
+  return "The seasonal background shows no strong lean, and no medium-range pattern stands out yet." + shortRange;
 }
 
 // --- DEMO data -------------------------------------------------------------
@@ -187,7 +175,7 @@ const NISEKO: RegionalSnowIndicatorPanel = {
         },
         {
           id: "sea_of_japan_sst",
-          label: "Sea of Japan SST (add-on)",
+          label: "East Sea / Sea of Japan SST (add-on)",
           category: "moisture",
           currentValue: "Slightly warm",
           currentCondition: "Slightly above normal",
@@ -218,64 +206,6 @@ const NISEKO: RegionalSnowIndicatorPanel = {
           historicalRelevance: "insufficient_data",
           description:
             "MJO, blocking, jet position and ensemble agreement are not modelled/served for the 2–6 week window yet.",
-          updatedAt: "2026-07-14",
-        },
-      ],
-    },
-    {
-      id: "snow_setup",
-      title: "Snow Setup",
-      leadTimeLabel: "Days 7–14",
-      status: "incomplete",
-      confidence: "moderate",
-      summary: "Temperature and wind look favourable, but the moisture signal is not confirmed.",
-      indicators: [
-        {
-          id: "t850",
-          label: "T850 anomaly",
-          category: "temperature",
-          currentValue: "Below normal",
-          currentCondition: "Below normal",
-          snowContribution: "favourable",
-          confidence: "high",
-          historicalRelevance: "strong",
-          description: "Cold enough at ~1.5 km up for snow rather than rain.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "nw_flow",
-          label: "Northwest flow",
-          category: "wind",
-          currentValue: "Strengthening",
-          currentCondition: "Strengthening",
-          snowContribution: "favourable",
-          confidence: "moderate",
-          historicalRelevance: "strong",
-          description: "A stronger cross-sea northwesterly builds sea-effect snow bands.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "moisture",
-          label: "Moisture transport",
-          category: "moisture",
-          currentValue: "Near normal",
-          currentCondition: "Near normal",
-          snowContribution: "neutral",
-          confidence: "moderate",
-          historicalRelevance: "moderate",
-          description: "Moisture supply is not yet clearly above normal.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "snowline",
-          label: "Snowline",
-          category: "snowline",
-          currentValue: "Below normal",
-          currentCondition: "Below normal",
-          snowContribution: "favourable",
-          confidence: "moderate",
-          historicalRelevance: "strong",
-          description: "A low snow line keeps precipitation as snow to the base.",
           updatedAt: "2026-07-14",
         },
       ],
@@ -346,53 +276,6 @@ const HAKUBA: RegionalSnowIndicatorPanel = {
         },
       ],
     },
-    {
-      id: "snow_setup",
-      title: "Snow Setup",
-      leadTimeLabel: "Days 7–14",
-      status: "conflicting",
-      confidence: "low",
-      summary: "Ensemble members disagree on the storm track and freezing level.",
-      indicators: [
-        {
-          id: "sea_of_japan_low",
-          label: "Sea-of-Japan low track",
-          category: "storm_track",
-          currentValue: "Uncertain",
-          currentCondition: "Uncertain",
-          snowContribution: "unknown",
-          confidence: "low",
-          historicalRelevance: "moderate",
-          description: "Members split between sea-effect and passing-low regimes.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "orographic",
-          label: "NW / W orographic lift",
-          category: "terrain",
-          currentValue: "Marginal",
-          currentCondition: "Marginal",
-          snowContribution: "slightly_favourable",
-          confidence: "low",
-          historicalRelevance: "strong",
-          description: "Lift depends on which wind direction wins out.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "freezing_level",
-          label: "0 °C level",
-          category: "snowline",
-          currentValue: "Above normal",
-          currentCondition: "Above normal",
-          snowContribution: "slightly_unfavourable",
-          confidence: "moderate",
-          historicalRelevance: "strong",
-          description: "A higher freezing level risks rain at lower-base resorts.",
-          updatedAt: "2026-07-11",
-          stale: true,
-        },
-      ],
-    },
   ],
 };
 
@@ -454,52 +337,6 @@ const WHISTLER: RegionalSnowIndicatorPanel = {
           confidence: "insufficient_data",
           historicalRelevance: "insufficient_data",
           description: "MJO, blocking and jet-position signals are not served yet.",
-          updatedAt: "2026-07-14",
-        },
-      ],
-    },
-    {
-      id: "snow_setup",
-      title: "Snow Setup",
-      leadTimeLabel: "Days 3–10",
-      status: "active",
-      confidence: "moderate",
-      summary: "An atmospheric river is aligned with the terrain, but the freezing level is high.",
-      indicators: [
-        {
-          id: "ivt",
-          label: "Atmospheric river / IVT",
-          category: "moisture",
-          currentValue: "Above normal",
-          currentCondition: "Above normal",
-          snowContribution: "favourable",
-          confidence: "high",
-          historicalRelevance: "strong",
-          description: "Strong integrated vapor transport aimed at the coast ranges.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "wet_bulb",
-          label: "Freezing level / wet-bulb",
-          category: "snowline",
-          currentValue: "Above normal",
-          currentCondition: "Above normal",
-          snowContribution: "slightly_unfavourable",
-          confidence: "moderate",
-          historicalRelevance: "strong",
-          description: "A warm river can bring rain to the base even as it snows up top.",
-          updatedAt: "2026-07-14",
-        },
-        {
-          id: "coast_wind",
-          label: "Coast-range wind direction",
-          category: "wind",
-          currentValue: "Favourable",
-          currentCondition: "Onshore, up-valley",
-          snowContribution: "favourable",
-          confidence: "moderate",
-          historicalRelevance: "moderate",
-          description: "Onshore flow maximizes orographic lift over the terrain.",
           updatedAt: "2026-07-14",
         },
       ],
