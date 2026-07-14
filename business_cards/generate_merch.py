@@ -203,6 +203,7 @@ def paste_sticker_lockup(
     hex_h_ratio: float = 0.62,
     gap_in: float = 0.12,
     lockup_scale: float = 1.0,
+    safe_margin_in: float = 0.16,
 ) -> None:
     """Centered hex + STANCEPRO lockup for snowboard stickers."""
     logo_path = LOGO_DARK if on_dark else LOGO_LIGHT
@@ -212,15 +213,31 @@ def paste_sticker_lockup(
     base_hex_h = int(h * hex_h_ratio)
     content = _logo_content(logo)
     hex_h = int(round(base_hex_h * HORIZONTAL_STICKER_LOGO_SCALE * lockup_scale))
-    hex_w = max(1, int(round(content.width * (hex_h / content.height))))
     gap = px(gap_in)
-    wm_h = int(round(
-        wm_v5.wordmark_height_for_hex_bbox((0, 0, hex_w, hex_h), logo_path)
-        * STICKER_WORDMARK_SCALE
-    ))
-    max_wm_w = max(50, w - hex_w - gap - px(0.16))
-    wordmark = load_wordmark(on_dark, wm_h, max_w=max_wm_w)
+
+    def build_lockup(target_hex_h: int) -> tuple[int, Image.Image]:
+        target_hex_w = max(1, int(round(content.width * (target_hex_h / content.height))))
+        target_wm_h = int(round(
+            wm_v5.wordmark_height_for_hex_bbox(
+                (0, 0, target_hex_w, target_hex_h), logo_path
+            )
+            * STICKER_WORDMARK_SCALE
+        ))
+        return target_hex_w, load_wordmark(on_dark, target_wm_h)
+
+    hex_w, wordmark = build_lockup(hex_h)
+    available_w = w - 2 * px(safe_margin_in)
     total_w = hex_w + gap + wordmark.width
+    if total_w > available_w:
+        scale = (available_w - gap) / (hex_w + wordmark.width)
+        hex_h = max(1, int(hex_h * scale))
+        hex_w, wordmark = build_lockup(hex_h)
+        total_w = hex_w + gap + wordmark.width
+        while total_w > available_w and hex_h > 1:
+            hex_h -= 1
+            hex_w, wordmark = build_lockup(hex_h)
+            total_w = hex_w + gap + wordmark.width
+
     hex_x = (w - total_w) // 2
     hex_bbox = paste_logo_content_centered_v(canvas, logo, hex_x, hex_h, cy)
     wm_v5.paste_wordmark(canvas, wordmark, hex_bbox[2] + gap, cy)
@@ -246,16 +263,34 @@ def render_shop_qr_sticker() -> Image.Image:
     logo = Image.open(LOGO_DARK).convert("RGBA")
     logo_h = int(size * 0.14)
     content = _logo_content(logo)
-    logo_w = max(1, int(round(content.width * (logo_h / content.height))))
     lockup_cy = int(size * 0.17)
     lockup_gap = int(size * 0.022)
-    wm_h = int(round(
-        wm_v5.wordmark_height_for_hex_bbox((0, 0, logo_w, logo_h), LOGO_DARK)
-        * STICKER_WORDMARK_SCALE
-    ))
-    max_wm_w = size - logo_w - lockup_gap - int(size * 0.08)
-    wordmark = load_wordmark(True, wm_h, max_w=max_wm_w)
+
+    def build_lockup(target_logo_h: int) -> tuple[int, Image.Image]:
+        target_logo_w = max(
+            1, int(round(content.width * (target_logo_h / content.height)))
+        )
+        target_wm_h = int(round(
+            wm_v5.wordmark_height_for_hex_bbox(
+                (0, 0, target_logo_w, target_logo_h), LOGO_DARK
+            )
+            * STICKER_WORDMARK_SCALE
+        ))
+        return target_logo_w, load_wordmark(True, target_wm_h)
+
+    logo_w, wordmark = build_lockup(logo_h)
     lockup_w = logo_w + lockup_gap + wordmark.width
+    available_w = size - 2 * (pad + int(size * 0.02))
+    if lockup_w > available_w:
+        scale = (available_w - lockup_gap) / (logo_w + wordmark.width)
+        logo_h = max(1, int(logo_h * scale))
+        logo_w, wordmark = build_lockup(logo_h)
+        lockup_w = logo_w + lockup_gap + wordmark.width
+        while lockup_w > available_w and logo_h > 1:
+            logo_h -= 1
+            logo_w, wordmark = build_lockup(logo_h)
+            lockup_w = logo_w + lockup_gap + wordmark.width
+
     logo_x = (size - lockup_w) // 2
     logo_bbox = paste_logo_content_centered_v(canvas, logo, logo_x, logo_h, lockup_cy)
     wm_v5.paste_wordmark(canvas, wordmark, logo_bbox[2] + lockup_gap, lockup_cy)
@@ -301,7 +336,9 @@ def render_snowboard_sticker_navy() -> Image.Image:
         width=2,
     )
 
-    paste_sticker_lockup(canvas, on_dark=True, lockup_scale=0.9)
+    paste_sticker_lockup(
+        canvas, on_dark=True, lockup_scale=0.9, safe_margin_in=0.22
+    )
     return canvas
 
 
@@ -321,7 +358,9 @@ def render_snowboard_sticker_white() -> Image.Image:
         width=2,
     )
 
-    paste_sticker_lockup(canvas, on_dark=False, lockup_scale=0.9)
+    paste_sticker_lockup(
+        canvas, on_dark=False, lockup_scale=0.9, safe_margin_in=0.22
+    )
     return canvas
 
 
