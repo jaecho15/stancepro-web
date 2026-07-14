@@ -23,6 +23,7 @@ Requires SUPABASE_SECRET_KEY; CRON_SECRET (when set) gates the endpoint.
 from __future__ import annotations
 
 import json
+import math
 import os
 import statistics
 from datetime import datetime, timezone
@@ -53,6 +54,7 @@ IDX_URL = {
     "AO": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/monthly.ao.index.b50.current.ascii",
     "SAM": "https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_ao_index/aao/monthly.aao.index.b79.current.ascii",
 }
+ONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
 # "Favorable now" needs the index to actually be in a phase, not just off zero.
 PHASE_MIN = {"ENSO": 0.5, "NAO": 0.3, "AO": 0.3, "SAM": 0.3}
 
@@ -72,6 +74,50 @@ def _latest3(url: str) -> float | None:
         return round(statistics.mean(rows[k] for k in keys[-3:]), 2) if keys else None
     except requests.RequestException:
         return None
+
+
+def _current_oni() -> float | None:
+    """Latest ONI (3-month ERSST Niño-3.4 anomaly) — the live ENSO state."""
+    try:
+        vals = []
+        for line in requests.get(ONI_URL, timeout=TIMEOUT_S).text.split("\n")[1:]:
+            p = line.split()
+            if len(p) == 4:
+                try:
+                    vals.append(float(p[3]))
+                except ValueError:
+                    continue
+        return round(vals[-1], 2) if vals else None
+    except requests.RequestException:
+        return None
+
+
+def _normal_cdf(x: float) -> float:
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def enso_signal(profile: dict, nino34: float | None) -> dict | None:
+    """Served ENSO tercile lean for seasonal-predictable ENSO regions (Andes).
+    Mirrors the Vercel enso-network core: mu = slope*(nino/nino_sd); tercile
+    probabilities from the region's ERA5-Land-derived boundaries + residual.
+    Fires only on a real ENSO event. slope is the LOOCV-shrunk (honest) effect."""
+    s = profile.get("enso_serving")
+    if not s or profile.get("index") != "ENSO" or nino34 is None or abs(nino34) < PHASE_MIN["ENSO"]:
+        return None
+    mu = s["slope"] * (nino34 / s["nino_sd"])
+    resid = s["resid_std"]
+    p_above = 1 - _normal_cdf((s["q67"] - mu) / resid)
+    p_below = _normal_cdf((s["q33"] - mu) / resid)
+    p_near = max(0.0, 1 - p_above - p_below)
+    lean = ("above" if p_above > p_below + 0.05
+            else "below" if p_below > p_above + 0.05 else "near")
+    # Andes lean is regression-based (not analog-matched); ship empty analogs so
+    # the SeasonalSignal contract holds and the card's analog section stays hidden.
+    return {"driver": "enso",
+            "probabilities": {"above": round(p_above, 3), "near": round(p_near, 3),
+                              "below": round(p_below, 3)},
+            "lean": lean, "confidence": s.get("confidence", "medium"),
+            "analogs": [], "analog_summary": {"above": 0, "near": 0, "below": 0, "mean_pct": 0.0}}
 
 
 def _in_season(hemi: str, month: int) -> bool:
@@ -135,8 +181,9 @@ def run() -> dict:
     month = datetime.now(tz=timezone.utc).month
     now = datetime.now(tz=timezone.utc).isoformat()
     current_idx = {k: _latest3(u) for k, u in IDX_URL.items()}
+    nino34_live = _current_oni()
     rows = _seasonal_rows()
-    merged, skipped, errors = [], 0, {}
+    merged, skipped, errors, signalled = [], 0, {}, []
     out_rows = []
     for row in rows:
         region = row["climate_region"]
@@ -145,9 +192,17 @@ def run() -> dict:
             skipped += 1
             continue
         enso = (row.get("enso_state") or {}).get("nino34")
+        if enso is None:
+            enso = nino34_live  # lowercase-taxonomy rows carry no enso_state
         driver = build_driver(region, profile, enso, current_idx, month)
         payload = dict(row.get("payload") or {})
         payload["driver"] = driver
+        # Validated seasonal ENSO tercile lean (Andes El Niño→wet); preserves the
+        # existing driver/history/in-season blocks (no clobber of the other layers).
+        sig = enso_signal(profile, enso)
+        if sig is not None:
+            payload["signal"] = sig
+            signalled.append(region)
         out_rows.append({
             "climate_region": region, "label": row["label"],
             "region_ids": row["region_ids"], "resort_ids": row["resort_ids"],
@@ -161,8 +216,8 @@ def run() -> dict:
         _upsert(out_rows)
     except Exception as exc:  # noqa: BLE001
         errors["upsert"] = f"{type(exc).__name__}: {exc}"
-    return {"merged": merged, "skipped_no_profile": skipped,
-            "current_index": current_idx, "month": month, "errors": errors}
+    return {"merged": merged, "skipped_no_profile": skipped, "signalled": signalled,
+            "current_index": current_idx, "nino34": nino34_live, "month": month, "errors": errors}
 
 
 class handler(BaseHTTPRequestHandler):
