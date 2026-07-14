@@ -38,9 +38,18 @@
   #map { position:absolute; inset:0; z-index:1; background:transparent; }
   #skybtn.on { background:rgba(20,24,40,.92); color:#fff; }
   #skybtn.day { background:rgba(240,186,70,.95); color:#3a2a00; }
+  #skybtn.off { font-size:26px; }
   #err { position:absolute; top:calc(var(--safe-top) + 12px); left:12px; right:12px; z-index:9;
          font:14px -apple-system,Roboto,sans-serif; color:#B00; display:none;
          background:rgba(255,255,255,.9); border-radius:8px; padding:10px; }
+  /* WebGL-unavailable fallback — the 3D terrain needs a WebGL context; when the
+     browser can't provide one (hardware acceleration off), cover the blank
+     canvas with an actionable message instead of leaving it empty. */
+  #nowebgl { position:absolute; inset:0; z-index:20; display:none; align-items:center;
+             justify-content:center; padding:24px; background:#EAF0F5; text-align:center; }
+  #nowebgl > div { max-width:340px; font:15px/1.5 -apple-system,Roboto,sans-serif; color:#2a3542; }
+  #nowebgl b { display:block; font-size:17px; margin-bottom:8px; }
+  #nowebgl small { display:block; margin-top:12px; font-size:13px; color:#61708a; }
   /* Resort title fallback chip — top-center, shown only when the summit
      pin (preferred name placement) can't be derived from the elevation
      artifact. Kept clear of the host close button (top-left, iOS) and
@@ -107,6 +116,7 @@
 <canvas id="sky"></canvas>
 <div id="map"></div>
 <div id="err"></div>
+<div id="nowebgl"><div><b>3D terrain needs WebGL</b>Your browser couldn't start WebGL (3D graphics). Turn on hardware acceleration in your browser settings, then reload this page.<small>Chrome: Settings &rarr; System &rarr; "Use graphics acceleration when available", then reload.</small></div></div>
 <div id="title"></div>
 <!-- Host-resolved resort display name (app language → English → native),
      injected as element text so quotes/apostrophes in names can't break
@@ -1025,6 +1035,7 @@ const geoBounds3857 = gj => {
   return [lon2m(a - pl), lat2m(b - pt), lon2m(c + pl), lat2m(d + pt)];
 };
 const fail = m => { const e = document.getElementById("err"); e.textContent = m; e.style.display = "block"; };
+const webglOK = () => { try { const c = document.createElement("canvas"); return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl"))); } catch (e) { return false; } };
 // App language → English → raw OSM name (parity with both apps' label pick).
 const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get", "name"]];
 
@@ -1154,6 +1165,11 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // steepness bands, aspect:// the aspect, and OSM lines the pistes/lifts.
   const focDrape = { sources: {}, layers: [] };
 
+  // WebGL is mandatory for the MapLibre 3D terrain; some desktop browsers ship
+  // with hardware acceleration off, which makes context creation throw and
+  // leaves a blank canvas. Surface an actionable message instead of constructing.
+  if (!webglOK()) { const _ng = document.getElementById("nowebgl"); if (_ng) _ng.style.display = "flex"; return; }
+
   const map = new maplibregl.Map({
     container: "map",
     transformRequest: routeDem,
@@ -1255,7 +1271,31 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
                     "text-size": 12, "text-anchor": "top",
                     "text-offset": [0, 0.6], "text-padding": 4 },
           paint: { "text-color": "#1F6FA8", "text-halo-color": "#FFFFFF",
-                   "text-halo-width": 1.6 } }
+                   "text-halo-width": 1.6 } },
+        // Named summits from the OpenFreeMap (OpenMapTiles) vector source already
+        // loaded for water — every peak/volcano visible in the scene gets its
+        // name + TRUE elevation (OSM `ele`), even where it sits outside this
+        // resort's LiDAR boundary. That covers ropeway/volcano resorts whose
+        // namesake summit is a hike above the lift-served area (e.g. Asahidake
+        // 旭岳 2291 m, ~2 km beyond the boundary the elev artifact is clipped to).
+        // MapLibre drapes the point onto the 3D terrain surface at the peak.
+        { id: "peak-dots", type: "circle", source: "ofm", "source-layer": "mountain_peak",
+          minzoom: 11, filter: ["all", ["has", "name"], ["has", "ele"]],
+          paint: { "circle-radius": 2.6, "circle-color": "#5A4632",
+                   "circle-stroke-color": "#FFFFFF", "circle-stroke-width": 1 } },
+        { id: "peak-labels", type: "symbol", source: "ofm", "source-layer": "mountain_peak",
+          minzoom: 11, filter: ["all", ["has", "name"], ["has", "ele"]],
+          layout: { "symbol-sort-key": ["to-number", ["coalesce", ["get", "rank"], 5]],
+                    "text-field": ["format",
+                      NAME, {},
+                      "\n", {},
+                      ["concat", ["number-format", ["to-number", ["get", "ele"]],
+                                  { "max-fraction-digits": 0 }], " m"], { "font-scale": 0.8 }],
+                    "text-font": ["Noto Sans Bold"], "text-size": 11.5,
+                    "text-anchor": "bottom", "text-offset": [0, -0.6],
+                    "text-padding": 6, "text-optional": true },
+          paint: { "text-color": "#402F1C", "text-halo-color": "#FFFFFF",
+                   "text-halo-width": 1.8 } }
       ]
     }
   });
@@ -1307,11 +1347,50 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     dot.className = "peak-dot";
     el.appendChild(bob);
     el.appendChild(dot);
-    new maplibregl.Marker({ element: el, anchor: "bottom" })
+    const pinMarker = new maplibregl.Marker({ element: el, anchor: "bottom" })
       .setLngLat([summit.lon, summit.lat])
       .addTo(map);
     console.log("summit pin", summit.lon.toFixed(5), summit.lat.toFixed(5),
                 Math.round(summit.elev) + "m");
+
+    // Resort-name == mountain-name reconciliation. When the resort is named
+    // after a summit that sits above/outside its lift-served boundary (e.g.
+    // Asahidake 旭岳, whose 2291 m peak is ~2 km beyond the elev artifact's
+    // clip), the artifact-derived pin lands mid-slope. Once the OpenFreeMap
+    // mountain_peak tiles load, snap the resort pin to that summit (true OSM
+    // elevation) and drop the now-duplicate peak-layer label — so the scene
+    // shows ONE "旭岳 2291 m" instead of a mid-slope 旭岳 plus a peak 旭岳.
+    // Resorts whose name differs from nearby peaks are untouched: their lift-top
+    // pin and the distinct peak labels coexist, told apart by their names.
+    const normName = s => (s || "").toLowerCase().replace(/\s+/g, "")
+      .replace(/[・･()（）「」\-–—.,]/g, "")
+      .replace(/ロープウェイ|ゴンドラ|スキー場|スノーパーク|スキーリゾート|リゾート|高原|温泉|skiarea|skiresort|skifield|ropeway|gondola|cablecar|resort|snowpark/gi, "");
+    const target = normName(displayName);
+    if (target) map.once("idle", () => {
+      try {
+        const feats = map.querySourceFeatures("ofm", { sourceLayer: "mountain_peak" });
+        const dkm = (la1, lo1, la2, lo2) => Math.hypot((la2 - la1) * 111.32,
+          (lo2 - lo1) * 111.32 * Math.cos((la1 + la2) / 2 * Math.PI / 180));
+        let peak = null;
+        for (const f of feats) {
+          const pr = f.properties || {};
+          if (pr.ele == null || pr.ele === "") continue;
+          const nm = pr["name:" + APP_LANG] || pr.name || pr["name:en"];
+          if (!nm || normName(nm) !== target) continue;
+          const co = f.geometry && f.geometry.coordinates;
+          if (!co || dkm(summit.lat, summit.lon, co[1], co[0]) > 6) continue;
+          const ele = +pr.ele;
+          if (isFinite(ele) && (!peak || ele > peak.ele)) peak = { lon: co[0], lat: co[1], ele, name: nm };
+        }
+        if (peak) {
+          pinMarker.setLngLat([peak.lon, peak.lat]);
+          pe.textContent = Math.round(peak.ele) + " m";
+          map.setFilter("peak-labels", ["all", ["has", "name"], ["has", "ele"],
+            ["!=", ["coalesce", ["get", "name:" + APP_LANG], ["get", "name"], ""], peak.name]]);
+          console.log("summit pin snapped to peak", peak.name, Math.round(peak.ele) + "m");
+        }
+      } catch (e) { console.log("peak match failed", e); }
+    });
 
     // Face the mountain: once the first render settles, swing the camera to
     // look from the base area up toward the summit — the angle a paper trail
