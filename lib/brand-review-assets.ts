@@ -105,7 +105,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut",
-    label: "Snowboard — die-cut vinyl (light board)",
+    label: "Die-cut 6×1.5 — light board",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_6x1.5in_preview.png",
     whiteMat: false,
@@ -113,9 +113,26 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_dark_board",
-    label: "Snowboard — die-cut vinyl (dark board)",
+    label: "Die-cut 6×1.5 — dark board",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_dark_board_6x1.5in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_snowboard_diecut_large",
+    label: "Die-cut 10×2.5 — light board",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_snowboard_diecut_10x2.5in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+  },
+  {
+    slug: "sticker_snowboard_diecut_dark_board_large",
+    label: "Die-cut 10×2.5 — dark board",
+    category: "stickers",
+    imagePath:
+      "/brand-review/merch/sticker_snowboard_diecut_dark_board_10x2.5in_preview.png",
     whiteMat: false,
     checkerMat: true,
   },

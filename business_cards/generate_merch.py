@@ -155,6 +155,9 @@ class MerchSpec:
 
 SPECS = {
     "snowboard": MerchSpec("sticker_snowboard", 6.0, 1.5, "Snowboard sticker"),
+    "snowboard_large": MerchSpec(
+        "sticker_snowboard_large", 10.0, 2.5, "Large snowboard sticker"
+    ),
     "helmet": MerchSpec("sticker_helmet", 2.5, 2.5, "Helmet sticker"),
     "shop_qr": MerchSpec("sticker_shop_qr", 3.0, 3.0, "Shop counter QR"),
     "tee": MerchSpec("tee_chest", 11.0, 14.0, "T-shirt chest print"),
@@ -372,9 +375,11 @@ def render_snowboard_sticker_white() -> Image.Image:
     return canvas
 
 
-def render_snowboard_sticker_diecut(*, dark_board: bool = False) -> Image.Image:
+def render_snowboard_sticker_diecut(
+    *, dark_board: bool = False, spec_key: str = "snowboard"
+) -> Image.Image:
     """Transparent background for vinyl on boards; light ink variant reads on dark boards."""
-    spec = SPECS["snowboard"]
+    spec = SPECS[spec_key]
     w, h = px(spec.width_in), px(spec.height_in)
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
@@ -390,7 +395,7 @@ def render_snowboard_sticker_diecut(*, dark_board: bool = False) -> Image.Image:
     # Cut contour hint (magenta hairline — hide when printing)
     bbox = canvas.getbbox()
     if bbox:
-        pad = px(0.08)
+        pad = px(0.125)
         draw.rounded_rectangle(
             (bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad),
             radius=px(0.1),
@@ -577,8 +582,18 @@ def build_sticker_preview_sheet() -> Image.Image:
     items: list[tuple[str, Image.Image]] = [
         ("Snowboard — navy 6×1.5 in", render_snowboard_sticker_navy()),
         ("Snowboard — white 6×1.5 in", render_snowboard_sticker_white()),
-        ("Snowboard — die-cut vinyl (light board)", render_snowboard_sticker_diecut()),
-        ("Snowboard — die-cut vinyl (dark board)", render_snowboard_sticker_diecut(dark_board=True)),
+        ("Die-cut 6×1.5 — light board", render_snowboard_sticker_diecut()),
+        ("Die-cut 6×1.5 — dark board", render_snowboard_sticker_diecut(dark_board=True)),
+        (
+            "Die-cut 10×2.5 — light board",
+            render_snowboard_sticker_diecut(spec_key="snowboard_large"),
+        ),
+        (
+            "Die-cut 10×2.5 — dark board",
+            render_snowboard_sticker_diecut(
+                dark_board=True, spec_key="snowboard_large"
+            ),
+        ),
         ("Helmet — full-color hex", render_helmet_sticker_hex()),
         ("Helmet — white mono", render_helmet_sticker_white()),
         ("Helmet — badge ring", render_helmet_sticker_badge()),
@@ -589,9 +604,12 @@ def build_sticker_preview_sheet() -> Image.Image:
     mats = [_preview_on_mat(img, col_w, label) for label, img in items]
     gap = 16
     header_h = 80
-    row_h = max(mats[i].height for i in range(0, len(mats), cols))
     rows = (len(mats) + cols - 1) // cols
-    body_h = rows * row_h + gap * (rows - 1)
+    row_heights = [
+        max(mat.height for mat in mats[row * cols:(row + 1) * cols])
+        for row in range(rows)
+    ]
+    body_h = sum(row_heights) + gap * (rows - 1)
     sheet_w = 40 * 2 + cols * col_w + gap * (cols - 1)
     sheet_h = header_h + body_h + 40
     sheet = Image.new("RGBA", (sheet_w, sheet_h), NAVY_DEEP + (255,))
@@ -605,7 +623,8 @@ def build_sticker_preview_sheet() -> Image.Image:
         col = i % cols
         row = i // cols
         x = 40 + col * (col_w + gap)
-        my = y + row * (row_h + gap) + (row_h - mat.height) // 2
+        row_y = y + sum(row_heights[:row]) + row * gap
+        my = row_y + (row_heights[row] - mat.height) // 2
         sheet.paste(mat, (x, my), mat)
     return sheet
 
@@ -616,6 +635,8 @@ def main() -> None:
         ("sticker_snowboard_white_6x1.5in_300dpi.png", render_snowboard_sticker_white()),
         ("sticker_snowboard_diecut_6x1.5in_300dpi.png", render_snowboard_sticker_diecut()),
         ("sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png", render_snowboard_sticker_diecut(dark_board=True)),
+        ("sticker_snowboard_diecut_10x2.5in_300dpi.png", render_snowboard_sticker_diecut(spec_key="snowboard_large")),
+        ("sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png", render_snowboard_sticker_diecut(dark_board=True, spec_key="snowboard_large")),
         ("sticker_helmet_hex_2.5in_300dpi.png", render_helmet_sticker_hex()),
         ("sticker_helmet_white_2.5in_300dpi.png", render_helmet_sticker_white()),
         ("sticker_helmet_badge_2.5in_300dpi.png", render_helmet_sticker_badge()),
