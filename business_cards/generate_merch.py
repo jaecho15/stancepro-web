@@ -253,7 +253,8 @@ def render_shop_qr_sticker() -> Image.Image:
         wm_v5.wordmark_height_for_hex_bbox((0, 0, logo_w, logo_h), LOGO_DARK)
         * STICKER_WORDMARK_SCALE
     ))
-    wordmark = load_wordmark(True, wm_h, max_w=int(size * 0.58))
+    max_wm_w = size - logo_w - lockup_gap - int(size * 0.08)
+    wordmark = load_wordmark(True, wm_h, max_w=max_wm_w)
     lockup_w = logo_w + lockup_gap + wordmark.width
     logo_x = (size - lockup_w) // 2
     logo_bbox = paste_logo_content_centered_v(canvas, logo, logo_x, logo_h, lockup_cy)

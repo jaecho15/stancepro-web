@@ -31,17 +31,13 @@ def wordmark_height_for_hex_bbox(
     hex_bbox: tuple[int, int, int, int],
     logo_path: Path,
 ) -> int:
-    """Wordmark cap-height = hex side length for the rendered logo bbox."""
-    native_h, native_w, content_h, content_w = _logo_content_box(str(logo_path))
+    """Wordmark cap-height = side length of the already-cropped rendered hex."""
+    _ = logo_path  # Kept for call-site compatibility.
     rendered_h = hex_bbox[3] - hex_bbox[1]
     rendered_w = hex_bbox[2] - hex_bbox[0]
-    scale_h = rendered_h / native_h
-    scale_w = rendered_w / native_w
-    body_h = content_h * scale_h
-    body_w = content_w * scale_w
     # Pointy-top regular hex: height = 2s, width = sqrt(3)*s
-    side_from_h = body_h / 2.0
-    side_from_w = body_w / math.sqrt(3)
+    side_from_h = rendered_h / 2.0
+    side_from_w = rendered_w / math.sqrt(3)
     hex_side = min(side_from_h, side_from_w)
     return max(1, int(round(hex_side)))
 

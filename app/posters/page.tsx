@@ -6,7 +6,7 @@ const POSTERS = [
   { slug: "ride_nav", label: "Ride nav — feature" },
 ] as const;
 
-const POSTER_ASSET_VERSION = "20260714-matched-lockup-height";
+const POSTER_ASSET_VERSION = "20260714-true-hex-side";
 
 export default function PostersGalleryPage() {
   return (
