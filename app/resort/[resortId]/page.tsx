@@ -10,6 +10,7 @@ import {
 import { regionIdFor } from "@/lib/snow/region-locator";
 import { regionClimate } from "@/lib/snow/region-climate";
 import { buildSnowIndicatorPanel } from "@/lib/snow/snow-indicators";
+import { fetchResortFacilityStats } from "@/lib/snow/resort-facility";
 import { countryName } from "@/lib/snow/country-name";
 import { ForecastView } from "@/components/snow/ForecastView";
 import { SeasonalOutlookCard } from "@/components/snow/SeasonalOutlookCard";
@@ -17,6 +18,7 @@ import { SnowIndicatorsPanel } from "@/components/snow/SnowIndicatorsPanel";
 import { ClimateNotesGuide, RegionClimateNotes } from "@/components/snow/RegionClimateNotes";
 import { SaveResortButton } from "@/components/snow/SaveResortButton";
 import { ResortTabs } from "@/components/resort/ResortTabs";
+import { ResortFacilityStatsCard } from "@/components/resort/ResortFacilityStats";
 
 export const revalidate = 3600;
 
@@ -43,6 +45,7 @@ export default async function ResortPage({ params }: Params) {
   const seasonal = seasonalOutlookForResort(seasonalRows, resort, locatedRegionId);
   const indicatorPanel = buildSnowIndicatorPanel(seasonal);
   const climate = regionClimate(locatedRegionId);
+  const facilityStats = await fetchResortFacilityStats(resort.resort_id);
   const hasSeasonContent = Boolean(seasonal || indicatorPanel || climate);
 
   const facts: { label: string; value: string }[] = [
@@ -137,10 +140,14 @@ export default async function ResortPage({ params }: Params) {
                     </div>
                   ))}
                 </dl>
-                <p className="text-xs text-slate-600 mt-4">
-                  Runs, lifts and terrain difficulty live in the 3D map — more
-                  resort facts are coming to this tab.
-                </p>
+                {facilityStats ? (
+                  <ResortFacilityStatsCard stats={facilityStats} />
+                ) : (
+                  <p className="text-xs text-slate-600 mt-4">
+                    Runs, lifts and terrain difficulty live in the 3D map — piste
+                    data for this resort isn&apos;t mapped yet.
+                  </p>
+                )}
               </div>
             }
           />
