@@ -232,7 +232,8 @@ window.OffpisteDraw = (function(){
 
   async function loadElev(){
     try{
-      var bmp = await createImageBitmap(await (await fetch(art("elev_5m.png"))).blob());
+      var bmp = await loadElevBitmap();   // shared single fetch+decode (same bitmap the summit detector uses)
+      if(!bmp) throw new Error("elev_5m unavailable");
       var cv=document.createElement("canvas"); cv.width=bmp.width; cv.height=bmp.height;
       var cx=cv.getContext("2d",{willReadFrequently:true}); cx.imageSmoothingEnabled=false; cx.drawImage(bmp,0,0);
       elevImg={data:cx.getImageData(0,0,bmp.width,bmp.height).data,W:bmp.width,H:bmp.height,b:meta.bounds_3857};
@@ -822,9 +823,11 @@ window.OffpisteDraw = (function(){
   }
   function init(_map,_meta,_art){
     map=_map; meta=_meta||{}; art=_art; southern=!!(meta.bounds_3857 && (meta.bounds_3857[1]+meta.bounds_3857[3])<0);
-    injectCSS(); injectDOM(); grabEls(); addLayer(); wire(); renderBadge(); loadElev(); refresh(); notifyReady();
+    injectCSS(); injectDOM(); grabEls(); addLayer(); wire(); renderBadge(); refresh(); notifyReady();
+    // loadElev() (fetches elev_5m.png, ~550 KB) is NOT called here — the host
+    // defers it to first idle so it never competes with the initial 3D render.
   }
-  return { init:init, loadSaved:loadSaved, loadWaypoints:loadWaypoints, setOfflineState:setOfflineState, setDepth:setDepth,
+  return { init:init, loadElev:loadElev, loadSaved:loadSaved, loadWaypoints:loadWaypoints, setOfflineState:setOfflineState, setDepth:setDepth,
     _sim:function(a,b,n){ if(!ready) return "not-ready"; if(!active) toggle(); pts=[];
       for(var i=0;i<=n;i++){ addAt(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n); } refresh(); return pts.length; },
     _state:function(){ return {active:active,n:pts.length,ready:ready}; } };
@@ -850,6 +853,21 @@ console.log("resort3d boot", RESORT_ID, APP_LANG, VER);
 const ART_TREE = RESORT_ID.indexOf("bc-") === 0 ? "terrain_backcountry_v1" : "terrain_offpiste_v1";
 const BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/" + ART_TREE + "/" + RESORT_ID + "/";
 const art = f => BASE + f + "?v=" + VER;
+// Shared elev_5m.png loader — ONE fetch + ONE decode of the ~550 KB terrain-RGB
+// artifact, reused by BOTH the summit detector (downscaled to 240 px) and the
+// off-piste elevation sampler (full-res). Both now fire on firstIdle, so without
+// this shared cache they would double-download the same 550 KB. Cached as a
+// Promise<ImageBitmap|null>; global fn so the OffpisteDraw module (earlier
+// <script>) resolves it at call time (it runs after this block executes).
+let _elevBitmapP = null;
+function loadElevBitmap() {
+  if (_elevBitmapP) return _elevBitmapP;
+  _elevBitmapP = fetch(art("elev_5m.png"))
+    .then(r => r.ok ? r.blob() : null)
+    .then(b => b ? createImageBitmap(b) : null)
+    .catch(() => null);
+  return _elevBitmapP;
+}
 // ---- Terrain V2: global tile-index DEM routing. ONE global index of the z14/z15
 // DEM tiles we published (terrain_v2/dem): routeDem hit → our tile, miss → AWS
 // fallback. (V1 core routing + baked drapes removed — V2 is the only path now.) ----
@@ -861,15 +879,35 @@ let v2Ready = false;
 const v2Key = (x, y) => x * 100000 + y;
 const v2LidarSafe = (z, x, y) =>
   (z === 14 || z === 15) && v2Have[z].has(v2Key(x, y)) && !v2Aws[z].has(v2Key(x, y));
-fetch(V2_INDEX + "?v=" + VER).then(r => r.json()).then(ix => {
-    (ix.z15 || []).forEach(t => v2Have[15].add(v2Key(t[0], t[1])));
-    (ix.z14 || []).forEach(t => v2Have[14].add(v2Key(t[0], t[1])));
-    (ix.aws15 || []).forEach(t => v2Aws[15].add(v2Key(t[0], t[1])));
-    (ix.aws14 || []).forEach(t => v2Aws[14].add(v2Key(t[0], t[1])));
-    v2Ready = true;
-    console.log("v2 index", ix.counts);
-    if (typeof scheduleDemReload === "function") scheduleDemReload();
-  }).catch(e => console.log("v2 index load failed", e));
+// v2 tile routing seed. Two sources, SAME shape ({z15,z14,aws15,aws14}):
+//  1. v2_tiles.json — THIS resort's slice (~1 KB, next to meta). Awaited before
+//     the map is built (below) so routeDem serves sharp 5 m from the very first
+//     tile — no 961 KB fleet-index wait, no 30 m flash, no reload.
+//  2. the fleet index — every OTHER resort's tiles, for NEIGHBOURS. Loaded
+//     LAZILY (first idle) when the focus manifest seeded; EAGERLY as the fallback
+//     when it didn't (pre-rollout resort / bc-*), matching the old behaviour.
+// Every manifest tile is a proven subset of the fleet index, so seeding never 404s.
+let _demReload = null;                     // set by the load handler once `map` exists
+const v2Seed = (o, tag) => {
+  (o.z15 || []).forEach(t => v2Have[15].add(v2Key(t[0], t[1])));
+  (o.z14 || []).forEach(t => v2Have[14].add(v2Key(t[0], t[1])));
+  (o.aws15 || []).forEach(t => v2Aws[15].add(v2Key(t[0], t[1])));
+  (o.aws14 || []).forEach(t => v2Aws[14].add(v2Key(t[0], t[1])));
+  v2Ready = true;
+  console.log("v2 seed", tag, o.counts);
+  if (_demReload) _demReload();            // late seed (fleet index / neighbours) → re-route loaded tiles
+};
+let _v2IndexP = null;
+const loadV2Index = () => {                 // fleet index — idempotent
+  if (_v2IndexP) return _v2IndexP;
+  _v2IndexP = fetch(V2_INDEX + "?v=" + VER).then(r => r.json())
+    .then(ix => v2Seed(ix, "fleet-index"))
+    .catch(e => console.log("v2 index load failed", e));
+  return _v2IndexP;
+};
+// Kick the focus manifest off NOW (parallel with meta); it is awaited before the map.
+const v2FocusP = fetch(art("v2_tiles.json")).then(r => r.ok ? r.json() : null).catch(() => null);
+let v2FocusSeeded = false;
 // slope:// — client-derived avalanche slope overlay from the SAME DEM tiles the
 // mesh uses (no baked webp); LiDAR-gated (aws-dominated → transparent); colours
 // via setSlopeBands (shared contract with the UI legend).
@@ -1078,8 +1116,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // nearest-neighbour — smoothing would blend encoded values into garbage.
   const detectSummit = async () => {
     try {
-      const blob = await (await fetch(art("elev_5m.png"))).blob();
-      const bmp = await createImageBitmap(blob);
+      const bmp = await loadElevBitmap();   // shared single fetch+decode
+      if (!bmp) return null;
       const scale = 240 / Math.max(bmp.width, bmp.height);
       const W = Math.max(1, Math.round(bmp.width * scale));
       const H = Math.max(1, Math.round(bmp.height * scale));
@@ -1170,6 +1208,14 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // leaves a blank canvas. Surface an actionable message instead of constructing.
   if (!webglOK()) { const _ng = document.getElementById("nowebgl"); if (_ng) _ng.style.display = "flex"; return; }
 
+  // Seed THIS resort's V2 tiles BEFORE the DEM source exists, so routeDem serves
+  // sharp 5 m from the first request (no 30 m flash, no reload). Awaiting the
+  // ~1 KB manifest here costs ~0 — it was fetched in parallel with meta. No
+  // manifest (older publish / bc-*) → load the fleet index eagerly (old path).
+  const _focusManifest = await v2FocusP;
+  if (_focusManifest && (_focusManifest.z15 || _focusManifest.z14)) { v2FocusSeeded = true; v2Seed(_focusManifest, "focus"); }
+  else loadV2Index();
+
   const map = new maplibregl.Map({
     container: "map",
     transformRequest: routeDem,
@@ -1195,7 +1241,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         // V2: one global client-derived slope overlay (slope:// protocol).
         v2slope: { type: "raster", tiles: ["slope://{z}/{x}/{y}"], tileSize: 256, maxzoom: 15 },
         v2aspect: { type: "raster", tiles: ["aspect://{z}/{x}/{y}"], tileSize: 256, maxzoom: 15 },
-        contours:{ type: "geojson", data: meta.destination_id ? { type: "FeatureCollection", features: [] } : art("contours.json") },   // bc-* has none baked (v1); exists for non-LiDAR resorts too (Terrarium-baked, reference-only)
+        contours:{ type: "geojson", data: { type: "FeatureCollection", features: [] } },   // filled after first idle (deferred ~230 KB reference overlay); bc-* has none baked — see firstIdle below
+
         geometry:{ type: "geojson", data: { type: "FeatureCollection", features: [] } },
         nearby:  { type: "geojson", data: nearbyGeo }
       },
@@ -1307,6 +1354,24 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     if (ev && ev.error) console.log("map error", ev.error.message || String(ev.error));
   });
 
+  // First complete render. Heavy, non-essential first-paint work (the summit
+  // elev artifact, the reference contour overlay, the off-piste elev image)
+  // hangs off this promise so it never competes for bandwidth with the initial
+  // 3D terrain view — the same idle-deferral the frozen-tarn/canopy/neighbour
+  // loaders already use. On a slow mobile link this pulls ~780 KB (contours
+  // ~230 KB + elev_5m ~550 KB) out of the time-to-first-3D path.
+  const firstIdle = new Promise(res => map.once("idle", res));
+  // Fleet index (961 KB) is only needed for NEIGHBOURS now that the focused
+  // resort seeded from its own manifest — load it lazily after the first frame.
+  // (Absent-manifest fallback already loaded it eagerly; loadV2Index is idempotent.)
+  if (v2FocusSeeded) firstIdle.then(() => loadV2Index());
+  // Contours (~230 KB, reference-only) fill the pre-declared empty source once
+  // the first frame is up. bc-* (destination_id) has none baked.
+  if (!meta.destination_id) firstIdle.then(() => fetch(art("contours.json"))
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { const s = d && map.getSource("contours"); if (s) s.setData(d); })
+    .catch(e => console.log("contours deferred load failed", e)));
+
   // Elevation sampler shared beyond the summit IIFE (frozen-tarn detection);
   // set once detectSummit succeeds, null for degraded resorts.
   let elevSampler = null;
@@ -1320,6 +1385,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const hostRaw = (document.getElementById("hostname").textContent || "").trim();
     const displayName = (hostRaw && !hostRaw.startsWith("__") ? hostRaw : meta.name) || "";
     if (!displayName) return;
+    await firstIdle;   // defer the elev_5m.png (summit artifact) fetch out of the first-render path
     const summit = degraded ? null : await detectSummit();   // no elev_5m in degraded → top-center title chip
     if (summit && summit.sample) elevSampler = summit.sample;
     if (!summit) {
@@ -1347,50 +1413,20 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     dot.className = "peak-dot";
     el.appendChild(bob);
     el.appendChild(dot);
-    const pinMarker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+    // The pin marks the resort's OWN highest point — the top of the lift-served
+    // terrain, from detectSummit's boundary-masked (+1 km) elevation artifact, so
+    // it can never wander onto a neighbouring off-resort peak. It is deliberately
+    // NOT snapped to the true mountain summit even when the resort shares that
+    // summit's name (e.g. Hoshino Nekoma, Asahidake 旭岳). The real peak — which
+    // often sits above or beyond the lift-served area — carries its OWN independent
+    // label with its true OSM elevation via the OpenFreeMap `mountain_peak` layer
+    // (peak-dots / peak-labels). So the resort pin stays on the resort and the
+    // summit name is a separate marker, kept apart even when the two names match.
+    new maplibregl.Marker({ element: el, anchor: "bottom" })
       .setLngLat([summit.lon, summit.lat])
       .addTo(map);
-    console.log("summit pin", summit.lon.toFixed(5), summit.lat.toFixed(5),
-                Math.round(summit.elev) + "m");
-
-    // Resort-name == mountain-name reconciliation. When the resort is named
-    // after a summit that sits above/outside its lift-served boundary (e.g.
-    // Asahidake 旭岳, whose 2291 m peak is ~2 km beyond the elev artifact's
-    // clip), the artifact-derived pin lands mid-slope. Once the OpenFreeMap
-    // mountain_peak tiles load, snap the resort pin to that summit (true OSM
-    // elevation) and drop the now-duplicate peak-layer label — so the scene
-    // shows ONE "旭岳 2291 m" instead of a mid-slope 旭岳 plus a peak 旭岳.
-    // Resorts whose name differs from nearby peaks are untouched: their lift-top
-    // pin and the distinct peak labels coexist, told apart by their names.
-    const normName = s => (s || "").toLowerCase().replace(/\s+/g, "")
-      .replace(/[・･()（）「」\-–—.,]/g, "")
-      .replace(/ロープウェイ|ゴンドラ|スキー場|スノーパーク|スキーリゾート|リゾート|高原|温泉|skiarea|skiresort|skifield|ropeway|gondola|cablecar|resort|snowpark/gi, "");
-    const target = normName(displayName);
-    if (target) map.once("idle", () => {
-      try {
-        const feats = map.querySourceFeatures("ofm", { sourceLayer: "mountain_peak" });
-        const dkm = (la1, lo1, la2, lo2) => Math.hypot((la2 - la1) * 111.32,
-          (lo2 - lo1) * 111.32 * Math.cos((la1 + la2) / 2 * Math.PI / 180));
-        let peak = null;
-        for (const f of feats) {
-          const pr = f.properties || {};
-          if (pr.ele == null || pr.ele === "") continue;
-          const nm = pr["name:" + APP_LANG] || pr.name || pr["name:en"];
-          if (!nm || normName(nm) !== target) continue;
-          const co = f.geometry && f.geometry.coordinates;
-          if (!co || dkm(summit.lat, summit.lon, co[1], co[0]) > 6) continue;
-          const ele = +pr.ele;
-          if (isFinite(ele) && (!peak || ele > peak.ele)) peak = { lon: co[0], lat: co[1], ele, name: nm };
-        }
-        if (peak) {
-          pinMarker.setLngLat([peak.lon, peak.lat]);
-          pe.textContent = Math.round(peak.ele) + " m";
-          map.setFilter("peak-labels", ["all", ["has", "name"], ["has", "ele"],
-            ["!=", ["coalesce", ["get", "name:" + APP_LANG], ["get", "name"], ""], peak.name]]);
-          console.log("summit pin snapped to peak", peak.name, Math.round(peak.ele) + "m");
-        }
-      } catch (e) { console.log("peak match failed", e); }
-    });
+    console.log("resort pin (boundary high point)", summit.lon.toFixed(5),
+                summit.lat.toFixed(5), Math.round(summit.elev) + "m");
 
     // Face the mountain: once the first render settles, swing the camera to
     // look from the base area up toward the summit — the angle a paper trail
@@ -2339,7 +2375,9 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     map.setPitch(64); map.setBearing(15);
     map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
     // Off-piste route drawing overlay — never let a feature fault break the map.
-    try { OffpisteDraw.init(map, meta, art); } catch (e) { console.log("op init failed", e); }
+    // init() no longer fetches elev_5m.png (~550 KB); we load it after first idle
+    // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
+    try { OffpisteDraw.init(map, meta, art); firstIdle.then(() => { try { OffpisteDraw.loadElev(); } catch (e) {} }); } catch (e) { console.log("op init failed", e); }
     // Clip piste/lift geometry to this resort's terrain extent [w..e_, s..n].
     // geometry.json over-includes the whole valley; lines beyond the loaded z15
     // terrain drape at elevation 0 → stretched lines (esp. iOS WKWebView, which
@@ -2362,7 +2400,13 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       } catch (e) { console.log("geometry clip failed", e); }
     })();
     map.once("idle", () => console.log("rendered: first idle frame"));
-    if (PROBE_MODE) { initProbe(); } else { initSkyLayer(); applyNightStyle(); }
+    if (PROBE_MODE) { initProbe(); }
+    else {
+      applyNightStyle();   // cheap night/day paint-tint — stays on the first-paint path
+      // Defer the real sky layer (milkyway 1.5 MB + star catalog 0.24 MB ≈ 1.75 MB)
+      // off the first-load path; above-horizon shows the flat bg tint until it fills in.
+      firstIdle.then(() => { try { initSkyLayer(); } catch (e) { console.log("sky init deferred fail", e); } });
+    }
 
     // ---------- Neighbouring resorts: full data on-demand as they pan into view ----------
     // The focused resort is loaded inline (above). Each neighbour (id + centroid
@@ -2421,6 +2465,8 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         } catch (e) { console.log("dem reload failed", e); }
       }, 700);
     }
+    _demReload = scheduleDemReload;                       // let top-level seeds (fleet index / neighbours) trigger a reload
+    if (v2Ready && !v2FocusSeeded) scheduleDemReload();   // a fallback fleet-index seed landed during map setup → re-route
     async function loadNeighbor(nb) {
       if (!nb.id || nbLoaded[nb.id] || nbCount >= NB_MAX) return;
       nbLoaded[nb.id] = true; nbCount++;
