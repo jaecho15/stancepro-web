@@ -1394,6 +1394,33 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       t.style.display = "block";
       return;
     }
+    // Re-anchor the pin to the resort's OWN high point. detectSummit returns the
+    // highest pixel inside the elev artifact's boundary+1 km mask, but that mask
+    // can swallow a TALLER NEIGHBOURING peak — e.g. Bandai-san (1614 m) leaks into
+    // Nekoma's mask ~2.8 km from any run, so the raw max sits on the wrong
+    // mountain. The lift-served terrain is unambiguously the resort, so take the
+    // highest PISTE/LIFT vertex instead (positions are exact OSM coords; elevation
+    // sampled on the same raster). Raster max stays only as the fallback when a
+    // resort has no baked runs. Face-the-mountain + the chip then use this point.
+    try {
+      const gj = await (await fetch(art("geometry.json"))).json();
+      const inExt = c => c[0] >= w && c[0] <= e_ && c[1] >= s && c[1] <= n;
+      let hiC = null, hiE = -Infinity;
+      const scanHi = c => {
+        if (c && typeof c[0] === "number") {
+          if (inExt(c)) { const e = summit.sample(c[0], c[1]); if (e != null && e > hiE) { hiE = e; hiC = c; } }
+        } else if (Array.isArray(c)) c.forEach(scanHi);
+      };
+      (gj.features || []).forEach(f => {
+        const p = f.properties || {};
+        if (p["piste:type"] || p["piste:difficulty"] || p.aerialway) scanHi(f.geometry && f.geometry.coordinates);
+      });
+      if (hiC) {
+        summit.lon = hiC[0]; summit.lat = hiC[1]; summit.elev = hiE;
+        console.log("resort high point ← highest piste/lift vertex",
+                    hiC[0].toFixed(5), hiC[1].toFixed(5), Math.round(hiE) + "m");
+      }
+    } catch (e) { console.log("piste-vertex summit failed", e); }
     const el = document.createElement("div");
     el.className = "peak-wrap";
     const bob = document.createElement("div");
