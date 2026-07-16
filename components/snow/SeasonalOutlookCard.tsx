@@ -5,6 +5,7 @@ import {
   FlaskConical,
   Sparkles,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { regionContext } from "@/lib/snow/region-context";
 import { ordinal, statusHeadline, statusLean } from "@/lib/snow/season-status";
 import type {
@@ -223,61 +224,77 @@ const argExtreme = <T,>(arr: T[], val: (t: T) => number, want: "max" | "min"): T
     (want === "max" ? val(cur) > val(best) : val(cur) < val(best)) ? cur : best
   );
 
-// Year-by-year record: completed-season modeled snowfall (ERA5) as a line with
-// the normal range (p10–p90) shaded and the median dashed. Pure SVG so it
-// renders server-side. The in-progress season is intentionally omitted — a
-// partial total isn't comparable to full-season totals (StatusSection places
-// it among the record via the percentile gauge instead).
-function HistoryChart({
+// Combined year-by-year record: snowfall (upper band, left cm axis) + snow line
+// (lower band, right m axis) share one year scale and one bottom tick row.
+// Plot bands are vertically split so the series never overlay — mid-elevation
+// snowfall can look flat while the snow line rises. Pure SVG for SSR.
+function CombinedSeasonalHistoryChart({
   history,
-  baseline,
+  historyBaseline,
+  snowline,
+  snowlineBaseline,
+  snowlineTrend,
 }: {
-  history: SeasonalHistoryPoint[];
-  baseline: SeasonalHistoryBaseline | null;
+  history: SeasonalHistoryPoint[] | null | undefined;
+  historyBaseline: SeasonalHistoryBaseline | null | undefined;
+  snowline: SeasonalSnowlinePoint[] | null | undefined;
+  snowlineBaseline: SeasonalSnowlineBaseline | null | undefined;
+  snowlineTrend: SeasonalSnowlineTrend | null | undefined;
 }) {
+  const showSnow = !!history && history.length > 1;
+  const showLine = !!snowline && snowline.length > 1;
+  if (!showSnow && !showLine) return null;
+
   const W = 320;
-  const H = 116;
-  const padL = 4;
-  const padR = 4;
-  const padT = 10;
+  const bandH = 100;
+  const gap = 10;
+  const padL = 28;
+  const padR = 32;
+  const padT = 8;
   const padB = 16;
-  const minYear = Math.min(...history.map((p) => p.year));
-  const maxYear = Math.max(...history.map((p) => p.year));
-  const yMax =
-    Math.max(baseline?.p90_cm ?? 0, ...history.map((p) => p.snow_cm)) * 1.08 || 1;
+  const snowTop = 0;
+  const lineTop = showSnow ? bandH + gap : 0;
+  const H = (showSnow ? bandH : 0) + (showSnow && showLine ? gap : 0) + (showLine ? bandH : 0);
+
+  const years = [
+    ...(showSnow ? history!.map((p) => p.year) : []),
+    ...(showLine ? snowline!.map((p) => p.year) : []),
+  ];
+  const minYear = Math.min(...years);
+  const maxYear = Math.max(...years);
   const x = (yr: number) =>
     padL + ((yr - minYear) / (maxYear - minYear || 1)) * (W - padL - padR);
-  const y = (v: number) => padT + (1 - v / yMax) * (H - padT - padB);
-  const linePath = history
-    .map((p, i) => `${i ? "L" : "M"}${x(p.year).toFixed(1)},${y(p.snow_cm).toFixed(1)}`)
-    .join(" ");
-  const dotColor = (v: number) =>
-    baseline && v >= baseline.p90_cm
-      ? "#38bdf8"
-      : baseline && v <= baseline.p10_cm
-        ? "#fbbf24"
-        : "#7dd3fc";
   const ticks = axisTickYears(minYear, maxYear);
-  const hi = argExtreme(history, (p) => p.snow_cm, "max");
-  const lo = argExtreme(history, (p) => p.snow_cm, "min");
 
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
-        Year-by-year record
-      </p>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full"
-        role="img"
-        aria-label="Modeled season-total snowfall by year"
-      >
+  // --- snowfall band (top) ---
+  let snowSvg: ReactNode = null;
+  if (showSnow) {
+    const baseline = historyBaseline ?? null;
+    const yMax =
+      Math.max(baseline?.p90_cm ?? 0, ...history!.map((p) => p.snow_cm)) * 1.08 || 1;
+    const ySnow = (v: number) =>
+      snowTop + padT + (1 - v / yMax) * (bandH - padT - (showLine ? 4 : padB));
+    const plotBottom = snowTop + bandH - (showLine ? 4 : padB);
+    const linePath = history!
+      .map((p, i) => `${i ? "L" : "M"}${x(p.year).toFixed(1)},${ySnow(p.snow_cm).toFixed(1)}`)
+      .join(" ");
+    const dotColor = (v: number) =>
+      baseline && v >= baseline.p90_cm
+        ? "#38bdf8"
+        : baseline && v <= baseline.p10_cm
+          ? "#fbbf24"
+          : "#7dd3fc";
+    const hi = argExtreme(history!, (p) => p.snow_cm, "max");
+    const lo = argExtreme(history!, (p) => p.snow_cm, "min");
+    const yTicks = [0, yMax / 2, yMax].map((v) => Math.round(v));
+    snowSvg = (
+      <g clipPath="url(#snowBandClip)">
         {baseline && (
           <rect
             x={padL}
             width={W - padL - padR}
-            y={y(baseline.p90_cm)}
-            height={Math.max(0, y(baseline.p10_cm) - y(baseline.p90_cm))}
+            y={ySnow(baseline.p90_cm)}
+            height={Math.max(0, ySnow(baseline.p10_cm) - ySnow(baseline.p90_cm))}
             fill="#64748b"
             fillOpacity="0.14"
           />
@@ -286,8 +303,8 @@ function HistoryChart({
           <line
             x1={padL}
             x2={W - padR}
-            y1={y(baseline.median_cm)}
-            y2={y(baseline.median_cm)}
+            y1={ySnow(baseline.median_cm)}
+            y2={ySnow(baseline.median_cm)}
             stroke="#94a3b8"
             strokeWidth="0.6"
             strokeDasharray="3 3"
@@ -302,15 +319,48 @@ function HistoryChart({
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        {history.map((p) => (
-          <circle key={p.year} cx={x(p.year)} cy={y(p.snow_cm)} r="1.3" fill={dotColor(p.snow_cm)} />
+        {history!.map((p) => (
+          <circle
+            key={`s-${p.year}`}
+            cx={x(p.year)}
+            cy={ySnow(p.snow_cm)}
+            r="1.3"
+            fill={dotColor(p.snow_cm)}
+          />
         ))}
-        <RecordMarker cx={x(hi.year)} cy={y(hi.snow_cm)} label={String(hi.year)} color="#38bdf8" W={W} />
-        <RecordMarker cx={x(lo.year)} cy={y(lo.snow_cm)} label={String(lo.year)} color="#fbbf24" W={W} />
+        <RecordMarker
+          cx={x(hi.year)}
+          cy={ySnow(hi.snow_cm)}
+          label={String(hi.year)}
+          color="#38bdf8"
+          W={W}
+        />
+        <RecordMarker
+          cx={x(lo.year)}
+          cy={ySnow(lo.snow_cm)}
+          label={String(lo.year)}
+          color="#fbbf24"
+          W={W}
+        />
+        {yTicks.map((v) => (
+          <text
+            key={`sy-${v}`}
+            x={padL - 3}
+            y={ySnow(v) + 2.5}
+            textAnchor="end"
+            fontSize="7"
+            fill="#64748b"
+          >
+            {v}
+          </text>
+        ))}
+        <text x={2} y={snowTop + 10} fontSize="7" fill="#38bdf8">
+          cm
+        </text>
         {baseline && (
           <text
             x={W - padR}
-            y={y(baseline.median_cm) - 2}
+            y={Math.max(ySnow(baseline.median_cm) - 2, snowTop + 8)}
             textAnchor="end"
             fontSize="7"
             fill="#94a3b8"
@@ -318,98 +368,76 @@ function HistoryChart({
             median {baseline.median_cm} cm
           </text>
         )}
-        <AxisTicks years={ticks} x={x} y={H - 4} />
-      </svg>
-      <p className="text-[11px] text-slate-600 mt-1">
-        Modeled season-total snowfall · ERA5 reanalysis · shaded band = normal range
-        (10th–90th percentile). Mid-elevation snowfall input, not snowpack or season
-        length.
-      </p>
-    </div>
-  );
-}
-
-// Winter rain/snow-line elevation, from the same ERA5 pull as the snowfall
-// history. A SECOND stacked panel (shared year axis, its own metres axis — never
-// a dual axis): mid-elevation snowfall totals look flat under warming, but the
-// snow line rises. The dashed OLS fit + trend badge carry the honest signal;
-// absolute metres are modeled (assumed lapse rate).
-function SnowlineChart({
-  snowline,
-  baseline,
-  trend,
-}: {
-  snowline: SeasonalSnowlinePoint[];
-  baseline: SeasonalSnowlineBaseline | null;
-  trend: SeasonalSnowlineTrend | null;
-}) {
-  const W = 320;
-  const H = 116;
-  const padL = 4;
-  const padR = 4;
-  const padT = 10;
-  const padB = 16;
-  const minYear = Math.min(...snowline.map((p) => p.year));
-  const maxYear = Math.max(...snowline.map((p) => p.year));
-  const vals = snowline.map((p) => p.snowline_m);
-  const lo = Math.min(baseline?.p10_m ?? Infinity, ...vals);
-  const hi = Math.max(baseline?.p90_m ?? -Infinity, ...vals);
-  const span = hi - lo || 100;
-  const yMin = Math.max(0, lo - span * 0.12);
-  const yMax = hi + span * 0.12;
-  const x = (yr: number) =>
-    padL + ((yr - minYear) / (maxYear - minYear || 1)) * (W - padL - padR);
-  const y = (v: number) => padT + (1 - (v - yMin) / (yMax - yMin || 1)) * (H - padT - padB);
-  const linePath = snowline
-    .map((p, i) => `${i ? "L" : "M"}${x(p.year).toFixed(1)},${y(p.snowline_m).toFixed(1)}`)
-    .join(" ");
-  // OLS fit for the trend overlay (endpoints only).
-  const n = snowline.length;
-  const mx = snowline.reduce((a, p) => a + p.year, 0) / n;
-  const my = vals.reduce((a, v) => a + v, 0) / n;
-  let sxx = 0;
-  let sxy = 0;
-  for (const p of snowline) {
-    sxx += (p.year - mx) ** 2;
-    sxy += (p.year - mx) * (p.snowline_m - my);
+        {showLine && (
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={plotBottom + 2}
+            y2={plotBottom + 2}
+            stroke="#334155"
+            strokeWidth="0.6"
+          />
+        )}
+      </g>
+    );
   }
-  const slope = sxx ? sxy / sxx : 0;
-  const fit = (yr: number) => my + slope * (yr - mx);
-  const dir = trend?.direction ?? "stable";
-  const perDecade = Math.abs(Math.round(trend?.m_per_decade ?? 0));
-  const [BadgeIcon, badgeText, badgeColor] =
-    dir === "rising"
-      ? [ArrowUpRight, `Snow line rising ~${perDecade} m per decade`, "text-orange-400"]
-      : dir === "falling"
-        ? [ArrowDownRight, `Snow line falling ~${perDecade} m per decade`, "text-sky-400"]
-        : [ArrowRight, "Snow line roughly stable decade to decade", "text-slate-400"];
-  const ticks = axisTickYears(minYear, maxYear);
-  const hiLine = argExtreme(snowline, (p) => p.snowline_m, "max");
-  const loLine = argExtreme(snowline, (p) => p.snowline_m, "min");
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <p className="text-[11px] uppercase tracking-wide text-slate-500">
-          Winter snow line
-        </p>
-        <span className={`flex items-center gap-1 text-[11px] font-medium ${badgeColor}`}>
-          <BadgeIcon className="w-3 h-3 shrink-0" />
-          {badgeText}
-        </span>
-      </div>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full"
-        role="img"
-        aria-label="Modeled winter rain/snow-line elevation by year"
-      >
+  // --- snowline band (bottom) ---
+  let lineSvg: ReactNode = null;
+  let badge: ReactNode = null;
+  if (showLine) {
+    const baseline = snowlineBaseline ?? null;
+    const trend = snowlineTrend ?? null;
+    const vals = snowline!.map((p) => p.snowline_m);
+    const lo = Math.min(baseline?.p10_m ?? Infinity, ...vals);
+    const hi = Math.max(baseline?.p90_m ?? -Infinity, ...vals);
+    const span = hi - lo || 100;
+    const yMin = Math.max(0, lo - span * 0.12);
+    const yMax = hi + span * 0.12;
+    const yLine = (v: number) =>
+      lineTop + padT + (1 - (v - yMin) / (yMax - yMin || 1)) * (bandH - padT - padB);
+    const linePath = snowline!
+      .map(
+        (p, i) =>
+          `${i ? "L" : "M"}${x(p.year).toFixed(1)},${yLine(p.snowline_m).toFixed(1)}`
+      )
+      .join(" ");
+    const n = snowline!.length;
+    const mx = snowline!.reduce((a, p) => a + p.year, 0) / n;
+    const my = vals.reduce((a, v) => a + v, 0) / n;
+    let sxx = 0;
+    let sxy = 0;
+    for (const p of snowline!) {
+      sxx += (p.year - mx) ** 2;
+      sxy += (p.year - mx) * (p.snowline_m - my);
+    }
+    const slope = sxx ? sxy / sxx : 0;
+    const fit = (yr: number) => my + slope * (yr - mx);
+    const dir = trend?.direction ?? "stable";
+    const perDecade = Math.abs(Math.round(trend?.m_per_decade ?? 0));
+    const [BadgeIcon, badgeText, badgeColor] =
+      dir === "rising"
+        ? [ArrowUpRight, `Snow line rising ~${perDecade} m per decade`, "text-orange-400"]
+        : dir === "falling"
+          ? [ArrowDownRight, `Snow line falling ~${perDecade} m per decade`, "text-sky-400"]
+          : [ArrowRight, "Snow line roughly stable decade to decade", "text-slate-400"];
+    badge = (
+      <span className={`flex items-center gap-1 text-[11px] font-medium ${badgeColor}`}>
+        <BadgeIcon className="w-3 h-3 shrink-0" />
+        {badgeText}
+      </span>
+    );
+    const hiLine = argExtreme(snowline!, (p) => p.snowline_m, "max");
+    const loLine = argExtreme(snowline!, (p) => p.snowline_m, "min");
+    const yTicks = [yMin, (yMin + yMax) / 2, yMax].map((v) => Math.round(v));
+    lineSvg = (
+      <g clipPath="url(#lineBandClip)">
         {baseline && (
           <rect
             x={padL}
             width={W - padL - padR}
-            y={y(baseline.p90_m)}
-            height={Math.max(0, y(baseline.p10_m) - y(baseline.p90_m))}
+            y={yLine(baseline.p90_m)}
+            height={Math.max(0, yLine(baseline.p10_m) - yLine(baseline.p90_m))}
             fill="#64748b"
             fillOpacity="0.14"
           />
@@ -418,8 +446,8 @@ function SnowlineChart({
           <line
             x1={padL}
             x2={W - padR}
-            y1={y(baseline.median_m)}
-            y2={y(baseline.median_m)}
+            y1={yLine(baseline.median_m)}
+            y2={yLine(baseline.median_m)}
             stroke="#94a3b8"
             strokeWidth="0.6"
             strokeDasharray="3 3"
@@ -434,27 +462,60 @@ function SnowlineChart({
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        {snowline.map((p) => (
-          <circle key={p.year} cx={x(p.year)} cy={y(p.snowline_m)} r="1.3" fill="#e2e8f0" />
+        {snowline!.map((p) => (
+          <circle
+            key={`l-${p.year}`}
+            cx={x(p.year)}
+            cy={yLine(p.snowline_m)}
+            r="1.3"
+            fill="#e2e8f0"
+          />
         ))}
         {dir !== "stable" && (
           <line
             x1={x(minYear)}
             x2={x(maxYear)}
-            y1={y(fit(minYear))}
-            y2={y(fit(maxYear))}
+            y1={yLine(fit(minYear))}
+            y2={yLine(fit(maxYear))}
             stroke={dir === "rising" ? "#fb923c" : "#38bdf8"}
             strokeWidth="1.6"
             strokeDasharray="5 3"
             strokeLinecap="round"
           />
         )}
-        <RecordMarker cx={x(hiLine.year)} cy={y(hiLine.snowline_m)} label={String(hiLine.year)} color="#fb923c" W={W} />
-        <RecordMarker cx={x(loLine.year)} cy={y(loLine.snowline_m)} label={String(loLine.year)} color="#38bdf8" W={W} />
+        <RecordMarker
+          cx={x(hiLine.year)}
+          cy={yLine(hiLine.snowline_m)}
+          label={String(hiLine.year)}
+          color="#fb923c"
+          W={W}
+        />
+        <RecordMarker
+          cx={x(loLine.year)}
+          cy={yLine(loLine.snowline_m)}
+          label={String(loLine.year)}
+          color="#38bdf8"
+          W={W}
+        />
+        {yTicks.map((v) => (
+          <text
+            key={`ly-${v}`}
+            x={W - padR + 3}
+            y={yLine(v) + 2.5}
+            textAnchor="start"
+            fontSize="7"
+            fill="#64748b"
+          >
+            {v}
+          </text>
+        ))}
+        <text x={W - 14} y={lineTop + 10} fontSize="7" fill="#cbd5e1">
+          m
+        </text>
         {baseline && (
           <text
-            x={W - padR}
-            y={y(baseline.median_m) - 2}
+            x={W - padR - 2}
+            y={Math.max(yLine(baseline.median_m) - 2, lineTop + 8)}
             textAnchor="end"
             fontSize="7"
             fill="#94a3b8"
@@ -462,14 +523,59 @@ function SnowlineChart({
             median {baseline.median_m} m
           </text>
         )}
+      </g>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5 gap-2">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          {showSnow && showLine
+            ? "Year-by-year record · snow line"
+            : showSnow
+              ? "Year-by-year record"
+              : "Winter snow line"}
+        </p>
+        {badge}
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        role="img"
+        aria-label="Modeled season-total snowfall and winter snow-line elevation by year"
+      >
+        <defs>
+          {showSnow && (
+            <clipPath id="snowBandClip">
+              <rect x={0} y={snowTop} width={W} height={bandH} />
+            </clipPath>
+          )}
+          {showLine && (
+            <clipPath id="lineBandClip">
+              <rect x={0} y={lineTop} width={W} height={bandH} />
+            </clipPath>
+          )}
+        </defs>
+        {snowSvg}
+        {lineSvg}
         <AxisTicks years={ticks} x={x} y={H - 4} />
       </svg>
-      <p className="text-[11px] text-slate-600 mt-1">
-        Where winter days cross the rain/snow threshold · ERA5 reanalysis. The line
-        tracks temperature, so it rises under warming even where snowfall looks flat.
-        Metres are modeled; a 35-year reanalysis trend is indicative, not definitive —
-        decadal swings (and coarse grids over small ranges) can move it.
-      </p>
+      {showSnow && (
+        <p className="text-[11px] text-slate-600 mt-1">
+          Modeled season-total snowfall · ERA5 reanalysis · shaded band = normal range
+          (10th–90th percentile). Mid-elevation snowfall input, not snowpack or season
+          length.
+        </p>
+      )}
+      {showLine && (
+        <p className="text-[11px] text-slate-600 mt-1">
+          Where winter days cross the rain/snow threshold · ERA5 reanalysis. The line
+          tracks temperature, so it rises under warming even where snowfall looks flat.
+          Metres are modeled; a 35-year reanalysis trend is indicative, not definitive —
+          decadal swings (and coarse grids over small ranges) can move it.
+        </p>
+      )}
     </div>
   );
 }
@@ -683,23 +789,17 @@ export function SeasonalOutlookCard({
       <Divider />
       <TrendRow row={row} />
 
-      {!compact && payload.history && payload.history.length > 1 && (
+      {!compact &&
+        ((payload.history && payload.history.length > 1) ||
+          (payload.snowline_history && payload.snowline_history.length > 1)) && (
         <>
           <Divider />
-          <HistoryChart
+          <CombinedSeasonalHistoryChart
             history={payload.history}
-            baseline={payload.history_baseline ?? null}
-          />
-        </>
-      )}
-
-      {!compact && payload.snowline_history && payload.snowline_history.length > 1 && (
-        <>
-          <Divider />
-          <SnowlineChart
+            historyBaseline={payload.history_baseline}
             snowline={payload.snowline_history}
-            baseline={payload.snowline_baseline ?? null}
-            trend={payload.snowline_trend ?? null}
+            snowlineBaseline={payload.snowline_baseline}
+            snowlineTrend={payload.snowline_trend}
           />
         </>
       )}

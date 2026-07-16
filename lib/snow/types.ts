@@ -52,6 +52,8 @@ export interface DailyRow {
   // Metres of headroom between the band and the rain–snow line; negative =
   // the line sits above this band (mixed precip). Drives the precip icon.
   snow_level_margin_m?: number | null;
+  /** WMO weather interpretation code (Open-Meteo). Optional on older caches. */
+  weather_code?: number | null;
   time_of_day?: TimeBlock[];
 }
 
@@ -205,9 +207,10 @@ export interface SeasonalHistoryCurrent {
 
 // Winter rain/snow-line elevation, derived from the same ERA5 pull as the
 // snowfall history (precip-weighted, temp crosses +1°C, 6.5°C/km lapse from
-// mid elevation). Render as a SECOND stacked panel under the snowfall curve —
-// NOT a dual right-hand axis. Absolute metres are modeled (assumed lapse rate);
-// the rising trend is the robust warming signal even where snowfall looks flat.
+// mid elevation). Render in a shared-year combined chart as the LOWER band under
+// snowfall (separate m scale on the right) — not overlaid on the same plot.
+// Absolute metres are modeled (assumed lapse rate); the rising trend is the
+// robust warming signal even where snowfall looks flat.
 export interface SeasonalSnowlinePoint {
   year: number;
   snowline_m: number;
