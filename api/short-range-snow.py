@@ -23,6 +23,7 @@ the cache (degraded, not broken).
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -68,6 +69,71 @@ def _parse_float(value: str | None) -> float | None:
         return float(value) if value not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+
+# The map ski-resort index (~3,466 OSM/manual resorts) published to Storage —
+# the SAME catalog these coordinate-override requests originate from, and where
+# each resort's country was already resolved (accurate polygon reverse-geocode
+# at build time). We reuse it, keyed by resort_id, to backfill country_code when
+# the caller omits ?country=. Cached across warm invocations. This is the
+# authoritative source (not the 314-row curated seed in snow_outlook_resorts).
+STORAGE_BASE = f"{SUPABASE_URL}/storage/v1/object/public/ride-tracker-static/ski-resorts"
+_RESORT_INDEX_CACHE: tuple[dict[str, str], list[tuple[float, float, str]]] | None = None
+
+
+def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]]]:
+    """(by_id, geo) where by_id maps resort_id→country and geo is a list of
+    (lat, lon, country) used as a nearest-neighbour fallback."""
+    global _RESORT_INDEX_CACHE
+    if _RESORT_INDEX_CACHE is not None:
+        return _RESORT_INDEX_CACHE
+    by_id: dict[str, str] = {}
+    geo: list[tuple[float, float, str]] = []
+    try:
+        manifest = requests.get(f"{STORAGE_BASE}/manifest.json", timeout=15)
+        manifest.raise_for_status()
+        index_file = (manifest.json() or {}).get("file")
+        if index_file:
+            index = requests.get(f"{STORAGE_BASE}/{index_file}", timeout=20)
+            index.raise_for_status()
+            for entry in (index.json() or {}).get("resorts", []):
+                code = entry.get("country")
+                rid = entry.get("id")
+                if not code:
+                    continue
+                if rid:
+                    by_id[str(rid)] = str(code)
+                lat = _parse_float(entry.get("lat"))
+                lon = _parse_float(entry.get("lon"))
+                if lat is not None and lon is not None:
+                    geo.append((lat, lon, str(code)))
+    except requests.RequestException:
+        by_id, geo = {}, []
+    _RESORT_INDEX_CACHE = (by_id, geo)
+    return _RESORT_INDEX_CACHE
+
+
+def _resolve_country(resort_id: str, weather_id: str, lat: float, lon: float) -> str | None:
+    """Country for a coordinate-override resort: exact resort_id hit in the map
+    index first (authoritative), else the nearest resort in that same index."""
+    by_id, geo = _load_resort_index()
+    for key in (resort_id, weather_id):
+        code = by_id.get(key)
+        if code:
+            return code
+    if not geo:
+        return None
+    lat_rad = math.radians(lat)
+    best_code: str | None = None
+    best_dist = float("inf")
+    for r_lat, r_lon, code in geo:
+        dlat = r_lat - lat
+        dlon = (r_lon - lon) * math.cos(lat_rad)
+        dist = dlat * dlat + dlon * dlon
+        if dist < best_dist:
+            best_dist = dist
+            best_code = code
+    return best_code
 
 
 def _read_cache(resort_id: str) -> dict | None:
@@ -201,13 +267,19 @@ class handler(BaseHTTPRequestHandler):
         resort_override = None
         if lat is not None and lon is not None:
             country = (query.get("country") or [None])[0]
+            country = country.strip() if country else None
+            # Fallback so on-demand map-index resorts never persist a NULL
+            # country_code (which would drop them from country-scoped queries).
+            if not country:
+                weather_id = slug_map.canonical_weather_id(resort_id)
+                country = _resolve_country(resort_id, weather_id, lat, lon)
             resort_override = {
                 "resort_id": resort_id,
                 "lat": lat,
                 "lon": lon,
                 "base_elevation_m": _parse_float((query.get("base_m") or [None])[0]),
                 "top_elevation_m": _parse_float((query.get("top_m") or [None])[0]),
-                "country_code": country.strip() if country else None,
+                "country_code": country,
                 "region_id": None,
             }
 
