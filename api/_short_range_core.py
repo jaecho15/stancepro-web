@@ -17,7 +17,7 @@ Keep this in lockstep with fetch_short_range_snow.py's base path.
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
@@ -66,6 +66,16 @@ def _quantiles(values: list[float]) -> tuple[float, float, float]:
         round(_quantile(values, QUANTILES["p50"]), 1),
         round(_quantile(values, QUANTILES["p90"]), 1),
     )
+
+
+def _weather_code_mode(codes: list[int]) -> int | None:
+    """Most common WMO weather_code; ties break toward the higher (usually more
+    severe) code so a mixed clear/overcast block does not read as clear."""
+    if not codes:
+        return None
+    counts = Counter(int(c) for c in codes)
+    top = max(counts.values())
+    return max(c for c, n in counts.items() if n == top)
 
 
 # ---- copied verbatim from fetch_short_range_snow.py (no pandas) ----
@@ -177,6 +187,7 @@ def hourly_band_day(
     block_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
     day_wind: list[tuple[float, float, float]] = []
     block_wind: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
+    block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
 
     for model in models:
         precip_series = hourly.get(f"precipitation_{model}") or []
@@ -184,6 +195,7 @@ def hourly_band_day(
         wspd_series = hourly.get(f"wind_speed_10m_{model}") or []
         wdir_series = hourly.get(f"wind_direction_10m_{model}") or []
         wgst_series = hourly.get(f"wind_gusts_10m_{model}") or []
+        wx_series = hourly.get(f"weather_code_{model}") or []
         for index, stamp in enumerate(times):
             if stamp[:10] != date:
                 continue
@@ -207,6 +219,9 @@ def hourly_band_day(
                 sample = (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
                 day_wind.append(sample)
                 block_wind[block_index].append(sample)
+            wx = wx_series[index] if index < len(wx_series) else None
+            if wx is not None:
+                block_wx[block_index].append(int(wx))
 
     if not day_snow:
         return [], None
@@ -241,6 +256,7 @@ def hourly_band_day(
                 "wind_kmh": wind_kmh,
                 "wind_dir_deg": wind_dir_deg,
                 "wind_gust_kmh": wind_gust_kmh,
+                "weather_code": _weather_code_mode(block_wx[block_index]),
             }
         )
 
@@ -335,6 +351,12 @@ def band_daily_rows(
                     )
             wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(wind_samples)
 
+        weather_codes: list[int] = []
+        for model in models:
+            series = daily.get(f"weather_code_{model}") or []
+            if index < len(series) and series[index] is not None:
+                weather_codes.append(int(series[index]))
+
         rows.append(
             {
                 "date": date,
@@ -355,6 +377,7 @@ def band_daily_rows(
                 "wind_kmh": wind_kmh,
                 "wind_dir_deg": wind_dir_deg,
                 "wind_gust_kmh": wind_gust_kmh,
+                "weather_code": _weather_code_mode(weather_codes),
                 "time_of_day": blocks,
             }
         )
@@ -447,14 +470,17 @@ def fetch_band_forecast(
         "latitude": f"{float(resort['lat']):.5f}",
         "longitude": f"{float(resort['lon']):.5f}",
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,"
-        "wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant",
+        "weather_code,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant",
         "models": models,
         "forecast_days": forecast_days,
         "timezone": "auto",
     }
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
-    hourly_vars = "temperature_2m,precipitation,snowfall,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
+    hourly_vars = (
+        "temperature_2m,precipitation,snowfall,weather_code,"
+        "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
+    )
     if include_freezing_level:
         hourly_vars += ",freezing_level_height"
     params["hourly"] = hourly_vars
@@ -523,16 +549,19 @@ def _current_depth_cm(band_payload: dict[str, Any]) -> int | None:
 
 
 # --- Per-band depth estimate -------------------------------------------------
-# Open-Meteo's `snow_depth` is a grid-cell state: it does NOT respond to the
-# `elevation` downscaling parameter, so fetching it per band returns the same
-# number three times. Temperature DOES downscale (past days included), so we
-# build the elevation structure ourselves: a season-to-date snow budget per band
-# (precip falls as snow when the band's daily mean is cold, minus degree-day
-# melt) and use the budgets only as RATIOS to distribute the trusted grid
-# snow_depth across bands. Absolute level stays anchored to the model analysis;
-# only the vertical gradient comes from the budget. Crude by design (fixed SLR,
-# fixed melt factor, no settling/wind) — ratios cancel most of that, and the
-# payload already carries estimate=true.
+# Open-Meteo's `snow_depth` DOES respond to the `elevation` parameter: a low
+# base-band query in a deep valley can report near-zero while the mid/native
+# cell holds a real pack (e.g. Ski Arpa: base 2100 m → 3 cm, mid 2850 m → 42 cm).
+# So we anchor on the MID band — the representative elevation whose own season
+# budget is the ratio denominator — never whichever band iterates first (the low
+# base band would collapse the whole profile toward zero). Temperature also downscales
+# (past days included), so we build the vertical structure from a season-to-date
+# snow budget per band (precip falls as snow when the band's daily mean is cold,
+# minus degree-day melt) and use the budgets as RATIOS to distribute the anchor
+# depth across bands. Absolute level stays anchored to the model analysis; only
+# the vertical gradient comes from the budget. Crude by design (fixed SLR, fixed
+# melt factor, no settling/wind) — ratios cancel most of that, and the payload
+# already carries estimate=true.
 
 HISTORY_PAST_DAYS = 92          # Open-Meteo max; covers a season half from mid-season
 BUDGET_SNOW_TMEAN_C = 1.0       # daily mean at/below this → precip counted as snow
@@ -557,7 +586,8 @@ STATION_ELEV_MARGIN_M = 250.0   # station must sit within [base-250, top+250]
 # the budget model's biggest failure mode (imagining base snow that melted or
 # fell as rain) gets corrected by observation. Applies to multi-band resorts
 # only (single-band carries no elevation to compare).
-SNOWLINE_MAX_AGE_DAYS = 5       # older reads are stale — don't gate
+SNOWLINE_MAX_AGE_DAYS = 5       # older reads are too stale to gate depths
+SNOWLINE_DISPLAY_MAX_AGE_DAYS = 14  # still surface on the depth card with as-of
 SNOWLINE_MARGIN_M = 100.0       # band must sit this far below the line to zero
 
 
@@ -656,33 +686,73 @@ def fetch_nearby_station(resort: dict[str, Any],
     return best
 
 
-def fetch_snowline(resort: dict[str, Any]) -> dict[str, Any] | None:
-    """The resort's latest confident satellite snowline read, or None. Fresh
-    (≤ SNOWLINE_MAX_AGE_DAYS) rows only. Best-effort — gating is an upgrade,
-    never a dependency."""
+def _snowline_candidate_ids(resort: dict[str, Any]) -> list[str]:
+    """IDs to try against snow_snowlines: weather id first, then curated slug.
+
+    Serving table keys are OSM/manual weather ids; snow_snowlines historically
+    used snow_outlook slugs (mt_hutt, caviahue, …). Try both."""
+    rid = str(resort.get("resort_id") or "").strip()
+    ids: list[str] = []
+    if rid:
+        ids.append(rid)
+    slug = None
     try:
-        response = requests.get(
-            f"{DEFAULT_SUPABASE_URL}/rest/v1/snow_snowlines",
-            params={"resort_id": f"eq.{resort['resort_id']}",
-                    "select": "status,snowline_m,sampled_max_m,obs_date", "limit": 1},
-            headers={"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
-                     "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"},
-            timeout=15,
-        )
-        response.raise_for_status()
-        rows = response.json()
+        try:
+            from _snow_outlook_slug_map import curated_slug_for_weather_id
+        except ImportError:
+            from snow_outlook_slug_map import curated_slug_for_weather_id
+        slug = curated_slug_for_weather_id(rid)
     except Exception:
+        slug = None
+    if slug and slug not in ids:
+        ids.append(slug)
+    return ids
+
+
+def fetch_snowline(resort: dict[str, Any]) -> dict[str, Any] | None:
+    """The resort's latest confident satellite snowline read, or None.
+
+    Attaches reads up to SNOWLINE_DISPLAY_MAX_AGE_DAYS for the depth-card UI.
+    Depth gating itself still uses SNOWLINE_MAX_AGE_DAYS (see
+    `_snowline_fresh_enough_to_gate`). Best-effort — never a dependency."""
+    headers = {"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+               "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"}
+    row = None
+    for candidate in _snowline_candidate_ids(resort):
+        try:
+            response = requests.get(
+                f"{DEFAULT_SUPABASE_URL}/rest/v1/snow_snowlines",
+                params={"resort_id": f"eq.{candidate}",
+                        "select": "status,snowline_m,sampled_max_m,obs_date",
+                        "limit": 1},
+                headers=headers,
+                timeout=15,
+            )
+            response.raise_for_status()
+            rows = response.json()
+        except Exception:
+            continue
+        if rows:
+            row = rows[0]
+            break
+    if row is None:
         return None
-    if not rows:
-        return None
-    row = rows[0]
     try:
         obs = datetime.strptime(str(row.get("obs_date")), "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return None
-    if (datetime.now(tz=timezone.utc) - obs).days > SNOWLINE_MAX_AGE_DAYS:
+    age_days = (datetime.now(tz=timezone.utc) - obs).days
+    if age_days > SNOWLINE_DISPLAY_MAX_AGE_DAYS:
         return None
     return row
+
+
+def _snowline_fresh_enough_to_gate(snowline: dict[str, Any]) -> bool:
+    try:
+        obs = datetime.strptime(str(snowline.get("obs_date")), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return False
+    return (datetime.now(tz=timezone.utc) - obs).days <= SNOWLINE_MAX_AGE_DAYS
 
 
 def _apply_snowline_gate(banded: dict[str, int | None],
@@ -690,7 +760,10 @@ def _apply_snowline_gate(banded: dict[str, int | None],
                          snowline: dict[str, Any]) -> dict[str, int | None]:
     """Zero the depth of bands the satellite saw as bare. `all_bare` only zeros
     bands inside the elevation span the grid actually sampled — never
-    extrapolates above it."""
+    extrapolates above it. Stale reads (past SNOWLINE_MAX_AGE_DAYS) are ignored
+    for gating but may still be shown on the card."""
+    if not _snowline_fresh_enough_to_gate(snowline):
+        return dict(banded)
     status = snowline.get("status")
     out = dict(banded)
     for band, depth_cm in banded.items():
@@ -732,9 +805,10 @@ def _budget_at_elevation(band_budgets: dict[str, float],
 def _banded_depth_cm(grid_depth_cm: int | None,
                      band_budgets: dict[str, float],
                      ref_budget: float) -> dict[str, int | None]:
-    """Distribute the grid snow_depth across bands by budget ratio. Falls back to
-    the uniform grid value when the reference budget is too small to divide by
-    (ratios would be noise)."""
+    """Distribute the grid snow_depth across bands by budget ratio, relative to
+    the reference budget (the mid band's, so mid keeps the anchor at ratio 1.0).
+    Falls back to the uniform grid value when the reference budget is too small
+    to divide by (ratios would be noise)."""
     out: dict[str, int | None] = {}
     for band, budget in band_budgets.items():
         if grid_depth_cm is None:
@@ -765,21 +839,21 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             for band in bands
         }
         tendency_future = pool.submit(fetch_tendency, resort, bands.get("mid")) if with_tendency else None
-        # Per-band depth needs the season-budget history per band + one run at
-        # the grid's native elevation (no elevation param) as the anchor. Only
-        # worth the calls when there is more than one band to differentiate.
+        # Per-band depth needs a season-budget history per band. The mid band is
+        # the reference both for the depth anchor and the budget ratios, so no
+        # separate native-elevation run is needed. Only worth the calls when
+        # there is more than one band to differentiate.
         history_futures = (
             {band: pool.submit(fetch_band_history, resort, bands[band]) for band in bands}
             if multi_band else {}
         )
-        ref_history_future = pool.submit(fetch_band_history, resort, None) if multi_band else None
         station_future = pool.submit(fetch_nearby_station, resort, bands) if multi_band else None
-        snowline_future = pool.submit(fetch_snowline, resort) if multi_band else None
+        # Always try snowline — even single-band cards show the satellite read.
+        snowline_future = pool.submit(fetch_snowline, resort)
         band_payloads = {band: future.result() for band, future in band_futures.items()}
         tendency = tendency_future.result() if tendency_future else []
         band_budgets = {band: _season_budget_cm(future.result())
                         for band, future in history_futures.items()}
-        ref_budget = _season_budget_cm(ref_history_future.result()) if ref_history_future else 0.0
         station = station_future.result() if station_future else None
         snowline = snowline_future.result() if snowline_future else None
 
@@ -790,17 +864,22 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                                           freezing_by_date, freezing_by_block, 7))
     for row in daily_rows:
         row["resort_id"] = resort["resort_id"]
-    # Current snowpack depth per band. The model grid value is identical across
-    # bands (snow_depth ignores elevation downscaling), so multi-band resorts
-    # distribute an ANCHOR by season-budget ratio. The anchor is a nearby
-    # measured station when one qualifies (better absolute level), else the
-    # model grid value.
+    # Current snowpack depth per band. The mid band is the reference: its current
+    # snow_depth is the anchor (snow_depth DOES downscale with elevation, so the
+    # low base band would otherwise collapse the profile) and its season budget is
+    # the ratio denominator — so mid keeps the anchor exactly (ratio 1.0) and the
+    # base/top bands scale off it. Using the native-elevation budget instead would
+    # sit in a warm valley cell (≈0 for high resorts), tripping the uniform
+    # fallback and flattening the profile. The anchor is a nearby measured station
+    # when one qualifies (better absolute level), else the model grid value.
     grid_depth_cm = next(
-        (cm for cm in (_current_depth_cm(bp) for bp in band_payloads.values()) if cm is not None),
+        (cm for cm in (_current_depth_cm(band_payloads[b])
+                       for b in sorted(band_payloads, key=lambda name: name != "mid"))
+         if cm is not None),
         None,
     )
     anchor_depth_cm = grid_depth_cm
-    anchor_budget = ref_budget
+    anchor_budget = band_budgets.get("mid", 0.0)
     depth_source = "model"
     if station is not None:
         station_budget = _budget_at_elevation(band_budgets, bands, float(station["elevation_m"]))
