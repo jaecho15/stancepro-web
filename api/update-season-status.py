@@ -29,11 +29,18 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 
 import requests
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import _snow_outlook_slug_map as slug_map
+except Exception:  # pragma: no cover — degrade to slug-only if bridge is missing
+    slug_map = None
 
 SUPABASE_URL = (
     os.environ.get("SUPABASE_URL")
@@ -191,14 +198,27 @@ def _trend(full_season_totals: list[tuple[int, float]]) -> dict:
 
 
 def _snow_cover(resort_ids: list[str]) -> dict | None:
-    """Satellite read counts for the region's resorts (snow_snowlines)."""
+    """Satellite read counts for the region's resorts (snow_snowlines).
+
+    snow_snowlines is keyed by weather identity (OSM/manual) going forward, but
+    legacy slug rows may still exist during the transition. Query each curated
+    slug AND its canonical weather id, then dedupe per resort (preferring the
+    OSM/manual-keyed row) so a resort with both rows is counted once."""
     if not resort_ids:
         return None
+    canon_by_id: dict[str, str] = {}
+    query_ids: list[str] = []
+    for rid in resort_ids:
+        canon = slug_map.canonical_weather_id(rid) if slug_map else rid
+        for key in (rid, canon):
+            if key and key not in canon_by_id:
+                canon_by_id[key] = canon
+                query_ids.append(key)
     try:
         response = requests.get(
             f"{SUPABASE_URL}/rest/v1/snow_snowlines",
             params={"select": "resort_id,status",
-                    "resort_id": f"in.({','.join(resort_ids)})"},
+                    "resort_id": f"in.({','.join(query_ids)})"},
             headers={"apikey": READ_KEY, "Authorization": f"Bearer {READ_KEY}"},
             timeout=15,
         )
@@ -208,9 +228,18 @@ def _snow_cover(resort_ids: list[str]) -> dict | None:
         return None
     if not rows:
         return None
-    counts = {"covered": 0, "partial": 0, "bare": 0}
+    # One status per resort; a weather-id row wins over a legacy slug row.
+    status_by_resort: dict[str, str] = {}
     for row in rows:
-        status = row.get("status")
+        rid = row.get("resort_id")
+        if not rid:
+            continue
+        resort = canon_by_id.get(rid, rid)
+        is_weather_id = rid.startswith(("osm-", "manual-"))
+        if resort not in status_by_resort or is_weather_id:
+            status_by_resort[resort] = row.get("status")
+    counts = {"covered": 0, "partial": 0, "bare": 0}
+    for status in status_by_resort.values():
         if status == "all_snow":
             counts["covered"] += 1
         elif status == "snowline":
