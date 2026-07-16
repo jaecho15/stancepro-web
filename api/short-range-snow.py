@@ -33,6 +33,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _short_range_core as core  # noqa: E402
+import _snow_outlook_slug_map as slug_map  # noqa: E402
 
 TABLE = "short_range_forecasts"
 DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
@@ -116,13 +117,25 @@ def _write_cache(resort: dict, payload: dict, summary: dict) -> bool:
     return True
 
 
+def _fetch_resort_metadata(requested_id: str, weather_id: str) -> dict | None:
+    """Resolve elev/country metadata from snow_outlook_resorts (still slug-keyed)."""
+    if not (requested_id.startswith("osm-") or requested_id.startswith("manual-")):
+        return core.fetch_resort(requested_id)
+    # OSM/manual request: reverse map to curated slug when available.
+    reverse = {osm: slug for slug, osm in slug_map.load_slug_to_osm().items()}
+    slug = reverse.get(weather_id)
+    return core.fetch_resort(slug) if slug else None
+
+
 def _build(resort_id: str, max_age_s: int, refresh: bool,
            resort_override: dict | None = None) -> tuple[int, dict]:
     now = datetime.now(tz=timezone.utc)
+    # Serving + cache keys are weather identity (OSM/manual), not curated slugs.
+    weather_id = slug_map.canonical_weather_id(resort_id)
 
     if not refresh:
         try:
-            cached = _read_cache(resort_id)
+            cached = _read_cache(weather_id)
         except requests.RequestException:
             cached = None
         if cached:
@@ -130,7 +143,7 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
             age = (now - generated).total_seconds() if generated else None
             if age is not None and age <= max_age_s:
                 return 200, {
-                    "resort_id": resort_id,
+                    "resort_id": weather_id,
                     "cached": True,
                     "config_version": cached.get("config_version") or CONFIG_VERSION,
                     "generated_at": cached.get("generated_at"),
@@ -140,13 +153,15 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
                 }
 
     # An override (lat/lon supplied by the caller — e.g. the map ski-resort
-    # index's 3466 OSM resorts, which are NOT rows in snow_outlook_resorts)
-    # skips the DB lookup and computes straight from the passed coordinates.
-    resort = resort_override or core.fetch_resort(resort_id)
+    # index) skips the DB lookup and computes straight from the coordinates.
+    resort = resort_override or _fetch_resort_metadata(resort_id, weather_id)
     if not resort:
         return 404, {"error": "resort_not_found", "resort_id": resort_id}
 
+    resort = {**resort, "resort_id": weather_id}
     payload = core.compute_forecast(resort)
+    if isinstance(payload, dict):
+        payload = {**payload, "resort_id": weather_id}
     summary = core.build_summary(payload)
     try:
         wrote = _write_cache(resort, payload, summary)
@@ -154,7 +169,7 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
         wrote = False
 
     return 200, {
-        "resort_id": resort_id,
+        "resort_id": weather_id,
         "cached": False,
         "cache_written": wrote,
         "config_version": CONFIG_VERSION,

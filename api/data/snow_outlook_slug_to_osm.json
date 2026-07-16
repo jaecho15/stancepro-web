@@ -1,0 +1,3385 @@
+{
+  "version": 1,
+  "updated": "2026-07-16",
+  "notes": "Maps snow_outlook_resorts.resort_id (slug) → OSM / gapfill index id used by Ride Tracker ski-resort index. Built from active curated resorts matched to landuse=winter_sports where possible; unmatched outdoor resorts injected as gapfill pins (osm-node-* when a real OSM feature exists, else manual-*). Includes by_osm_id inverse for shared-weather alias UI.",
+  "by_slug": {
+    "ordino_arcalis": {
+      "osm_id": "osm-way-987242424",
+      "display_name": "Ordino Arcalis",
+      "match": "name"
+    },
+    "vallnord_pal_arinsal": {
+      "osm_id": "osm-way-987243867",
+      "display_name": "Vallnord Pal-Arinsal",
+      "match": "name"
+    },
+    "caviahue": {
+      "osm_id": "osm-way-1362374789",
+      "display_name": "Caviahue",
+      "match": "name"
+    },
+    "cerro_bayo": {
+      "osm_id": "osm-way-934033486",
+      "display_name": "Cerro Bayo",
+      "match": "name"
+    },
+    "cerro_castor": {
+      "osm_id": "osm-way-934046989",
+      "display_name": "Cerro Castor",
+      "match": "name"
+    },
+    "cerro_catedral": {
+      "osm_id": "osm-way-28707473",
+      "display_name": "Cerro Catedral",
+      "match": "name"
+    },
+    "chapelco": {
+      "osm_id": "osm-way-934098320",
+      "display_name": "Chapelco",
+      "match": "name"
+    },
+    "la_hoya": {
+      "osm_id": "osm-way-378344849",
+      "display_name": "La Hoya",
+      "match": "name"
+    },
+    "las_lenas": {
+      "osm_id": "osm-way-934103782",
+      "display_name": "Las Lenas",
+      "match": "name"
+    },
+    "hintertux_glacier": {
+      "osm_id": "osm-way-539199305",
+      "display_name": "Hintertux Glacier",
+      "match": "name"
+    },
+    "ischgl": {
+      "osm_id": "osm-way-539395530",
+      "display_name": "Ischgl Silvretta Arena",
+      "match": "name"
+    },
+    "kaprun_kitzsteinhorn": {
+      "osm_id": "osm-way-1266571967",
+      "display_name": "Kaprun Kitzsteinhorn",
+      "match": "name"
+    },
+    "kitzbuhel": {
+      "osm_id": "osm-relation-10938000",
+      "display_name": "KitzSki Kitzbuhel",
+      "match": "name"
+    },
+    "lech_zurs": {
+      "osm_id": "osm-way-539407909",
+      "display_name": "Lech Zurs am Arlberg",
+      "match": "name"
+    },
+    "mayrhofen": {
+      "osm_id": "osm-way-539196496",
+      "display_name": "Mayrhofen",
+      "match": "name"
+    },
+    "obergurgl_hochgurgl": {
+      "osm_id": "osm-way-508236935",
+      "display_name": "Obergurgl-Hochgurgl",
+      "match": "name"
+    },
+    "obertauern": {
+      "osm_id": "osm-way-341899728",
+      "display_name": "Obertauern",
+      "match": "name"
+    },
+    "saalbach": {
+      "osm_id": "osm-way-342018770",
+      "display_name": "Saalbach Hinterglemm Leogang Fieberbrunn",
+      "match": "name"
+    },
+    "schladming_dachstein": {
+      "osm_id": "osm-relation-8896546",
+      "display_name": "Schladming-Dachstein",
+      "match": "name"
+    },
+    "serfaus_fiss_ladis": {
+      "osm_id": "osm-way-1227177985",
+      "display_name": "Serfaus-Fiss-Ladis",
+      "match": "name"
+    },
+    "solden": {
+      "osm_id": "osm-way-438793320",
+      "display_name": "Solden",
+      "match": "name"
+    },
+    "st_anton_am_arlberg": {
+      "osm_id": "osm-way-539407909",
+      "display_name": "St. Anton am Arlberg",
+      "match": "name"
+    },
+    "stubai_glacier": {
+      "osm_id": "osm-way-539209006",
+      "display_name": "Stubai Glacier",
+      "match": "geo"
+    },
+    "charlotte_pass": {
+      "osm_id": "osm-way-1360038350",
+      "display_name": "Charlotte Pass Snow Resort",
+      "match": "name"
+    },
+    "falls_creek": {
+      "osm_id": "osm-way-1210011762",
+      "display_name": "Falls Creek",
+      "match": "name"
+    },
+    "mount_buller": {
+      "osm_id": "osm-way-1225432526",
+      "display_name": "Mount Buller",
+      "match": "name"
+    },
+    "mount_hotham": {
+      "osm_id": "osm-way-1225428207",
+      "display_name": "Mount Hotham",
+      "match": "name"
+    },
+    "mt_buller": {
+      "osm_id": "osm-way-1225432526",
+      "display_name": "Mt Buller",
+      "match": "geo"
+    },
+    "mt_hotham": {
+      "osm_id": "osm-way-1225428207",
+      "display_name": "Mt Hotham",
+      "match": "geo"
+    },
+    "perisher": {
+      "osm_id": "osm-way-178133225",
+      "display_name": "Perisher",
+      "match": "name"
+    },
+    "thredbo": {
+      "osm_id": "osm-way-499034347",
+      "display_name": "Thredbo",
+      "match": "name"
+    },
+    "banff_sunshine": {
+      "osm_id": "osm-way-739168515",
+      "display_name": "Banff Sunshine Village",
+      "match": "name"
+    },
+    "big_white": {
+      "osm_id": "osm-way-476836855",
+      "display_name": "Big White Ski Resort",
+      "match": "name"
+    },
+    "bromont": {
+      "osm_id": "osm-way-1244097962",
+      "display_name": "Bromont, montagne d experiences",
+      "match": "name"
+    },
+    "fernie_alpine_resort": {
+      "osm_id": "osm-way-1388612283",
+      "display_name": "Fernie Alpine Resort",
+      "match": "name"
+    },
+    "kicking_horse": {
+      "osm_id": "osm-way-476843455",
+      "display_name": "Kicking Horse Mountain Resort",
+      "match": "name"
+    },
+    "lake_louise": {
+      "osm_id": "osm-way-1388611703",
+      "display_name": "Lake Louise",
+      "match": "name"
+    },
+    "lake_louise_ski_resort": {
+      "osm_id": "osm-way-1388611703",
+      "display_name": "Lake Louise Ski Resort",
+      "match": "name"
+    },
+    "le_massif": {
+      "osm_id": "osm-relation-8027590",
+      "display_name": "Le Massif",
+      "match": "name"
+    },
+    "le_massif_charlevoix": {
+      "osm_id": "osm-relation-8027590",
+      "display_name": "Le Massif de Charlevoix",
+      "match": "name"
+    },
+    "mont_sainte_anne": {
+      "osm_id": "osm-way-391681261",
+      "display_name": "Mont-Sainte-Anne",
+      "match": "name"
+    },
+    "mont_tremblant": {
+      "osm_id": "osm-way-671144531",
+      "display_name": "Mont Tremblant Resort",
+      "match": "name"
+    },
+    "panorama_mountain_resort": {
+      "osm_id": "osm-way-476844342",
+      "display_name": "Panorama Mountain Resort",
+      "match": "name"
+    },
+    "red_mountain_resort": {
+      "osm_id": "osm-way-397735832",
+      "display_name": "RED Mountain Resort",
+      "match": "name"
+    },
+    "revelstoke": {
+      "osm_id": "osm-way-475720359",
+      "display_name": "Revelstoke",
+      "match": "name"
+    },
+    "revelstoke_mountain_resort": {
+      "osm_id": "osm-way-475720359",
+      "display_name": "Revelstoke Mountain Resort",
+      "match": "name"
+    },
+    "silverstar_mountain_resort": {
+      "osm_id": "osm-way-476840539",
+      "display_name": "SilverStar Mountain Resort",
+      "match": "name"
+    },
+    "stoneham": {
+      "osm_id": "osm-way-422827842",
+      "display_name": "Stoneham Mountain Resort",
+      "match": "name"
+    },
+    "sun_peaks": {
+      "osm_id": "osm-way-1138470815",
+      "display_name": "Sun Peaks Resort",
+      "match": "name"
+    },
+    "sunshine_village": {
+      "osm_id": "osm-way-739168515",
+      "display_name": "Sunshine Village",
+      "match": "name"
+    },
+    "whistler_blackcomb": {
+      "osm_id": "osm-way-474288286",
+      "display_name": "Whistler Blackcomb",
+      "match": "name"
+    },
+    "whitewater_ski_resort": {
+      "osm_id": "osm-way-475723205",
+      "display_name": "Whitewater Ski Resort",
+      "match": "name"
+    },
+    "adelboden_lenk": {
+      "osm_id": "osm-way-665125669",
+      "display_name": "Adelboden-Lenk",
+      "match": "name"
+    },
+    "aletsch_arena": {
+      "osm_id": "osm-way-1226018440",
+      "display_name": "Aletsch Arena",
+      "match": "name"
+    },
+    "arosa_lenzerheide": {
+      "osm_id": "osm-way-601135365",
+      "display_name": "Arosa Lenzerheide",
+      "match": "name"
+    },
+    "crans_montana": {
+      "osm_id": "osm-way-599002420",
+      "display_name": "Crans-Montana",
+      "match": "name"
+    },
+    "davos_klosters": {
+      "osm_id": "osm-way-601300156",
+      "display_name": "Davos Klosters",
+      "match": "name"
+    },
+    "disentis": {
+      "osm_id": "osm-relation-16364456",
+      "display_name": "Disentis",
+      "match": "name"
+    },
+    "engelberg_titlis": {
+      "osm_id": "osm-way-1449874365",
+      "display_name": "Engelberg-Titlis",
+      "match": "name"
+    },
+    "grindelwald": {
+      "osm_id": "osm-way-599436179",
+      "display_name": "Grindelwald",
+      "match": "name"
+    },
+    "grindelwald_wengen": {
+      "osm_id": "osm-way-1227173315",
+      "display_name": "Grindelwald-Wengen",
+      "match": "name"
+    },
+    "laax": {
+      "osm_id": "osm-way-599441663",
+      "display_name": "LAAX",
+      "match": "name"
+    },
+    "leukerbad": {
+      "osm_id": "osm-way-1226017306",
+      "display_name": "Leukerbad",
+      "match": "name"
+    },
+    "nendaz": {
+      "osm_id": "osm-way-660203241",
+      "display_name": "Nendaz",
+      "match": "name"
+    },
+    "saas_fee": {
+      "osm_id": "osm-way-45408941",
+      "display_name": "Saas-Fee",
+      "match": "name"
+    },
+    "st_moritz": {
+      "osm_id": "osm-way-642476176",
+      "display_name": "St. Moritz",
+      "match": "name"
+    },
+    "verbier": {
+      "osm_id": "osm-way-660203241",
+      "display_name": "Verbier",
+      "match": "name"
+    },
+    "wengen": {
+      "osm_id": "osm-way-1227173315",
+      "display_name": "Wengen",
+      "match": "name"
+    },
+    "zermatt": {
+      "osm_id": "osm-way-540681046",
+      "display_name": "Zermatt",
+      "match": "name"
+    },
+    "zinal": {
+      "osm_id": "osm-way-1138703077",
+      "display_name": "Zinal",
+      "match": "name"
+    },
+    "antillanca": {
+      "osm_id": "osm-way-1388302700",
+      "display_name": "Antillanca",
+      "match": "name"
+    },
+    "corralco": {
+      "osm_id": "osm-way-1412281678",
+      "display_name": "Corralco Mountain & Ski Resort",
+      "match": "name"
+    },
+    "portillo": {
+      "osm_id": "osm-way-934285904",
+      "display_name": "Ski Portillo",
+      "match": "name"
+    },
+    "ski_pucon": {
+      "osm_id": "osm-way-934099771",
+      "display_name": "Ski Pucon",
+      "match": "name"
+    },
+    "volcan_osorno": {
+      "osm_id": "osm-way-934101794",
+      "display_name": "Volcan Osorno",
+      "match": "name"
+    },
+    "beidahu": {
+      "osm_id": "osm-way-1232164322",
+      "display_name": "Beidahu Ski Resort",
+      "match": "name"
+    },
+    "genting_secret_garden": {
+      "osm_id": "osm-way-533578599",
+      "display_name": "Genting Secret Garden",
+      "match": "geo"
+    },
+    "wanlong": {
+      "osm_id": "osm-way-533578599",
+      "display_name": "Wanlong",
+      "match": "name"
+    },
+    "wanlong_ski_resort": {
+      "osm_id": "osm-way-533578599",
+      "display_name": "Wanlong Ski Resort",
+      "match": "name"
+    },
+    "xiling_snow_mountain": {
+      "osm_id": "osm-way-1354178778",
+      "display_name": "Xiling Snow Mountain",
+      "match": "name"
+    },
+    "yabuli": {
+      "osm_id": "osm-way-1290455091",
+      "display_name": "Yabuli Ski Resort",
+      "match": "name"
+    },
+    "astun": {
+      "osm_id": "osm-relation-3479356",
+      "display_name": "Astun",
+      "match": "name"
+    },
+    "boi_taull": {
+      "osm_id": "osm-way-738156377",
+      "display_name": "Boi Taull",
+      "match": "name"
+    },
+    "candanchu": {
+      "osm_id": "osm-relation-3478130",
+      "display_name": "Candanchu",
+      "match": "name"
+    },
+    "cerler": {
+      "osm_id": "osm-way-27153705",
+      "display_name": "Aramon Cerler",
+      "match": "name"
+    },
+    "formigal": {
+      "osm_id": "osm-relation-2946764",
+      "display_name": "Formigal",
+      "match": "name"
+    },
+    "formigal_panticosa": {
+      "osm_id": "osm-relation-2946764",
+      "display_name": "Formigal-Panticosa",
+      "match": "name"
+    },
+    "la_molina": {
+      "osm_id": "osm-way-738132226",
+      "display_name": "La Molina",
+      "match": "name"
+    },
+    "masella": {
+      "osm_id": "osm-way-738140305",
+      "display_name": "Masella",
+      "match": "name"
+    },
+    "panticosa": {
+      "osm_id": "osm-way-27163382",
+      "display_name": "Panticosa",
+      "match": "name"
+    },
+    "sierra_nevada": {
+      "osm_id": "osm-way-654498540",
+      "display_name": "Sierra Nevada",
+      "match": "name"
+    },
+    "sierra_nevada_spain": {
+      "osm_id": "osm-way-654498540",
+      "display_name": "Sierra Nevada Ski Station",
+      "match": "name"
+    },
+    "levi": {
+      "osm_id": "osm-way-1107815765",
+      "display_name": "Levi",
+      "match": "name"
+    },
+    "pyha": {
+      "osm_id": "osm-relation-6652645",
+      "display_name": "Pyha",
+      "match": "name"
+    },
+    "ruka": {
+      "osm_id": "osm-way-1236288758",
+      "display_name": "Ruka",
+      "match": "geo"
+    },
+    "saariselka": {
+      "osm_id": "osm-relation-3200038",
+      "display_name": "Saariselka",
+      "match": "name"
+    },
+    "salla": {
+      "osm_id": "osm-relation-2957907",
+      "display_name": "Salla",
+      "match": "name"
+    },
+    "yllas": {
+      "osm_id": "osm-relation-10948689",
+      "display_name": "Yllas",
+      "match": "name"
+    },
+    "alpe_dhuez": {
+      "osm_id": "osm-way-45438982",
+      "display_name": "Alpe d'Huez",
+      "match": "name"
+    },
+    "avoriaz": {
+      "osm_id": "osm-way-1422121628",
+      "display_name": "Avoriaz",
+      "match": "name"
+    },
+    "chamonix": {
+      "osm_id": "osm-way-642256846",
+      "display_name": "Chamonix",
+      "match": "name"
+    },
+    "chamonix_mont_blanc": {
+      "osm_id": "osm-way-642256846",
+      "display_name": "Chamonix Mont-Blanc",
+      "match": "geo"
+    },
+    "flaine": {
+      "osm_id": "osm-relation-13766276",
+      "display_name": "Flaine",
+      "match": "name"
+    },
+    "la_clusaz": {
+      "osm_id": "osm-way-599427053",
+      "display_name": "La Clusaz",
+      "match": "name"
+    },
+    "la_plagne": {
+      "osm_id": "osm-way-589003346",
+      "display_name": "La Plagne",
+      "match": "name"
+    },
+    "les_arcs": {
+      "osm_id": "osm-way-589005175",
+      "display_name": "Les Arcs",
+      "match": "geo"
+    },
+    "les_deux_alpes": {
+      "osm_id": "osm-way-45146739",
+      "display_name": "Les Deux Alpes",
+      "match": "name"
+    },
+    "les_gets": {
+      "osm_id": "osm-way-1422098961",
+      "display_name": "Les Gets",
+      "match": "geo"
+    },
+    "megeve": {
+      "osm_id": "osm-way-599426637",
+      "display_name": "Megeve",
+      "match": "name"
+    },
+    "morzine": {
+      "osm_id": "osm-way-1422098961",
+      "display_name": "Morzine",
+      "match": "name"
+    },
+    "peisey_vallandry": {
+      "osm_id": "osm-way-1354438774",
+      "display_name": "Peisey-Vallandry",
+      "match": "name"
+    },
+    "serre_chevalier": {
+      "osm_id": "osm-way-599436073",
+      "display_name": "Serre Chevalier",
+      "match": "name"
+    },
+    "tignes": {
+      "osm_id": "osm-way-45421423",
+      "display_name": "Tignes",
+      "match": "name"
+    },
+    "val_d_isere": {
+      "osm_id": "osm-way-45421423",
+      "display_name": "Val d'Isere",
+      "match": "name"
+    },
+    "val_disere": {
+      "osm_id": "osm-way-45421423",
+      "display_name": "Val d Isere",
+      "match": "name"
+    },
+    "val_thorens": {
+      "osm_id": "osm-way-1422277144",
+      "display_name": "Val Thorens",
+      "match": "name"
+    },
+    "gulmarg": {
+      "osm_id": "osm-way-1475183373",
+      "display_name": "Gulmarg",
+      "match": "name"
+    },
+    "alta_badia": {
+      "osm_id": "osm-relation-12342024",
+      "display_name": "Alta Badia",
+      "match": "name"
+    },
+    "arabba": {
+      "osm_id": "osm-relation-10732925",
+      "display_name": "Arabba",
+      "match": "name"
+    },
+    "bormio": {
+      "osm_id": "osm-way-621268191",
+      "display_name": "Bormio",
+      "match": "name"
+    },
+    "canazei": {
+      "osm_id": "osm-relation-13830109",
+      "display_name": "Canazei",
+      "match": "geo"
+    },
+    "cervinia": {
+      "osm_id": "osm-way-540681046",
+      "display_name": "Breuil-Cervinia",
+      "match": "name"
+    },
+    "cortina_dampezzo": {
+      "osm_id": "osm-relation-6990942",
+      "display_name": "Cortina d'Ampezzo",
+      "match": "name"
+    },
+    "courmayeur": {
+      "osm_id": "osm-way-447819146",
+      "display_name": "Courmayeur",
+      "match": "name"
+    },
+    "dolomiti_superski": {
+      "osm_id": "osm-relation-13798382",
+      "display_name": "Dolomiti Superski",
+      "match": "name"
+    },
+    "kronplatz": {
+      "osm_id": "osm-way-474258174",
+      "display_name": "Kronplatz",
+      "match": "name"
+    },
+    "livigno": {
+      "osm_id": "osm-way-540676705",
+      "display_name": "Livigno",
+      "match": "name"
+    },
+    "madonna_di_campiglio": {
+      "osm_id": "osm-way-540714397",
+      "display_name": "Madonna di Campiglio",
+      "match": "geo"
+    },
+    "passo_tonale": {
+      "osm_id": "osm-way-542235880",
+      "display_name": "Passo Tonale",
+      "match": "name"
+    },
+    "sestriere": {
+      "osm_id": "osm-way-45438174",
+      "display_name": "Sestriere",
+      "match": "name"
+    },
+    "val_gardena": {
+      "osm_id": "osm-relation-10732928",
+      "display_name": "Val Gardena",
+      "match": "name"
+    },
+    "aizu_nekoma": {
+      "osm_id": "osm-way-322310181",
+      "display_name": "Aizu Nekoma",
+      "match": "geo"
+    },
+    "aomori_spring": {
+      "osm_id": "osm-way-677033105",
+      "display_name": "Aomori Spring Ski Resort",
+      "match": "name"
+    },
+    "appi_kogen": {
+      "osm_id": "osm-way-1087368359",
+      "display_name": "Appi Kogen",
+      "match": "name"
+    },
+    "appi_kogen_jp": {
+      "osm_id": "osm-way-1087368359",
+      "display_name": "Appi Kogen Ski Resort",
+      "match": "name"
+    },
+    "asahidake": {
+      "osm_id": "osm-way-1056651738",
+      "display_name": "Asahidake",
+      "match": "name"
+    },
+    "asahidake_ropeway": {
+      "osm_id": "osm-way-1056651738",
+      "display_name": "Daisetsuzan Asahidake Ropeway",
+      "match": "name"
+    },
+    "furano_ski_resort": {
+      "osm_id": "osm-way-598421263",
+      "display_name": "Furano Ski Resort",
+      "match": "name"
+    },
+    "gala_yuzawa": {
+      "osm_id": "osm-way-948328123",
+      "display_name": "GALA Yuzawa Snow Resort",
+      "match": "name"
+    },
+    "geto_kogen": {
+      "osm_id": "osm-way-1201571470",
+      "display_name": "Geto Kogen Resort",
+      "match": "name"
+    },
+    "hachimantai": {
+      "osm_id": "osm-way-960915602",
+      "display_name": "Hachimantai",
+      "match": "name"
+    },
+    "hakkoda_ropeway": {
+      "osm_id": "osm-way-1464068070",
+      "display_name": "Hakkoda Ropeway",
+      "match": "geo"
+    },
+    "hakuba_47": {
+      "osm_id": "osm-way-771665619",
+      "display_name": "Hakuba 47 Winter Sports Park",
+      "match": "name"
+    },
+    "hakuba_cortina": {
+      "osm_id": "osm-way-773558919",
+      "display_name": "Hakuba Cortina Snow Resort",
+      "match": "name"
+    },
+    "hakuba_goryu": {
+      "osm_id": "osm-way-771665618",
+      "display_name": "Hakuba Goryu Snow Resort",
+      "match": "name"
+    },
+    "hakuba_happo_one": {
+      "osm_id": "osm-way-771668333",
+      "display_name": "Hakuba Happo-One",
+      "match": "name"
+    },
+    "kagura": {
+      "osm_id": "osm-relation-12821614",
+      "display_name": "Kagura",
+      "match": "name"
+    },
+    "kagura_ski_resort": {
+      "osm_id": "osm-relation-12821614",
+      "display_name": "Kagura Ski Resort",
+      "match": "name"
+    },
+    "kamui_ski_links": {
+      "osm_id": "osm-way-479915906",
+      "display_name": "Kamui Ski Links",
+      "match": "name"
+    },
+    "kiroro": {
+      "osm_id": "osm-way-1081650641",
+      "display_name": "Kiroro",
+      "match": "name"
+    },
+    "kiroro_snow_world": {
+      "osm_id": "osm-way-1081650641",
+      "display_name": "Kiroro Snow World",
+      "match": "name"
+    },
+    "lotte_arai_resort": {
+      "osm_id": "osm-way-937101624",
+      "display_name": "Lotte Arai Resort",
+      "match": "name"
+    },
+    "madarao_kogen": {
+      "osm_id": "osm-way-997044732",
+      "display_name": "Madarao Kogen",
+      "match": "name"
+    },
+    "madarao_mountain_resort": {
+      "osm_id": "osm-way-997044731",
+      "display_name": "Madarao Mountain Resort",
+      "match": "geo"
+    },
+    "myoko_kogen": {
+      "osm_id": "osm-way-937100227",
+      "display_name": "Myoko Kogen",
+      "match": "geo"
+    },
+    "naeba_ski_resort": {
+      "osm_id": "osm-way-952129313",
+      "display_name": "Naeba Ski Resort",
+      "match": "name"
+    },
+    "nekoma_mountain": {
+      "osm_id": "osm-relation-19780343",
+      "display_name": "Hoshino Resorts Nekoma Mountain",
+      "match": "name"
+    },
+    "niseko_annupuri": {
+      "osm_id": "osm-relation-14756845",
+      "display_name": "Niseko Annupuri",
+      "match": "geo"
+    },
+    "niseko_moiwa": {
+      "osm_id": "osm-relation-8385446",
+      "display_name": "Niseko Moiwa Ski Resort",
+      "match": "name"
+    },
+    "niseko_united": {
+      "osm_id": "osm-relation-14756845",
+      "display_name": "Niseko United",
+      "match": "name"
+    },
+    "nozawa_onsen": {
+      "osm_id": "osm-way-938550591",
+      "display_name": "Nozawa Onsen Snow Resort",
+      "match": "name"
+    },
+    "okutadami_maruyama": {
+      "osm_id": "osm-way-233173940",
+      "display_name": "Okutadami Maruyama",
+      "match": "name"
+    },
+    "rusutsu": {
+      "osm_id": "osm-way-1081650975",
+      "display_name": "Rusutsu",
+      "match": "name"
+    },
+    "rusutsu_resort": {
+      "osm_id": "osm-way-1081650975",
+      "display_name": "Rusutsu Resort",
+      "match": "name"
+    },
+    "sahoro_resort": {
+      "osm_id": "osm-way-934055659",
+      "display_name": "Sahoro Resort",
+      "match": "name"
+    },
+    "sapporo_kokusai": {
+      "osm_id": "osm-way-672881398",
+      "display_name": "Sapporo Kokusai Ski Resort",
+      "match": "name"
+    },
+    "sapporo_teine": {
+      "osm_id": "osm-way-1083658291",
+      "display_name": "Sapporo Teine",
+      "match": "name"
+    },
+    "shiga_kogen": {
+      "osm_id": "osm-way-937384806",
+      "display_name": "Shiga Kogen Mountain Resort",
+      "match": "name"
+    },
+    "tazawako_ski_resort": {
+      "osm_id": "osm-way-1201573017",
+      "display_name": "Tazawako Ski Resort",
+      "match": "name"
+    },
+    "tengendai_kogen": {
+      "osm_id": "osm-way-481413697",
+      "display_name": "Tengendai Kogen",
+      "match": "name"
+    },
+    "tomamu": {
+      "osm_id": "osm-way-913328023",
+      "display_name": "Tomamu",
+      "match": "name"
+    },
+    "tomamu_resort": {
+      "osm_id": "osm-way-913328023",
+      "display_name": "Hoshino Resorts Tomamu",
+      "match": "name"
+    },
+    "tsugaike_mountain_resort": {
+      "osm_id": "osm-way-773558920",
+      "display_name": "Tsugaike Mountain Resort",
+      "match": "name"
+    },
+    "yuzawa_kogen": {
+      "osm_id": "osm-way-948328283",
+      "display_name": "Yuzawa Kogen Ski Resort",
+      "match": "name"
+    },
+    "zao_onsen": {
+      "osm_id": "osm-way-488305112",
+      "display_name": "Zao Onsen",
+      "match": "name"
+    },
+    "alpensia_resort": {
+      "osm_id": "osm-relation-6958726",
+      "display_name": "Alpensia Resort",
+      "match": "name"
+    },
+    "elysian_gangchon": {
+      "osm_id": "osm-way-1469668996",
+      "display_name": "Elysian Gangchon Ski Resort",
+      "match": "name"
+    },
+    "high1_resort": {
+      "osm_id": "osm-way-32083800",
+      "display_name": "High1 Resort",
+      "match": "geo"
+    },
+    "jisan_forest": {
+      "osm_id": "osm-way-471307387",
+      "display_name": "Jisan Forest Resort",
+      "match": "name"
+    },
+    "phoenix_park": {
+      "osm_id": "osm-way-556756203",
+      "display_name": "Phoenix Park Ski Resort",
+      "match": "name"
+    },
+    "vivaldi_park": {
+      "osm_id": "osm-way-1266096853",
+      "display_name": "Vivaldi Park Ski World",
+      "match": "name"
+    },
+    "yongpyong": {
+      "osm_id": "osm-way-377688820",
+      "display_name": "Yongpyong",
+      "match": "name"
+    },
+    "yongpyong_resort": {
+      "osm_id": "osm-way-377688820",
+      "display_name": "Yongpyong Resort",
+      "match": "name"
+    },
+    "shymbulak": {
+      "osm_id": "osm-way-1254871130",
+      "display_name": "Shymbulak",
+      "match": "name"
+    },
+    "geilo": {
+      "osm_id": "osm-relation-17004845",
+      "display_name": "Geilo",
+      "match": "name"
+    },
+    "hemsedal": {
+      "osm_id": "osm-relation-2150871",
+      "display_name": "Hemsedal",
+      "match": "name"
+    },
+    "myrkdalen": {
+      "osm_id": "osm-way-1252351535",
+      "display_name": "Myrkdalen",
+      "match": "name"
+    },
+    "narvikfjellet": {
+      "osm_id": "osm-relation-12567328",
+      "display_name": "Narvikfjellet",
+      "match": "name"
+    },
+    "norefjell": {
+      "osm_id": "osm-relation-15436046",
+      "display_name": "Norefjell",
+      "match": "name"
+    },
+    "oppdal": {
+      "osm_id": "osm-way-1359304443",
+      "display_name": "Oppdal",
+      "match": "name"
+    },
+    "trysil": {
+      "osm_id": "osm-way-1210019615",
+      "display_name": "Trysil",
+      "match": "name"
+    },
+    "cardrona": {
+      "osm_id": "osm-way-482928467",
+      "display_name": "Cardrona",
+      "match": "name"
+    },
+    "cardrona_alpine_resort": {
+      "osm_id": "osm-way-482928467",
+      "display_name": "Cardrona Alpine Resort",
+      "match": "name"
+    },
+    "coronet_peak": {
+      "osm_id": "osm-way-482928475",
+      "display_name": "Coronet Peak",
+      "match": "name"
+    },
+    "mt_hutt": {
+      "osm_id": "osm-way-627625381",
+      "display_name": "Mt Hutt",
+      "match": "geo"
+    },
+    "ohau": {
+      "osm_id": "osm-way-991056806",
+      "display_name": "Ohau",
+      "match": "name"
+    },
+    "ohau_snow_fields": {
+      "osm_id": "osm-way-991056806",
+      "display_name": "Ohau Snow Fields",
+      "match": "name"
+    },
+    "porters_alpine_resort": {
+      "osm_id": "osm-way-274760683",
+      "display_name": "Porters Alpine Resort",
+      "match": "name"
+    },
+    "the_remarkables": {
+      "osm_id": "osm-way-482928468",
+      "display_name": "The Remarkables",
+      "match": "name"
+    },
+    "treble_cone": {
+      "osm_id": "osm-relation-19839568",
+      "display_name": "Treble Cone",
+      "match": "name"
+    },
+    "turoa": {
+      "osm_id": "osm-way-499036978",
+      "display_name": "Turoa",
+      "match": "name"
+    },
+    "whakapapa": {
+      "osm_id": "osm-way-616029504",
+      "display_name": "Whakapapa",
+      "match": "name"
+    },
+    "are": {
+      "osm_id": "osm-relation-17228758",
+      "display_name": "Are",
+      "match": "name"
+    },
+    "are_sweden": {
+      "osm_id": "osm-relation-17228758",
+      "display_name": "Are",
+      "match": "name"
+    },
+    "hemavan": {
+      "osm_id": "osm-way-1215416734",
+      "display_name": "Hemavan",
+      "match": "name"
+    },
+    "idre_fjall": {
+      "osm_id": "osm-way-1241932808",
+      "display_name": "Idre Fjall",
+      "match": "name"
+    },
+    "riksgransen": {
+      "osm_id": "osm-way-1244144549",
+      "display_name": "Riksgransen",
+      "match": "name"
+    },
+    "salen": {
+      "osm_id": "osm-relation-16923474",
+      "display_name": "Salen",
+      "match": "name"
+    },
+    "vemdalen": {
+      "osm_id": "osm-way-1021886212",
+      "display_name": "Vemdalen",
+      "match": "name"
+    },
+    "alta": {
+      "osm_id": "osm-way-1023308077",
+      "display_name": "Alta",
+      "match": "name"
+    },
+    "alta_ski_area": {
+      "osm_id": "osm-way-1023308077",
+      "display_name": "Alta Ski Area",
+      "match": "name"
+    },
+    "alyeska": {
+      "osm_id": "osm-way-934351306",
+      "display_name": "Alyeska Resort",
+      "match": "name"
+    },
+    "arapahoe_basin": {
+      "osm_id": "osm-way-461239598",
+      "display_name": "Arapahoe Basin Ski Area",
+      "match": "name"
+    },
+    "aspen_snowmass": {
+      "osm_id": "osm-way-1144096092",
+      "display_name": "Aspen Snowmass",
+      "match": "name"
+    },
+    "beaver_creek": {
+      "osm_id": "osm-way-531009608",
+      "display_name": "Beaver Creek Resort",
+      "match": "name"
+    },
+    "big_sky_resort": {
+      "osm_id": "osm-way-1254863688",
+      "display_name": "Big Sky Resort",
+      "match": "name"
+    },
+    "bogus_basin": {
+      "osm_id": "osm-way-1470441271",
+      "display_name": "Bogus Basin",
+      "match": "name"
+    },
+    "breckenridge_ski_resort": {
+      "osm_id": "osm-way-531005985",
+      "display_name": "Breckenridge Ski Resort",
+      "match": "name"
+    },
+    "bretton_woods": {
+      "osm_id": "osm-way-334259249",
+      "display_name": "Bretton Woods",
+      "match": "name"
+    },
+    "brighton_resort": {
+      "osm_id": "osm-way-682230007",
+      "display_name": "Brighton Resort",
+      "match": "name"
+    },
+    "copper_mountain": {
+      "osm_id": "osm-way-531005986",
+      "display_name": "Copper Mountain",
+      "match": "name"
+    },
+    "crested_butte": {
+      "osm_id": "osm-way-530521512",
+      "display_name": "Crested Butte Mountain Resort",
+      "match": "name"
+    },
+    "crystal_mountain": {
+      "osm_id": "osm-relation-11518092",
+      "display_name": "Crystal Mountain",
+      "match": "name"
+    },
+    "crystal_mountain_wa": {
+      "osm_id": "osm-relation-11518092",
+      "display_name": "Crystal Mountain Resort",
+      "match": "name"
+    },
+    "deer_valley": {
+      "osm_id": "osm-way-682241434",
+      "display_name": "Deer Valley Resort",
+      "match": "name"
+    },
+    "eaglecrest": {
+      "osm_id": "osm-way-1010412985",
+      "display_name": "Eaglecrest Ski Area",
+      "match": "name"
+    },
+    "heavenly": {
+      "osm_id": "osm-relation-12152028",
+      "display_name": "Heavenly Mountain Resort",
+      "match": "name"
+    },
+    "hilltop_alaska": {
+      "osm_id": "osm-way-839939642",
+      "display_name": "Hilltop",
+      "match": "name"
+    },
+    "jackson_hole": {
+      "osm_id": "osm-way-1074335726",
+      "display_name": "Jackson Hole Mountain Resort",
+      "match": "name"
+    },
+    "jay_peak": {
+      "osm_id": "osm-way-1094522661",
+      "display_name": "Jay Peak Resort",
+      "match": "name"
+    },
+    "keystone_resort": {
+      "osm_id": "osm-way-531000583",
+      "display_name": "Keystone Resort",
+      "match": "name"
+    },
+    "killington": {
+      "osm_id": "osm-way-1228774360",
+      "display_name": "Killington",
+      "match": "name"
+    },
+    "killington_resort": {
+      "osm_id": "osm-way-1228774360",
+      "display_name": "Killington Resort",
+      "match": "name"
+    },
+    "loon_mountain": {
+      "osm_id": "osm-way-334246239",
+      "display_name": "Loon Mountain Resort",
+      "match": "name"
+    },
+    "mammoth_mountain": {
+      "osm_id": "osm-way-682231907",
+      "display_name": "Mammoth Mountain",
+      "match": "name"
+    },
+    "mount_snow": {
+      "osm_id": "osm-way-860260235",
+      "display_name": "Mount Snow",
+      "match": "name"
+    },
+    "mt_bachelor": {
+      "osm_id": "osm-way-1306486693",
+      "display_name": "Mt. Bachelor",
+      "match": "name"
+    },
+    "mt_baker": {
+      "osm_id": "osm-relation-19108017",
+      "display_name": "Mt Baker",
+      "match": "name"
+    },
+    "mt_hood_meadows": {
+      "osm_id": "osm-way-866496711",
+      "display_name": "Mt. Hood Meadows",
+      "match": "name"
+    },
+    "okemo": {
+      "osm_id": "osm-way-1236284348",
+      "display_name": "Okemo Mountain Resort",
+      "match": "name"
+    },
+    "palisades_tahoe": {
+      "osm_id": "osm-relation-13336421",
+      "display_name": "Palisades Tahoe",
+      "match": "name"
+    },
+    "park_city_mountain": {
+      "osm_id": "osm-way-918681867",
+      "display_name": "Park City Mountain Resort",
+      "match": "name"
+    },
+    "powder_mountain": {
+      "osm_id": "osm-way-1124250244",
+      "display_name": "Powder Mountain",
+      "match": "name"
+    },
+    "schweitzer": {
+      "osm_id": "osm-way-1388583977",
+      "display_name": "Schweitzer",
+      "match": "name"
+    },
+    "silver_mountain_idaho": {
+      "osm_id": "osm-way-1263732068",
+      "display_name": "Silver Mountain Resort",
+      "match": "name"
+    },
+    "snowbasin": {
+      "osm_id": "osm-way-1201185853",
+      "display_name": "Snowbasin Resort",
+      "match": "name"
+    },
+    "snowbird": {
+      "osm_id": "osm-way-1023308078",
+      "display_name": "Snowbird",
+      "match": "name"
+    },
+    "solitude_resort": {
+      "osm_id": "osm-way-682230006",
+      "display_name": "Solitude Mountain Resort",
+      "match": "name"
+    },
+    "steamboat_ski_resort": {
+      "osm_id": "osm-way-530998526",
+      "display_name": "Steamboat Ski Resort",
+      "match": "name"
+    },
+    "stowe": {
+      "osm_id": "osm-way-620836496",
+      "display_name": "Stowe",
+      "match": "name"
+    },
+    "stowe_mountain_resort": {
+      "osm_id": "osm-way-620836496",
+      "display_name": "Stowe Mountain Resort",
+      "match": "name"
+    },
+    "stratton": {
+      "osm_id": "osm-way-1367311040",
+      "display_name": "Stratton Mountain Resort",
+      "match": "name"
+    },
+    "sugarbush": {
+      "osm_id": "osm-way-1094579154",
+      "display_name": "Sugarbush Resort",
+      "match": "name"
+    },
+    "sugarloaf_maine": {
+      "osm_id": "osm-relation-18484946",
+      "display_name": "Sugarloaf",
+      "match": "name"
+    },
+    "sunday_river": {
+      "osm_id": "osm-relation-14637842",
+      "display_name": "Sunday River Resort",
+      "match": "name"
+    },
+    "sun_valley_resort": {
+      "osm_id": "osm-way-1244098768",
+      "display_name": "Sun Valley Resort",
+      "match": "name"
+    },
+    "telluride_ski_resort": {
+      "osm_id": "osm-way-528965906",
+      "display_name": "Telluride Ski Resort",
+      "match": "name"
+    },
+    "timberline_lodge": {
+      "osm_id": "osm-way-679189584",
+      "display_name": "Timberline Lodge Ski Area",
+      "match": "name"
+    },
+    "vail": {
+      "osm_id": "osm-way-531009607",
+      "display_name": "Vail",
+      "match": "name"
+    },
+    "vail_ski_resort": {
+      "osm_id": "osm-way-531009607",
+      "display_name": "Vail Ski Resort",
+      "match": "name"
+    },
+    "whitefish_mountain_resort": {
+      "osm_id": "osm-way-1388573249",
+      "display_name": "Whitefish Mountain Resort",
+      "match": "name"
+    },
+    "wildcat_mountain": {
+      "osm_id": "osm-way-251260219",
+      "display_name": "Wildcat Mountain",
+      "match": "name"
+    },
+    "winter_park_resort": {
+      "osm_id": "osm-way-1517729401",
+      "display_name": "Winter Park Resort",
+      "match": "name"
+    },
+    "grandvalira": {
+      "osm_id": "osm-way-1254211862",
+      "display_name": "Grandvalira",
+      "match": "nearest_parent"
+    },
+    "st_anton": {
+      "osm_id": "osm-way-539407909",
+      "display_name": "St. Anton",
+      "match": "nearest_parent"
+    },
+    "zell_am_see_kaprun": {
+      "osm_id": "osm-way-319914086",
+      "display_name": "Zell am See-Kaprun",
+      "match": "nearest_parent"
+    },
+    "andermatt_sedrun": {
+      "osm_id": "osm-way-1162568814",
+      "display_name": "Andermatt-Sedrun-Disentis",
+      "match": "nearest_parent"
+    },
+    "zermatt_matterhorn": {
+      "osm_id": "osm-way-540681046",
+      "display_name": "Zermatt Matterhorn",
+      "match": "nearest_parent"
+    },
+    "pucon_villarrica": {
+      "osm_id": "osm-way-934099771",
+      "display_name": "Pucon / Villarrica",
+      "match": "nearest_parent"
+    },
+    "les_trois_vallees": {
+      "osm_id": "osm-way-45117869",
+      "display_name": "Les Trois Vallees",
+      "match": "nearest_parent"
+    },
+    "batea_mahuida": {
+      "osm_id": "osm-way-705875874",
+      "display_name": "Batea Mahuida",
+      "match": "nearest_name"
+    },
+    "cerro_perito_moreno": {
+      "osm_id": "osm-way-934096931",
+      "display_name": "Cerro Perito Moreno",
+      "match": "nearest_name"
+    },
+    "vallecitos": {
+      "osm_id": "manual-vallecitos",
+      "display_name": "Vallecitos",
+      "match": "gapfill_inject"
+    },
+    "kitzbuehel": {
+      "osm_id": "manual-kitzbuehel",
+      "display_name": "Kitzbuhel",
+      "match": "gapfill_inject"
+    },
+    "mount_norquay": {
+      "osm_id": "manual-mount_norquay",
+      "display_name": "Mount Norquay",
+      "match": "gapfill_inject"
+    },
+    "nakiska": {
+      "osm_id": "manual-nakiska",
+      "display_name": "Nakiska Ski Area",
+      "match": "gapfill_inject"
+    },
+    "el_colorado": {
+      "osm_id": "osm-node-290050323",
+      "display_name": "El Colorado",
+      "match": "gapfill_inject"
+    },
+    "el_colorado_chile": {
+      "osm_id": "osm-node-290050323",
+      "display_name": "El Colorado",
+      "match": "gapfill_inject"
+    },
+    "farellones": {
+      "osm_id": "manual-farellones",
+      "display_name": "Farellones",
+      "match": "gapfill_inject"
+    },
+    "la_parva": {
+      "osm_id": "osm-node-290050547",
+      "display_name": "La Parva",
+      "match": "gapfill_inject"
+    },
+    "nevados_de_chillan": {
+      "osm_id": "osm-way-97509064",
+      "display_name": "Nevados de Chillan",
+      "match": "gapfill_inject"
+    },
+    "ski_arpa": {
+      "osm_id": "manual-ski_arpa",
+      "display_name": "Ski Arpa",
+      "match": "gapfill_inject"
+    },
+    "valle_nevado": {
+      "osm_id": "osm-node-290057440",
+      "display_name": "Valle Nevado",
+      "match": "gapfill_inject"
+    },
+    "beijing_nanshan": {
+      "osm_id": "manual-beijing_nanshan",
+      "display_name": "Beijing Nanshan Ski Village",
+      "match": "gapfill_inject"
+    },
+    "changbaishan_wanda": {
+      "osm_id": "manual-changbaishan_wanda",
+      "display_name": "Changbaishan Wanda",
+      "match": "gapfill_inject"
+    },
+    "jiangjunshan": {
+      "osm_id": "manual-jiangjunshan",
+      "display_name": "Jiangjunshan",
+      "match": "gapfill_inject"
+    },
+    "jundushan": {
+      "osm_id": "manual-jundushan",
+      "display_name": "Jundushan",
+      "match": "gapfill_inject"
+    },
+    "keketuohai": {
+      "osm_id": "manual-keketuohai",
+      "display_name": "Keketuohai",
+      "match": "gapfill_inject"
+    },
+    "nanshan_china": {
+      "osm_id": "manual-nanshan_china",
+      "display_name": "Nanshan",
+      "match": "gapfill_inject"
+    },
+    "silk_road": {
+      "osm_id": "manual-silk_road",
+      "display_name": "Silk Road",
+      "match": "gapfill_inject"
+    },
+    "songhua_lake": {
+      "osm_id": "manual-songhua_lake",
+      "display_name": "Vanke Songhua Lake",
+      "match": "gapfill_inject"
+    },
+    "taiziling": {
+      "osm_id": "manual-taiziling",
+      "display_name": "Taiziling",
+      "match": "gapfill_inject"
+    },
+    "thaiwoo": {
+      "osm_id": "manual-thaiwoo",
+      "display_name": "Thaiwoo Ski Resort",
+      "match": "gapfill_inject"
+    },
+    "tianshan_tianchi": {
+      "osm_id": "manual-tianshan_tianchi",
+      "display_name": "Tianshan Tianchi",
+      "match": "gapfill_inject"
+    },
+    "baqueira_beret": {
+      "osm_id": "osm-node-2574552473",
+      "display_name": "Baqueira Beret",
+      "match": "gapfill_inject"
+    },
+    "courchevel": {
+      "osm_id": "manual-courchevel",
+      "display_name": "Courchevel",
+      "match": "gapfill_inject"
+    },
+    "meribel": {
+      "osm_id": "manual-meribel",
+      "display_name": "Meribel",
+      "match": "gapfill_inject"
+    },
+    "valmorel": {
+      "osm_id": "manual-valmorel",
+      "display_name": "Valmorel",
+      "match": "gapfill_inject"
+    },
+    "auli": {
+      "osm_id": "manual-auli",
+      "display_name": "Auli",
+      "match": "gapfill_inject"
+    },
+    "gulmarg_gondola": {
+      "osm_id": "osm-way-1475183373",
+      "display_name": "Gulmarg Gondola",
+      "match": "nearest_name"
+    },
+    "kufri": {
+      "osm_id": "manual-kufri",
+      "display_name": "Kufri",
+      "match": "gapfill_inject"
+    },
+    "narkanda": {
+      "osm_id": "manual-narkanda",
+      "display_name": "Narkanda",
+      "match": "gapfill_inject"
+    },
+    "solang_nala": {
+      "osm_id": "manual-solang_nala",
+      "display_name": "Solang Nala",
+      "match": "gapfill_inject"
+    },
+    "furano": {
+      "osm_id": "osm-way-934298187",
+      "display_name": "Furano",
+      "match": "nearest_jp_name"
+    },
+    "tateyama_snow_area": {
+      "osm_id": "manual-tateyama_snow_area",
+      "display_name": "Tateyama",
+      "match": "gapfill_inject"
+    },
+    "oak_valley": {
+      "osm_id": "manual-oak_valley",
+      "display_name": "Oak Valley Resort",
+      "match": "gapfill_inject"
+    },
+    "ak_bulak": {
+      "osm_id": "manual-ak_bulak",
+      "display_name": "Ak-Bulak",
+      "match": "gapfill_inject"
+    },
+    "oi_qaragai": {
+      "osm_id": "osm-way-1124786559",
+      "display_name": "Oi Qaragai",
+      "match": "nearest_name"
+    },
+    "tabagan": {
+      "osm_id": "manual-tabagan",
+      "display_name": "Tabagan",
+      "match": "gapfill_inject"
+    },
+    "voss_resort": {
+      "osm_id": "osm-node-6818068276",
+      "display_name": "Voss Resort",
+      "match": "gapfill_inject"
+    },
+    "mt_dobson": {
+      "osm_id": "osm-way-1020172394",
+      "display_name": "Mt Dobson",
+      "match": "already_in_index"
+    },
+    "roundhill": {
+      "osm_id": "osm-node-2641613980",
+      "display_name": "Roundhill Ski Area",
+      "match": "gapfill_inject"
+    },
+    "arctic_valley": {
+      "osm_id": "osm-relation-10517367",
+      "display_name": "Arctic Valley",
+      "match": "nearest_name"
+    },
+    "northstar_california": {
+      "osm_id": "osm-relation-7095958",
+      "display_name": "Northstar California Resort",
+      "match": "nearest_name"
+    }
+  },
+  "by_osm_id": {
+    "osm-way-987242424": [
+      {
+        "slug": "ordino_arcalis",
+        "display_name": "Ordino Arcalis"
+      }
+    ],
+    "osm-way-987243867": [
+      {
+        "slug": "vallnord_pal_arinsal",
+        "display_name": "Vallnord Pal-Arinsal"
+      }
+    ],
+    "osm-way-1362374789": [
+      {
+        "slug": "caviahue",
+        "display_name": "Caviahue"
+      }
+    ],
+    "osm-way-934033486": [
+      {
+        "slug": "cerro_bayo",
+        "display_name": "Cerro Bayo"
+      }
+    ],
+    "osm-way-934046989": [
+      {
+        "slug": "cerro_castor",
+        "display_name": "Cerro Castor"
+      }
+    ],
+    "osm-way-28707473": [
+      {
+        "slug": "cerro_catedral",
+        "display_name": "Cerro Catedral"
+      }
+    ],
+    "osm-way-934098320": [
+      {
+        "slug": "chapelco",
+        "display_name": "Chapelco"
+      }
+    ],
+    "osm-way-378344849": [
+      {
+        "slug": "la_hoya",
+        "display_name": "La Hoya"
+      }
+    ],
+    "osm-way-934103782": [
+      {
+        "slug": "las_lenas",
+        "display_name": "Las Lenas"
+      }
+    ],
+    "osm-way-539199305": [
+      {
+        "slug": "hintertux_glacier",
+        "display_name": "Hintertux Glacier"
+      }
+    ],
+    "osm-way-539395530": [
+      {
+        "slug": "ischgl",
+        "display_name": "Ischgl Silvretta Arena"
+      }
+    ],
+    "osm-way-1266571967": [
+      {
+        "slug": "kaprun_kitzsteinhorn",
+        "display_name": "Kaprun Kitzsteinhorn"
+      }
+    ],
+    "osm-relation-10938000": [
+      {
+        "slug": "kitzbuhel",
+        "display_name": "KitzSki Kitzbuhel"
+      }
+    ],
+    "osm-way-539407909": [
+      {
+        "slug": "lech_zurs",
+        "display_name": "Lech Zurs am Arlberg"
+      },
+      {
+        "slug": "st_anton",
+        "display_name": "St. Anton"
+      },
+      {
+        "slug": "st_anton_am_arlberg",
+        "display_name": "St. Anton am Arlberg"
+      }
+    ],
+    "osm-way-539196496": [
+      {
+        "slug": "mayrhofen",
+        "display_name": "Mayrhofen"
+      }
+    ],
+    "osm-way-508236935": [
+      {
+        "slug": "obergurgl_hochgurgl",
+        "display_name": "Obergurgl-Hochgurgl"
+      }
+    ],
+    "osm-way-341899728": [
+      {
+        "slug": "obertauern",
+        "display_name": "Obertauern"
+      }
+    ],
+    "osm-way-342018770": [
+      {
+        "slug": "saalbach",
+        "display_name": "Saalbach Hinterglemm Leogang Fieberbrunn"
+      }
+    ],
+    "osm-relation-8896546": [
+      {
+        "slug": "schladming_dachstein",
+        "display_name": "Schladming-Dachstein"
+      }
+    ],
+    "osm-way-1227177985": [
+      {
+        "slug": "serfaus_fiss_ladis",
+        "display_name": "Serfaus-Fiss-Ladis"
+      }
+    ],
+    "osm-way-438793320": [
+      {
+        "slug": "solden",
+        "display_name": "Solden"
+      }
+    ],
+    "osm-way-539209006": [
+      {
+        "slug": "stubai_glacier",
+        "display_name": "Stubai Glacier"
+      }
+    ],
+    "osm-way-1360038350": [
+      {
+        "slug": "charlotte_pass",
+        "display_name": "Charlotte Pass Snow Resort"
+      }
+    ],
+    "osm-way-1210011762": [
+      {
+        "slug": "falls_creek",
+        "display_name": "Falls Creek"
+      }
+    ],
+    "osm-way-1225432526": [
+      {
+        "slug": "mount_buller",
+        "display_name": "Mount Buller"
+      },
+      {
+        "slug": "mt_buller",
+        "display_name": "Mt Buller"
+      }
+    ],
+    "osm-way-1225428207": [
+      {
+        "slug": "mount_hotham",
+        "display_name": "Mount Hotham"
+      },
+      {
+        "slug": "mt_hotham",
+        "display_name": "Mt Hotham"
+      }
+    ],
+    "osm-way-178133225": [
+      {
+        "slug": "perisher",
+        "display_name": "Perisher"
+      }
+    ],
+    "osm-way-499034347": [
+      {
+        "slug": "thredbo",
+        "display_name": "Thredbo"
+      }
+    ],
+    "osm-way-739168515": [
+      {
+        "slug": "banff_sunshine",
+        "display_name": "Banff Sunshine Village"
+      },
+      {
+        "slug": "sunshine_village",
+        "display_name": "Sunshine Village"
+      }
+    ],
+    "osm-way-476836855": [
+      {
+        "slug": "big_white",
+        "display_name": "Big White Ski Resort"
+      }
+    ],
+    "osm-way-1244097962": [
+      {
+        "slug": "bromont",
+        "display_name": "Bromont, montagne d experiences"
+      }
+    ],
+    "osm-way-1388612283": [
+      {
+        "slug": "fernie_alpine_resort",
+        "display_name": "Fernie Alpine Resort"
+      }
+    ],
+    "osm-way-476843455": [
+      {
+        "slug": "kicking_horse",
+        "display_name": "Kicking Horse Mountain Resort"
+      }
+    ],
+    "osm-way-1388611703": [
+      {
+        "slug": "lake_louise",
+        "display_name": "Lake Louise"
+      },
+      {
+        "slug": "lake_louise_ski_resort",
+        "display_name": "Lake Louise Ski Resort"
+      }
+    ],
+    "osm-relation-8027590": [
+      {
+        "slug": "le_massif",
+        "display_name": "Le Massif"
+      },
+      {
+        "slug": "le_massif_charlevoix",
+        "display_name": "Le Massif de Charlevoix"
+      }
+    ],
+    "osm-way-391681261": [
+      {
+        "slug": "mont_sainte_anne",
+        "display_name": "Mont-Sainte-Anne"
+      }
+    ],
+    "osm-way-671144531": [
+      {
+        "slug": "mont_tremblant",
+        "display_name": "Mont Tremblant Resort"
+      }
+    ],
+    "osm-way-476844342": [
+      {
+        "slug": "panorama_mountain_resort",
+        "display_name": "Panorama Mountain Resort"
+      }
+    ],
+    "osm-way-397735832": [
+      {
+        "slug": "red_mountain_resort",
+        "display_name": "RED Mountain Resort"
+      }
+    ],
+    "osm-way-475720359": [
+      {
+        "slug": "revelstoke",
+        "display_name": "Revelstoke"
+      },
+      {
+        "slug": "revelstoke_mountain_resort",
+        "display_name": "Revelstoke Mountain Resort"
+      }
+    ],
+    "osm-way-476840539": [
+      {
+        "slug": "silverstar_mountain_resort",
+        "display_name": "SilverStar Mountain Resort"
+      }
+    ],
+    "osm-way-422827842": [
+      {
+        "slug": "stoneham",
+        "display_name": "Stoneham Mountain Resort"
+      }
+    ],
+    "osm-way-1138470815": [
+      {
+        "slug": "sun_peaks",
+        "display_name": "Sun Peaks Resort"
+      }
+    ],
+    "osm-way-474288286": [
+      {
+        "slug": "whistler_blackcomb",
+        "display_name": "Whistler Blackcomb"
+      }
+    ],
+    "osm-way-475723205": [
+      {
+        "slug": "whitewater_ski_resort",
+        "display_name": "Whitewater Ski Resort"
+      }
+    ],
+    "osm-way-665125669": [
+      {
+        "slug": "adelboden_lenk",
+        "display_name": "Adelboden-Lenk"
+      }
+    ],
+    "osm-way-1226018440": [
+      {
+        "slug": "aletsch_arena",
+        "display_name": "Aletsch Arena"
+      }
+    ],
+    "osm-way-601135365": [
+      {
+        "slug": "arosa_lenzerheide",
+        "display_name": "Arosa Lenzerheide"
+      }
+    ],
+    "osm-way-599002420": [
+      {
+        "slug": "crans_montana",
+        "display_name": "Crans-Montana"
+      }
+    ],
+    "osm-way-601300156": [
+      {
+        "slug": "davos_klosters",
+        "display_name": "Davos Klosters"
+      }
+    ],
+    "osm-relation-16364456": [
+      {
+        "slug": "disentis",
+        "display_name": "Disentis"
+      }
+    ],
+    "osm-way-1449874365": [
+      {
+        "slug": "engelberg_titlis",
+        "display_name": "Engelberg-Titlis"
+      }
+    ],
+    "osm-way-599436179": [
+      {
+        "slug": "grindelwald",
+        "display_name": "Grindelwald"
+      }
+    ],
+    "osm-way-1227173315": [
+      {
+        "slug": "grindelwald_wengen",
+        "display_name": "Grindelwald-Wengen"
+      },
+      {
+        "slug": "wengen",
+        "display_name": "Wengen"
+      }
+    ],
+    "osm-way-599441663": [
+      {
+        "slug": "laax",
+        "display_name": "LAAX"
+      }
+    ],
+    "osm-way-1226017306": [
+      {
+        "slug": "leukerbad",
+        "display_name": "Leukerbad"
+      }
+    ],
+    "osm-way-660203241": [
+      {
+        "slug": "nendaz",
+        "display_name": "Nendaz"
+      },
+      {
+        "slug": "verbier",
+        "display_name": "Verbier"
+      }
+    ],
+    "osm-way-45408941": [
+      {
+        "slug": "saas_fee",
+        "display_name": "Saas-Fee"
+      }
+    ],
+    "osm-way-642476176": [
+      {
+        "slug": "st_moritz",
+        "display_name": "St. Moritz"
+      }
+    ],
+    "osm-way-540681046": [
+      {
+        "slug": "cervinia",
+        "display_name": "Breuil-Cervinia"
+      },
+      {
+        "slug": "zermatt",
+        "display_name": "Zermatt"
+      },
+      {
+        "slug": "zermatt_matterhorn",
+        "display_name": "Zermatt Matterhorn"
+      }
+    ],
+    "osm-way-1138703077": [
+      {
+        "slug": "zinal",
+        "display_name": "Zinal"
+      }
+    ],
+    "osm-way-1388302700": [
+      {
+        "slug": "antillanca",
+        "display_name": "Antillanca"
+      }
+    ],
+    "osm-way-1412281678": [
+      {
+        "slug": "corralco",
+        "display_name": "Corralco Mountain & Ski Resort"
+      }
+    ],
+    "osm-way-934285904": [
+      {
+        "slug": "portillo",
+        "display_name": "Ski Portillo"
+      }
+    ],
+    "osm-way-934099771": [
+      {
+        "slug": "pucon_villarrica",
+        "display_name": "Pucon / Villarrica"
+      },
+      {
+        "slug": "ski_pucon",
+        "display_name": "Ski Pucon"
+      }
+    ],
+    "osm-way-934101794": [
+      {
+        "slug": "volcan_osorno",
+        "display_name": "Volcan Osorno"
+      }
+    ],
+    "osm-way-1232164322": [
+      {
+        "slug": "beidahu",
+        "display_name": "Beidahu Ski Resort"
+      }
+    ],
+    "osm-way-533578599": [
+      {
+        "slug": "genting_secret_garden",
+        "display_name": "Genting Secret Garden"
+      },
+      {
+        "slug": "wanlong",
+        "display_name": "Wanlong"
+      },
+      {
+        "slug": "wanlong_ski_resort",
+        "display_name": "Wanlong Ski Resort"
+      }
+    ],
+    "osm-way-1354178778": [
+      {
+        "slug": "xiling_snow_mountain",
+        "display_name": "Xiling Snow Mountain"
+      }
+    ],
+    "osm-way-1290455091": [
+      {
+        "slug": "yabuli",
+        "display_name": "Yabuli Ski Resort"
+      }
+    ],
+    "osm-relation-3479356": [
+      {
+        "slug": "astun",
+        "display_name": "Astun"
+      }
+    ],
+    "osm-way-738156377": [
+      {
+        "slug": "boi_taull",
+        "display_name": "Boi Taull"
+      }
+    ],
+    "osm-relation-3478130": [
+      {
+        "slug": "candanchu",
+        "display_name": "Candanchu"
+      }
+    ],
+    "osm-way-27153705": [
+      {
+        "slug": "cerler",
+        "display_name": "Aramon Cerler"
+      }
+    ],
+    "osm-relation-2946764": [
+      {
+        "slug": "formigal",
+        "display_name": "Formigal"
+      },
+      {
+        "slug": "formigal_panticosa",
+        "display_name": "Formigal-Panticosa"
+      }
+    ],
+    "osm-way-738132226": [
+      {
+        "slug": "la_molina",
+        "display_name": "La Molina"
+      }
+    ],
+    "osm-way-738140305": [
+      {
+        "slug": "masella",
+        "display_name": "Masella"
+      }
+    ],
+    "osm-way-27163382": [
+      {
+        "slug": "panticosa",
+        "display_name": "Panticosa"
+      }
+    ],
+    "osm-way-654498540": [
+      {
+        "slug": "sierra_nevada",
+        "display_name": "Sierra Nevada"
+      },
+      {
+        "slug": "sierra_nevada_spain",
+        "display_name": "Sierra Nevada Ski Station"
+      }
+    ],
+    "osm-way-1107815765": [
+      {
+        "slug": "levi",
+        "display_name": "Levi"
+      }
+    ],
+    "osm-relation-6652645": [
+      {
+        "slug": "pyha",
+        "display_name": "Pyha"
+      }
+    ],
+    "osm-way-1236288758": [
+      {
+        "slug": "ruka",
+        "display_name": "Ruka"
+      }
+    ],
+    "osm-relation-3200038": [
+      {
+        "slug": "saariselka",
+        "display_name": "Saariselka"
+      }
+    ],
+    "osm-relation-2957907": [
+      {
+        "slug": "salla",
+        "display_name": "Salla"
+      }
+    ],
+    "osm-relation-10948689": [
+      {
+        "slug": "yllas",
+        "display_name": "Yllas"
+      }
+    ],
+    "osm-way-45438982": [
+      {
+        "slug": "alpe_dhuez",
+        "display_name": "Alpe d'Huez"
+      }
+    ],
+    "osm-way-1422121628": [
+      {
+        "slug": "avoriaz",
+        "display_name": "Avoriaz"
+      }
+    ],
+    "osm-way-642256846": [
+      {
+        "slug": "chamonix",
+        "display_name": "Chamonix"
+      },
+      {
+        "slug": "chamonix_mont_blanc",
+        "display_name": "Chamonix Mont-Blanc"
+      }
+    ],
+    "osm-relation-13766276": [
+      {
+        "slug": "flaine",
+        "display_name": "Flaine"
+      }
+    ],
+    "osm-way-599427053": [
+      {
+        "slug": "la_clusaz",
+        "display_name": "La Clusaz"
+      }
+    ],
+    "osm-way-589003346": [
+      {
+        "slug": "la_plagne",
+        "display_name": "La Plagne"
+      }
+    ],
+    "osm-way-589005175": [
+      {
+        "slug": "les_arcs",
+        "display_name": "Les Arcs"
+      }
+    ],
+    "osm-way-45146739": [
+      {
+        "slug": "les_deux_alpes",
+        "display_name": "Les Deux Alpes"
+      }
+    ],
+    "osm-way-1422098961": [
+      {
+        "slug": "les_gets",
+        "display_name": "Les Gets"
+      },
+      {
+        "slug": "morzine",
+        "display_name": "Morzine"
+      }
+    ],
+    "osm-way-599426637": [
+      {
+        "slug": "megeve",
+        "display_name": "Megeve"
+      }
+    ],
+    "osm-way-1354438774": [
+      {
+        "slug": "peisey_vallandry",
+        "display_name": "Peisey-Vallandry"
+      }
+    ],
+    "osm-way-599436073": [
+      {
+        "slug": "serre_chevalier",
+        "display_name": "Serre Chevalier"
+      }
+    ],
+    "osm-way-45421423": [
+      {
+        "slug": "tignes",
+        "display_name": "Tignes"
+      },
+      {
+        "slug": "val_disere",
+        "display_name": "Val d Isere"
+      },
+      {
+        "slug": "val_d_isere",
+        "display_name": "Val d'Isere"
+      }
+    ],
+    "osm-way-1422277144": [
+      {
+        "slug": "val_thorens",
+        "display_name": "Val Thorens"
+      }
+    ],
+    "osm-way-1475183373": [
+      {
+        "slug": "gulmarg",
+        "display_name": "Gulmarg"
+      },
+      {
+        "slug": "gulmarg_gondola",
+        "display_name": "Gulmarg Gondola"
+      }
+    ],
+    "osm-relation-12342024": [
+      {
+        "slug": "alta_badia",
+        "display_name": "Alta Badia"
+      }
+    ],
+    "osm-relation-10732925": [
+      {
+        "slug": "arabba",
+        "display_name": "Arabba"
+      }
+    ],
+    "osm-way-621268191": [
+      {
+        "slug": "bormio",
+        "display_name": "Bormio"
+      }
+    ],
+    "osm-relation-13830109": [
+      {
+        "slug": "canazei",
+        "display_name": "Canazei"
+      }
+    ],
+    "osm-relation-6990942": [
+      {
+        "slug": "cortina_dampezzo",
+        "display_name": "Cortina d'Ampezzo"
+      }
+    ],
+    "osm-way-447819146": [
+      {
+        "slug": "courmayeur",
+        "display_name": "Courmayeur"
+      }
+    ],
+    "osm-relation-13798382": [
+      {
+        "slug": "dolomiti_superski",
+        "display_name": "Dolomiti Superski"
+      }
+    ],
+    "osm-way-474258174": [
+      {
+        "slug": "kronplatz",
+        "display_name": "Kronplatz"
+      }
+    ],
+    "osm-way-540676705": [
+      {
+        "slug": "livigno",
+        "display_name": "Livigno"
+      }
+    ],
+    "osm-way-540714397": [
+      {
+        "slug": "madonna_di_campiglio",
+        "display_name": "Madonna di Campiglio"
+      }
+    ],
+    "osm-way-542235880": [
+      {
+        "slug": "passo_tonale",
+        "display_name": "Passo Tonale"
+      }
+    ],
+    "osm-way-45438174": [
+      {
+        "slug": "sestriere",
+        "display_name": "Sestriere"
+      }
+    ],
+    "osm-relation-10732928": [
+      {
+        "slug": "val_gardena",
+        "display_name": "Val Gardena"
+      }
+    ],
+    "osm-way-322310181": [
+      {
+        "slug": "aizu_nekoma",
+        "display_name": "Aizu Nekoma"
+      }
+    ],
+    "osm-way-677033105": [
+      {
+        "slug": "aomori_spring",
+        "display_name": "Aomori Spring Ski Resort"
+      }
+    ],
+    "osm-way-1087368359": [
+      {
+        "slug": "appi_kogen",
+        "display_name": "Appi Kogen"
+      },
+      {
+        "slug": "appi_kogen_jp",
+        "display_name": "Appi Kogen Ski Resort"
+      }
+    ],
+    "osm-way-1056651738": [
+      {
+        "slug": "asahidake",
+        "display_name": "Asahidake"
+      },
+      {
+        "slug": "asahidake_ropeway",
+        "display_name": "Daisetsuzan Asahidake Ropeway"
+      }
+    ],
+    "osm-way-598421263": [
+      {
+        "slug": "furano_ski_resort",
+        "display_name": "Furano Ski Resort"
+      }
+    ],
+    "osm-way-948328123": [
+      {
+        "slug": "gala_yuzawa",
+        "display_name": "GALA Yuzawa Snow Resort"
+      }
+    ],
+    "osm-way-1201571470": [
+      {
+        "slug": "geto_kogen",
+        "display_name": "Geto Kogen Resort"
+      }
+    ],
+    "osm-way-960915602": [
+      {
+        "slug": "hachimantai",
+        "display_name": "Hachimantai"
+      }
+    ],
+    "osm-way-1464068070": [
+      {
+        "slug": "hakkoda_ropeway",
+        "display_name": "Hakkoda Ropeway"
+      }
+    ],
+    "osm-way-771665619": [
+      {
+        "slug": "hakuba_47",
+        "display_name": "Hakuba 47 Winter Sports Park"
+      }
+    ],
+    "osm-way-773558919": [
+      {
+        "slug": "hakuba_cortina",
+        "display_name": "Hakuba Cortina Snow Resort"
+      }
+    ],
+    "osm-way-771665618": [
+      {
+        "slug": "hakuba_goryu",
+        "display_name": "Hakuba Goryu Snow Resort"
+      }
+    ],
+    "osm-way-771668333": [
+      {
+        "slug": "hakuba_happo_one",
+        "display_name": "Hakuba Happo-One"
+      }
+    ],
+    "osm-relation-12821614": [
+      {
+        "slug": "kagura",
+        "display_name": "Kagura"
+      },
+      {
+        "slug": "kagura_ski_resort",
+        "display_name": "Kagura Ski Resort"
+      }
+    ],
+    "osm-way-479915906": [
+      {
+        "slug": "kamui_ski_links",
+        "display_name": "Kamui Ski Links"
+      }
+    ],
+    "osm-way-1081650641": [
+      {
+        "slug": "kiroro",
+        "display_name": "Kiroro"
+      },
+      {
+        "slug": "kiroro_snow_world",
+        "display_name": "Kiroro Snow World"
+      }
+    ],
+    "osm-way-937101624": [
+      {
+        "slug": "lotte_arai_resort",
+        "display_name": "Lotte Arai Resort"
+      }
+    ],
+    "osm-way-997044732": [
+      {
+        "slug": "madarao_kogen",
+        "display_name": "Madarao Kogen"
+      }
+    ],
+    "osm-way-997044731": [
+      {
+        "slug": "madarao_mountain_resort",
+        "display_name": "Madarao Mountain Resort"
+      }
+    ],
+    "osm-way-937100227": [
+      {
+        "slug": "myoko_kogen",
+        "display_name": "Myoko Kogen"
+      }
+    ],
+    "osm-way-952129313": [
+      {
+        "slug": "naeba_ski_resort",
+        "display_name": "Naeba Ski Resort"
+      }
+    ],
+    "osm-relation-19780343": [
+      {
+        "slug": "nekoma_mountain",
+        "display_name": "Hoshino Resorts Nekoma Mountain"
+      }
+    ],
+    "osm-relation-14756845": [
+      {
+        "slug": "niseko_annupuri",
+        "display_name": "Niseko Annupuri"
+      },
+      {
+        "slug": "niseko_united",
+        "display_name": "Niseko United"
+      }
+    ],
+    "osm-relation-8385446": [
+      {
+        "slug": "niseko_moiwa",
+        "display_name": "Niseko Moiwa Ski Resort"
+      }
+    ],
+    "osm-way-938550591": [
+      {
+        "slug": "nozawa_onsen",
+        "display_name": "Nozawa Onsen Snow Resort"
+      }
+    ],
+    "osm-way-233173940": [
+      {
+        "slug": "okutadami_maruyama",
+        "display_name": "Okutadami Maruyama"
+      }
+    ],
+    "osm-way-1081650975": [
+      {
+        "slug": "rusutsu",
+        "display_name": "Rusutsu"
+      },
+      {
+        "slug": "rusutsu_resort",
+        "display_name": "Rusutsu Resort"
+      }
+    ],
+    "osm-way-934055659": [
+      {
+        "slug": "sahoro_resort",
+        "display_name": "Sahoro Resort"
+      }
+    ],
+    "osm-way-672881398": [
+      {
+        "slug": "sapporo_kokusai",
+        "display_name": "Sapporo Kokusai Ski Resort"
+      }
+    ],
+    "osm-way-1083658291": [
+      {
+        "slug": "sapporo_teine",
+        "display_name": "Sapporo Teine"
+      }
+    ],
+    "osm-way-937384806": [
+      {
+        "slug": "shiga_kogen",
+        "display_name": "Shiga Kogen Mountain Resort"
+      }
+    ],
+    "osm-way-1201573017": [
+      {
+        "slug": "tazawako_ski_resort",
+        "display_name": "Tazawako Ski Resort"
+      }
+    ],
+    "osm-way-481413697": [
+      {
+        "slug": "tengendai_kogen",
+        "display_name": "Tengendai Kogen"
+      }
+    ],
+    "osm-way-913328023": [
+      {
+        "slug": "tomamu_resort",
+        "display_name": "Hoshino Resorts Tomamu"
+      },
+      {
+        "slug": "tomamu",
+        "display_name": "Tomamu"
+      }
+    ],
+    "osm-way-773558920": [
+      {
+        "slug": "tsugaike_mountain_resort",
+        "display_name": "Tsugaike Mountain Resort"
+      }
+    ],
+    "osm-way-948328283": [
+      {
+        "slug": "yuzawa_kogen",
+        "display_name": "Yuzawa Kogen Ski Resort"
+      }
+    ],
+    "osm-way-488305112": [
+      {
+        "slug": "zao_onsen",
+        "display_name": "Zao Onsen"
+      }
+    ],
+    "osm-relation-6958726": [
+      {
+        "slug": "alpensia_resort",
+        "display_name": "Alpensia Resort"
+      }
+    ],
+    "osm-way-1469668996": [
+      {
+        "slug": "elysian_gangchon",
+        "display_name": "Elysian Gangchon Ski Resort"
+      }
+    ],
+    "osm-way-32083800": [
+      {
+        "slug": "high1_resort",
+        "display_name": "High1 Resort"
+      }
+    ],
+    "osm-way-471307387": [
+      {
+        "slug": "jisan_forest",
+        "display_name": "Jisan Forest Resort"
+      }
+    ],
+    "osm-way-556756203": [
+      {
+        "slug": "phoenix_park",
+        "display_name": "Phoenix Park Ski Resort"
+      }
+    ],
+    "osm-way-1266096853": [
+      {
+        "slug": "vivaldi_park",
+        "display_name": "Vivaldi Park Ski World"
+      }
+    ],
+    "osm-way-377688820": [
+      {
+        "slug": "yongpyong",
+        "display_name": "Yongpyong"
+      },
+      {
+        "slug": "yongpyong_resort",
+        "display_name": "Yongpyong Resort"
+      }
+    ],
+    "osm-way-1254871130": [
+      {
+        "slug": "shymbulak",
+        "display_name": "Shymbulak"
+      }
+    ],
+    "osm-relation-17004845": [
+      {
+        "slug": "geilo",
+        "display_name": "Geilo"
+      }
+    ],
+    "osm-relation-2150871": [
+      {
+        "slug": "hemsedal",
+        "display_name": "Hemsedal"
+      }
+    ],
+    "osm-way-1252351535": [
+      {
+        "slug": "myrkdalen",
+        "display_name": "Myrkdalen"
+      }
+    ],
+    "osm-relation-12567328": [
+      {
+        "slug": "narvikfjellet",
+        "display_name": "Narvikfjellet"
+      }
+    ],
+    "osm-relation-15436046": [
+      {
+        "slug": "norefjell",
+        "display_name": "Norefjell"
+      }
+    ],
+    "osm-way-1359304443": [
+      {
+        "slug": "oppdal",
+        "display_name": "Oppdal"
+      }
+    ],
+    "osm-way-1210019615": [
+      {
+        "slug": "trysil",
+        "display_name": "Trysil"
+      }
+    ],
+    "osm-way-482928467": [
+      {
+        "slug": "cardrona",
+        "display_name": "Cardrona"
+      },
+      {
+        "slug": "cardrona_alpine_resort",
+        "display_name": "Cardrona Alpine Resort"
+      }
+    ],
+    "osm-way-482928475": [
+      {
+        "slug": "coronet_peak",
+        "display_name": "Coronet Peak"
+      }
+    ],
+    "osm-way-627625381": [
+      {
+        "slug": "mt_hutt",
+        "display_name": "Mt Hutt"
+      }
+    ],
+    "osm-way-991056806": [
+      {
+        "slug": "ohau",
+        "display_name": "Ohau"
+      },
+      {
+        "slug": "ohau_snow_fields",
+        "display_name": "Ohau Snow Fields"
+      }
+    ],
+    "osm-way-274760683": [
+      {
+        "slug": "porters_alpine_resort",
+        "display_name": "Porters Alpine Resort"
+      }
+    ],
+    "osm-way-482928468": [
+      {
+        "slug": "the_remarkables",
+        "display_name": "The Remarkables"
+      }
+    ],
+    "osm-relation-19839568": [
+      {
+        "slug": "treble_cone",
+        "display_name": "Treble Cone"
+      }
+    ],
+    "osm-way-499036978": [
+      {
+        "slug": "turoa",
+        "display_name": "Turoa"
+      }
+    ],
+    "osm-way-616029504": [
+      {
+        "slug": "whakapapa",
+        "display_name": "Whakapapa"
+      }
+    ],
+    "osm-relation-17228758": [
+      {
+        "slug": "are",
+        "display_name": "Are"
+      },
+      {
+        "slug": "are_sweden",
+        "display_name": "Are"
+      }
+    ],
+    "osm-way-1215416734": [
+      {
+        "slug": "hemavan",
+        "display_name": "Hemavan"
+      }
+    ],
+    "osm-way-1241932808": [
+      {
+        "slug": "idre_fjall",
+        "display_name": "Idre Fjall"
+      }
+    ],
+    "osm-way-1244144549": [
+      {
+        "slug": "riksgransen",
+        "display_name": "Riksgransen"
+      }
+    ],
+    "osm-relation-16923474": [
+      {
+        "slug": "salen",
+        "display_name": "Salen"
+      }
+    ],
+    "osm-way-1021886212": [
+      {
+        "slug": "vemdalen",
+        "display_name": "Vemdalen"
+      }
+    ],
+    "osm-way-1023308077": [
+      {
+        "slug": "alta",
+        "display_name": "Alta"
+      },
+      {
+        "slug": "alta_ski_area",
+        "display_name": "Alta Ski Area"
+      }
+    ],
+    "osm-way-934351306": [
+      {
+        "slug": "alyeska",
+        "display_name": "Alyeska Resort"
+      }
+    ],
+    "osm-way-461239598": [
+      {
+        "slug": "arapahoe_basin",
+        "display_name": "Arapahoe Basin Ski Area"
+      }
+    ],
+    "osm-way-1144096092": [
+      {
+        "slug": "aspen_snowmass",
+        "display_name": "Aspen Snowmass"
+      }
+    ],
+    "osm-way-531009608": [
+      {
+        "slug": "beaver_creek",
+        "display_name": "Beaver Creek Resort"
+      }
+    ],
+    "osm-way-1254863688": [
+      {
+        "slug": "big_sky_resort",
+        "display_name": "Big Sky Resort"
+      }
+    ],
+    "osm-way-1470441271": [
+      {
+        "slug": "bogus_basin",
+        "display_name": "Bogus Basin"
+      }
+    ],
+    "osm-way-531005985": [
+      {
+        "slug": "breckenridge_ski_resort",
+        "display_name": "Breckenridge Ski Resort"
+      }
+    ],
+    "osm-way-334259249": [
+      {
+        "slug": "bretton_woods",
+        "display_name": "Bretton Woods"
+      }
+    ],
+    "osm-way-682230007": [
+      {
+        "slug": "brighton_resort",
+        "display_name": "Brighton Resort"
+      }
+    ],
+    "osm-way-531005986": [
+      {
+        "slug": "copper_mountain",
+        "display_name": "Copper Mountain"
+      }
+    ],
+    "osm-way-530521512": [
+      {
+        "slug": "crested_butte",
+        "display_name": "Crested Butte Mountain Resort"
+      }
+    ],
+    "osm-relation-11518092": [
+      {
+        "slug": "crystal_mountain",
+        "display_name": "Crystal Mountain"
+      },
+      {
+        "slug": "crystal_mountain_wa",
+        "display_name": "Crystal Mountain Resort"
+      }
+    ],
+    "osm-way-682241434": [
+      {
+        "slug": "deer_valley",
+        "display_name": "Deer Valley Resort"
+      }
+    ],
+    "osm-way-1010412985": [
+      {
+        "slug": "eaglecrest",
+        "display_name": "Eaglecrest Ski Area"
+      }
+    ],
+    "osm-relation-12152028": [
+      {
+        "slug": "heavenly",
+        "display_name": "Heavenly Mountain Resort"
+      }
+    ],
+    "osm-way-839939642": [
+      {
+        "slug": "hilltop_alaska",
+        "display_name": "Hilltop"
+      }
+    ],
+    "osm-way-1074335726": [
+      {
+        "slug": "jackson_hole",
+        "display_name": "Jackson Hole Mountain Resort"
+      }
+    ],
+    "osm-way-1094522661": [
+      {
+        "slug": "jay_peak",
+        "display_name": "Jay Peak Resort"
+      }
+    ],
+    "osm-way-531000583": [
+      {
+        "slug": "keystone_resort",
+        "display_name": "Keystone Resort"
+      }
+    ],
+    "osm-way-1228774360": [
+      {
+        "slug": "killington",
+        "display_name": "Killington"
+      },
+      {
+        "slug": "killington_resort",
+        "display_name": "Killington Resort"
+      }
+    ],
+    "osm-way-334246239": [
+      {
+        "slug": "loon_mountain",
+        "display_name": "Loon Mountain Resort"
+      }
+    ],
+    "osm-way-682231907": [
+      {
+        "slug": "mammoth_mountain",
+        "display_name": "Mammoth Mountain"
+      }
+    ],
+    "osm-way-860260235": [
+      {
+        "slug": "mount_snow",
+        "display_name": "Mount Snow"
+      }
+    ],
+    "osm-way-1306486693": [
+      {
+        "slug": "mt_bachelor",
+        "display_name": "Mt. Bachelor"
+      }
+    ],
+    "osm-relation-19108017": [
+      {
+        "slug": "mt_baker",
+        "display_name": "Mt Baker"
+      }
+    ],
+    "osm-way-866496711": [
+      {
+        "slug": "mt_hood_meadows",
+        "display_name": "Mt. Hood Meadows"
+      }
+    ],
+    "osm-way-1236284348": [
+      {
+        "slug": "okemo",
+        "display_name": "Okemo Mountain Resort"
+      }
+    ],
+    "osm-relation-13336421": [
+      {
+        "slug": "palisades_tahoe",
+        "display_name": "Palisades Tahoe"
+      }
+    ],
+    "osm-way-918681867": [
+      {
+        "slug": "park_city_mountain",
+        "display_name": "Park City Mountain Resort"
+      }
+    ],
+    "osm-way-1124250244": [
+      {
+        "slug": "powder_mountain",
+        "display_name": "Powder Mountain"
+      }
+    ],
+    "osm-way-1388583977": [
+      {
+        "slug": "schweitzer",
+        "display_name": "Schweitzer"
+      }
+    ],
+    "osm-way-1263732068": [
+      {
+        "slug": "silver_mountain_idaho",
+        "display_name": "Silver Mountain Resort"
+      }
+    ],
+    "osm-way-1201185853": [
+      {
+        "slug": "snowbasin",
+        "display_name": "Snowbasin Resort"
+      }
+    ],
+    "osm-way-1023308078": [
+      {
+        "slug": "snowbird",
+        "display_name": "Snowbird"
+      }
+    ],
+    "osm-way-682230006": [
+      {
+        "slug": "solitude_resort",
+        "display_name": "Solitude Mountain Resort"
+      }
+    ],
+    "osm-way-530998526": [
+      {
+        "slug": "steamboat_ski_resort",
+        "display_name": "Steamboat Ski Resort"
+      }
+    ],
+    "osm-way-620836496": [
+      {
+        "slug": "stowe",
+        "display_name": "Stowe"
+      },
+      {
+        "slug": "stowe_mountain_resort",
+        "display_name": "Stowe Mountain Resort"
+      }
+    ],
+    "osm-way-1367311040": [
+      {
+        "slug": "stratton",
+        "display_name": "Stratton Mountain Resort"
+      }
+    ],
+    "osm-way-1094579154": [
+      {
+        "slug": "sugarbush",
+        "display_name": "Sugarbush Resort"
+      }
+    ],
+    "osm-relation-18484946": [
+      {
+        "slug": "sugarloaf_maine",
+        "display_name": "Sugarloaf"
+      }
+    ],
+    "osm-relation-14637842": [
+      {
+        "slug": "sunday_river",
+        "display_name": "Sunday River Resort"
+      }
+    ],
+    "osm-way-1244098768": [
+      {
+        "slug": "sun_valley_resort",
+        "display_name": "Sun Valley Resort"
+      }
+    ],
+    "osm-way-528965906": [
+      {
+        "slug": "telluride_ski_resort",
+        "display_name": "Telluride Ski Resort"
+      }
+    ],
+    "osm-way-679189584": [
+      {
+        "slug": "timberline_lodge",
+        "display_name": "Timberline Lodge Ski Area"
+      }
+    ],
+    "osm-way-531009607": [
+      {
+        "slug": "vail",
+        "display_name": "Vail"
+      },
+      {
+        "slug": "vail_ski_resort",
+        "display_name": "Vail Ski Resort"
+      }
+    ],
+    "osm-way-1388573249": [
+      {
+        "slug": "whitefish_mountain_resort",
+        "display_name": "Whitefish Mountain Resort"
+      }
+    ],
+    "osm-way-251260219": [
+      {
+        "slug": "wildcat_mountain",
+        "display_name": "Wildcat Mountain"
+      }
+    ],
+    "osm-way-1517729401": [
+      {
+        "slug": "winter_park_resort",
+        "display_name": "Winter Park Resort"
+      }
+    ],
+    "osm-way-1254211862": [
+      {
+        "slug": "grandvalira",
+        "display_name": "Grandvalira"
+      }
+    ],
+    "osm-way-319914086": [
+      {
+        "slug": "zell_am_see_kaprun",
+        "display_name": "Zell am See-Kaprun"
+      }
+    ],
+    "osm-way-1162568814": [
+      {
+        "slug": "andermatt_sedrun",
+        "display_name": "Andermatt-Sedrun-Disentis"
+      }
+    ],
+    "osm-way-45117869": [
+      {
+        "slug": "les_trois_vallees",
+        "display_name": "Les Trois Vallees"
+      }
+    ],
+    "osm-way-705875874": [
+      {
+        "slug": "batea_mahuida",
+        "display_name": "Batea Mahuida"
+      }
+    ],
+    "osm-way-934096931": [
+      {
+        "slug": "cerro_perito_moreno",
+        "display_name": "Cerro Perito Moreno"
+      }
+    ],
+    "manual-vallecitos": [
+      {
+        "slug": "vallecitos",
+        "display_name": "Vallecitos"
+      }
+    ],
+    "manual-kitzbuehel": [
+      {
+        "slug": "kitzbuehel",
+        "display_name": "Kitzbuhel"
+      }
+    ],
+    "manual-mount_norquay": [
+      {
+        "slug": "mount_norquay",
+        "display_name": "Mount Norquay"
+      }
+    ],
+    "manual-nakiska": [
+      {
+        "slug": "nakiska",
+        "display_name": "Nakiska Ski Area"
+      }
+    ],
+    "osm-node-290050323": [
+      {
+        "slug": "el_colorado",
+        "display_name": "El Colorado"
+      },
+      {
+        "slug": "el_colorado_chile",
+        "display_name": "El Colorado"
+      }
+    ],
+    "manual-farellones": [
+      {
+        "slug": "farellones",
+        "display_name": "Farellones"
+      }
+    ],
+    "osm-node-290050547": [
+      {
+        "slug": "la_parva",
+        "display_name": "La Parva"
+      }
+    ],
+    "osm-way-97509064": [
+      {
+        "slug": "nevados_de_chillan",
+        "display_name": "Nevados de Chillan"
+      }
+    ],
+    "manual-ski_arpa": [
+      {
+        "slug": "ski_arpa",
+        "display_name": "Ski Arpa"
+      }
+    ],
+    "osm-node-290057440": [
+      {
+        "slug": "valle_nevado",
+        "display_name": "Valle Nevado"
+      }
+    ],
+    "manual-beijing_nanshan": [
+      {
+        "slug": "beijing_nanshan",
+        "display_name": "Beijing Nanshan Ski Village"
+      }
+    ],
+    "manual-changbaishan_wanda": [
+      {
+        "slug": "changbaishan_wanda",
+        "display_name": "Changbaishan Wanda"
+      }
+    ],
+    "manual-jiangjunshan": [
+      {
+        "slug": "jiangjunshan",
+        "display_name": "Jiangjunshan"
+      }
+    ],
+    "manual-jundushan": [
+      {
+        "slug": "jundushan",
+        "display_name": "Jundushan"
+      }
+    ],
+    "manual-keketuohai": [
+      {
+        "slug": "keketuohai",
+        "display_name": "Keketuohai"
+      }
+    ],
+    "manual-nanshan_china": [
+      {
+        "slug": "nanshan_china",
+        "display_name": "Nanshan"
+      }
+    ],
+    "manual-silk_road": [
+      {
+        "slug": "silk_road",
+        "display_name": "Silk Road"
+      }
+    ],
+    "manual-songhua_lake": [
+      {
+        "slug": "songhua_lake",
+        "display_name": "Vanke Songhua Lake"
+      }
+    ],
+    "manual-taiziling": [
+      {
+        "slug": "taiziling",
+        "display_name": "Taiziling"
+      }
+    ],
+    "manual-thaiwoo": [
+      {
+        "slug": "thaiwoo",
+        "display_name": "Thaiwoo Ski Resort"
+      }
+    ],
+    "manual-tianshan_tianchi": [
+      {
+        "slug": "tianshan_tianchi",
+        "display_name": "Tianshan Tianchi"
+      }
+    ],
+    "osm-node-2574552473": [
+      {
+        "slug": "baqueira_beret",
+        "display_name": "Baqueira Beret"
+      }
+    ],
+    "manual-courchevel": [
+      {
+        "slug": "courchevel",
+        "display_name": "Courchevel"
+      }
+    ],
+    "manual-meribel": [
+      {
+        "slug": "meribel",
+        "display_name": "Meribel"
+      }
+    ],
+    "manual-valmorel": [
+      {
+        "slug": "valmorel",
+        "display_name": "Valmorel"
+      }
+    ],
+    "manual-auli": [
+      {
+        "slug": "auli",
+        "display_name": "Auli"
+      }
+    ],
+    "manual-kufri": [
+      {
+        "slug": "kufri",
+        "display_name": "Kufri"
+      }
+    ],
+    "manual-narkanda": [
+      {
+        "slug": "narkanda",
+        "display_name": "Narkanda"
+      }
+    ],
+    "manual-solang_nala": [
+      {
+        "slug": "solang_nala",
+        "display_name": "Solang Nala"
+      }
+    ],
+    "osm-way-934298187": [
+      {
+        "slug": "furano",
+        "display_name": "Furano"
+      }
+    ],
+    "manual-tateyama_snow_area": [
+      {
+        "slug": "tateyama_snow_area",
+        "display_name": "Tateyama"
+      }
+    ],
+    "manual-oak_valley": [
+      {
+        "slug": "oak_valley",
+        "display_name": "Oak Valley Resort"
+      }
+    ],
+    "manual-ak_bulak": [
+      {
+        "slug": "ak_bulak",
+        "display_name": "Ak-Bulak"
+      }
+    ],
+    "osm-way-1124786559": [
+      {
+        "slug": "oi_qaragai",
+        "display_name": "Oi Qaragai"
+      }
+    ],
+    "manual-tabagan": [
+      {
+        "slug": "tabagan",
+        "display_name": "Tabagan"
+      }
+    ],
+    "osm-node-6818068276": [
+      {
+        "slug": "voss_resort",
+        "display_name": "Voss Resort"
+      }
+    ],
+    "osm-way-1020172394": [
+      {
+        "slug": "mt_dobson",
+        "display_name": "Mt Dobson"
+      }
+    ],
+    "osm-node-2641613980": [
+      {
+        "slug": "roundhill",
+        "display_name": "Roundhill Ski Area"
+      }
+    ],
+    "osm-relation-10517367": [
+      {
+        "slug": "arctic_valley",
+        "display_name": "Arctic Valley"
+      }
+    ],
+    "osm-relation-7095958": [
+      {
+        "slug": "northstar_california",
+        "display_name": "Northstar California Resort"
+      }
+    ]
+  }
+}
