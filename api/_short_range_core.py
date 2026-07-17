@@ -405,21 +405,20 @@ def tendency_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         member_snow: list[float] = []
         member_tmean: list[float] = []
         for suffix in members:
-            precip = daily.get(f"precipitation_sum{suffix}")
+            snowfall = daily.get(f"snowfall_sum{suffix}")
             tmax = daily.get(f"temperature_2m_max{suffix}")
             tmin = daily.get(f"temperature_2m_min{suffix}")
-            if not precip or not tmax or not tmin:
+            if not snowfall or not tmax or not tmin:
                 continue
             snow_total = 0.0
             temps: list[float] = []
             valid = True
             for index in range(week_start, week_end):
-                if precip[index] is None or tmax[index] is None or tmin[index] is None:
+                if snowfall[index] is None or tmax[index] is None or tmin[index] is None:
                     valid = False
                     break
                 t_mean = (float(tmax[index]) + float(tmin[index])) / 2.0
-                slr, snow_fraction = slr_and_snow_fraction(t_mean)
-                snow_total += float(precip[index]) * snow_fraction * slr / 10.0
+                snow_total += float(snowfall[index])       # native model snowfall (cm), no SLR
                 temps.append(t_mean)
             if valid and temps:
                 member_snow.append(snow_total)
@@ -500,7 +499,7 @@ def fetch_tendency(resort: dict[str, Any], elevation_m: float | None) -> list[di
     params: dict[str, Any] = {
         "latitude": f"{float(resort['lat']):.5f}",
         "longitude": f"{float(resort['lon']):.5f}",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum",
+        "daily": "temperature_2m_max,temperature_2m_min,snowfall_sum",
         "models": "ecmwf_ec46",
         "forecast_days": 46,
         "timezone": "auto",
