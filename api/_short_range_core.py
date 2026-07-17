@@ -582,6 +582,9 @@ NEW_SNOW_RHO_KG_M3 = 100.0    # fresh-snow density (settles toward RHO_MAX)
 RHO_MAX_KG_M3 = 450.0         # max seasonal snow density (settled pack)
 DDF_SWE_MM_PER_DEGDAY = 4.0   # degree-day melt factor in SWE (mm w.e. / +°C / d)
 ARCHIVE_LAG_DAYS = 5          # ERA5 latency; forecast past-days covers the tail
+BAND_SNOW_RATIO_MAX = 2.5     # cap on band/grid snow-phase redistribution ratio
+                              # (a warm grid cell with snow_frac→0 must not blow
+                              #  the ratio up to tens of metres of season snow)
 
 # Measured override: when a public snow station (snow_stations table — SNOTEL /
 # SLF IMIS / JMA AMeDAS, cron-synced daily) sits close enough, the modelled
@@ -670,30 +673,42 @@ def season_band_metrics(series: dict[str, tuple[float, float, float]],
     """(season_snowfall_cm, current_depth_cm) for one band, run day-by-day from a
     zero baseline.
 
-    season_snowfall_cm: the model's OWN native season snowfall (grid) redistributed
-    to this band by the band-vs-grid snow-phase (SWE) ratio — colder bands keep a
-    larger share, warmer bands less — so it stays calibrated to the models instead
-    of re-inflated by our SLR ladder. current_depth_cm: SWE accumulated when the
-    band is cold, converted to depth with fresh density NEW_SNOW_RHO settling toward
-    RHO_MAX, and ablated by degree-day melt in SWE (no SLR)."""
+    Both outputs are driven by the SAME quantity — the model's OWN native snowfall
+    (`snowfall_sum`) redistributed to this band — so the season total and the depth
+    on the ground can never contradict each other (the previous split, native
+    snowfall vs a precip×snow-fraction depth budget, produced impossible pairs like
+    357 cm of snow on the ground from 0 cm of season snowfall).
+
+    Band native snowfall per day = the grid's native snowfall scaled by the
+    band-vs-grid snow-phase ratio, CLAMPED by BAND_SNOW_RATIO_MAX (a warm grid cell
+    whose snow fraction →0 must not inflate the ratio to tens of metres). When the
+    grid cell was too warm to log any native snow the colder band would still have
+    received, we fall back to the band's own snow-phase precip. current_depth_cm:
+    that native snowfall as SWE (fresh NEW_SNOW_RHO settling toward RHO_MAX),
+    ablated by degree-day melt in SWE. No SLR re-inflation."""
     target_elev = band_elev if isinstance(band_elev, (int, float)) else grid_elev
-    grid_native_snow_cm = 0.0     # model's own snowfall total at the grid cell
-    grid_swe_mm = 0.0             # snow-phase water at grid temperature
-    band_swe_total_mm = 0.0       # snow-phase water at band temperature
     swe_mm = 0.0
     depth_cm = 0.0
+    season_snow_cm = 0.0
     for t in sorted(series):
         precip_mm, tmean_grid, snow_grid_cm = series[t]
         tmean = tmean_grid - TEMP_LAPSE_C_PER_M * (target_elev - grid_elev)
         _, snow_frac_band = slr_and_snow_fraction(tmean)
         _, snow_frac_grid = slr_and_snow_fraction(tmean_grid)
-        grid_native_snow_cm += snow_grid_cm
-        grid_swe_mm += precip_mm * snow_frac_grid
-        band_swe_total_mm += precip_mm * snow_frac_band
-        swe_add = precip_mm * snow_frac_band
-        if swe_add > 0:                                     # fresh snow → depth + SWE
-            depth_cm += swe_add * 100.0 / NEW_SNOW_RHO_KG_M3
-            swe_mm += swe_add
+        # Band native snowfall (fresh cm): redistribute the grid's native snowfall
+        # by the band/grid snow-phase ratio (clamped); if the grid was too warm to
+        # log snow that the colder band would still get, synthesize from precip.
+        if snow_grid_cm > 0.0 and snow_frac_grid > 0.05:
+            band_snow_cm = snow_grid_cm * min(snow_frac_band / snow_frac_grid,
+                                              BAND_SNOW_RATIO_MAX)
+        elif snow_frac_band > 0.0:
+            band_snow_cm = precip_mm * snow_frac_band       # rho-100 fresh: 1 mm w.e. ≈ 1 cm
+        else:
+            band_snow_cm = 0.0
+        if band_snow_cm > 0.0:                              # fresh snow → depth + SWE
+            depth_cm += band_snow_cm
+            swe_mm += band_snow_cm * NEW_SNOW_RHO_KG_M3 / 100.0
+            season_snow_cm += band_snow_cm
         if depth_cm > 0 and swe_mm > 0:                     # settle toward RHO_MAX
             rho = 100.0 * swe_mm / depth_cm
             rho2 = RHO_MAX_KG_M3 - (RHO_MAX_KG_M3 - rho) * math.exp(-1.0 / TAU_SETTLE_DAYS)
@@ -708,8 +723,6 @@ def season_band_metrics(series: dict[str, tuple[float, float, float]],
             if swe_mm <= 0.01:
                 swe_mm = 0.0
                 depth_cm = 0.0
-    season_snow_cm = (grid_native_snow_cm * band_swe_total_mm / grid_swe_mm
-                      if grid_swe_mm > 0 else 0.0)
     return round(season_snow_cm), round(depth_cm)
 
 
