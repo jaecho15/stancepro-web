@@ -1369,7 +1369,20 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // 3D terrain view — the same idle-deferral the frozen-tarn/canopy/neighbour
   // loaders already use. On a slow mobile link this pulls ~780 KB (contours
   // ~230 KB + elev_5m ~550 KB) out of the time-to-first-3D path.
-  const firstIdle = new Promise(res => map.once("idle", res));
+  // Resolve on the map's first "idle" — BUT never hang on it. The Three.js
+  // custom layers (sky, terrain drape) call map.triggerRepaint() continuously,
+  // so on many devices the map NEVER emits "idle": every idle-deferred asset
+  // below (contours, elev_5m → aspect-toggle enable, sky) would then load never,
+  // leaving 3D with no contours and a permanently disabled aspect button. Race
+  // "idle" against a short post-load fallback so the deferred pass always runs a
+  // beat after the first paint.
+  const firstIdle = new Promise(res => {
+    let fired = false;
+    const fire = () => { if (!fired) { fired = true; res(); } };
+    map.once("idle", fire);
+    map.once("load", () => setTimeout(fire, 1200));
+    setTimeout(fire, 4000);   // absolute backstop if "load" is also delayed
+  });
   // Fleet index (961 KB) is only needed for NEIGHBOURS now that the focused
   // resort seeded from its own manifest — load it lazily after the first frame.
   // (Absent-manifest fallback already loaded it eagerly; loadV2Index is idempotent.)
