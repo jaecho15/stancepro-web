@@ -749,7 +749,9 @@ window.OffpisteDraw = (function(){
       +'<b class="al-n">N</b><b class="al-e">E</b><b class="al-s">S</b><b class="al-w">W</b></div>';
   }
   function toggleAspect(){
-    if(!ready) return;
+    // ready (elev loaded) is only needed for the V1 single-image fallback;
+    // the V2 tiled layer in the style works without it.
+    if(!ready && !(map && map.getLayer("op-aspect-layer"))) return;
     aspectOn=!aspectOn;
     el.aspect.classList.toggle("on",aspectOn);
     if(aspectOn && !aspectBuilt){
@@ -821,9 +823,14 @@ window.OffpisteDraw = (function(){
     try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteReady) webkit.messageHandlers.offpisteReady.postMessage(rid); }catch(e){}
     try{ if(window.AndroidOffpiste&&AndroidOffpiste.onReady) AndroidOffpiste.onReady(rid); }catch(e){}
   }
-  function init(_map,_meta,_art){
+  function init(_map,_meta,_art,_degraded){
     map=_map; meta=_meta||{}; art=_art; southern=!!(meta.bounds_3857 && (meta.bounds_3857[1]+meta.bounds_3857[3])<0);
     injectCSS(); injectDOM(); grabEls(); addLayer(); wire(); renderBadge(); refresh(); notifyReady();
+    // The V2 aspect:// overlay derives from the DEM tiles, not elev_5m.png —
+    // the chip works before (and without) loadElev, so don't keep it locked
+    // behind that deferred 550 KB fetch. Degraded resorts keep it disabled:
+    // no LiDAR tiles ⇒ aspect:// stays transparent there.
+    if(!_degraded && el.aspect) el.aspect.disabled=false;
     // loadElev() (fetches elev_5m.png, ~550 KB) is NOT called here — the host
     // defers it to first idle so it never competes with the initial 3D render.
   }
@@ -2418,7 +2425,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // Off-piste route drawing overlay — never let a feature fault break the map.
     // init() no longer fetches elev_5m.png (~550 KB); we load it after first idle
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
-    try { OffpisteDraw.init(map, meta, art); firstIdle.then(() => { try { OffpisteDraw.loadElev(); } catch (e) {} }); } catch (e) { console.log("op init failed", e); }
+    try { OffpisteDraw.init(map, meta, art, degraded); firstIdle.then(() => { try { OffpisteDraw.loadElev(); } catch (e) {} }); } catch (e) { console.log("op init failed", e); }
     // Clip piste/lift geometry to this resort's terrain extent [w..e_, s..n].
     // geometry.json over-includes the whole valley; lines beyond the loaded z15
     // terrain drape at elevation 0 → stretched lines (esp. iOS WKWebView, which
@@ -2503,6 +2510,14 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         try {
           const s = map.getSource("dem");
           if (s && s.setTiles) s.setTiles(["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"]);
+          // slope://+aspect:// tiles requested BEFORE a v2 seed rendered
+          // transparent (v2LidarSafe was false) and, like the DEM above, are
+          // never re-requested — reload both derived sources so they recompute
+          // against the now-populated index.
+          [["v2slope", "slope://{z}/{x}/{y}"], ["v2aspect", "aspect://{z}/{x}/{y}"]].forEach(([id, tpl]) => {
+            const d = map.getSource(id);
+            if (d && d.setTiles) d.setTiles([tpl]);
+          });
         } catch (e) { console.log("dem reload failed", e); }
       }, 700);
     }
