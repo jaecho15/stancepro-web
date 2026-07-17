@@ -8,6 +8,7 @@ import {
   seasonalOutlookForResort,
 } from "@/lib/snow/fetch";
 import { regionIdFor } from "@/lib/snow/region-locator";
+import { terrainResortId } from "@/lib/snow/terrain-id";
 import { ForecastView } from "@/components/snow/ForecastView";
 import { SeasonalOutlookCard } from "@/components/snow/SeasonalOutlookCard";
 
@@ -37,6 +38,14 @@ export default async function ResortForecastPage({ params }: Params) {
   const locatedRegionId = resort.region_id ? null : regionIdFor(resort.lat, resort.lon);
   const seasonal = seasonalOutlookForResort(seasonalRows, resort, locatedRegionId);
 
+  // 3D terrain artifacts are keyed by the OSM/manual weather id, not the curated
+  // snow_outlook slug — map curated slugs (cardrona, treble_cone, …) so their
+  // "View in 3D" link points at real artifacts instead of a 404 (which leaves
+  // coarse terrain, no contours and a disabled aspect toggle). Only surface the
+  // link when a real OSM-keyed artifact set exists.
+  const terrainId = terrainResortId(resort.resort_id);
+  const has3dTerrain = terrainId.startsWith("osm-");
+
   return (
     <div className="relative overflow-hidden">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -62,12 +71,11 @@ export default async function ResortForecastPage({ params }: Params) {
               {resort.base_elevation_m !== null && resort.top_elevation_m !== null
                 ? ` · ${Math.round(resort.base_elevation_m)}–${Math.round(resort.top_elevation_m)} m`
                 : ""}
-              {/* 3D terrain artifacts are keyed by OSM index ids only */}
-              {resort.resort_id.startsWith("osm-") && (
+              {has3dTerrain && (
                 <>
                   {" · "}
                   <Link
-                    href={`/resort-3d/${resort.resort_id}/view?name=${encodeURIComponent(resort.display_name)}`}
+                    href={`/resort-3d/${terrainId}/view?name=${encodeURIComponent(resort.display_name)}`}
                     className="text-brand-400 hover:text-brand-300"
                   >
                     View in 3D →
