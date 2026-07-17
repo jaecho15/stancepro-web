@@ -191,6 +191,7 @@ def hourly_band_day(
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
 
     for model in models:
+        snow_series = hourly.get(f"snowfall_{model}") or []
         precip_series = hourly.get(f"precipitation_{model}") or []
         temp_series = hourly.get(f"temperature_2m_{model}") or []
         wspd_series = hourly.get(f"wind_speed_10m_{model}") or []
@@ -205,8 +206,11 @@ def hourly_band_day(
             if precip is None or temp is None:
                 continue
             block_index = int(stamp[11:13]) // 6
-            slr, snow_fraction = slr_and_snow_fraction(float(temp))
-            snow_cm = float(precip) * snow_fraction * slr / 10.0
+            # Native model snowfall (cm) — trust each model's own microphysics
+            # rather than re-deriving from precip × our SLR ladder (which over-
+            # inflated fresh depth at very cold, high-altitude sites).
+            snow_hr = snow_series[index] if index < len(snow_series) else None
+            snow_cm = float(snow_hr) if snow_hr is not None else 0.0
             day_snow[model] += snow_cm
             day_precip[model] += float(precip)
             day_temps[model].append(float(temp))
@@ -323,14 +327,15 @@ def band_daily_rows(
             per_model_precip: list[float] = []
             per_model_tmean: list[float] = []
             for model in models:
+                snow = (daily.get(f"snowfall_sum_{model}") or [None] * len(times))[index]
                 precip = (daily.get(f"precipitation_sum_{model}") or [None] * len(times))[index]
                 tmax = (daily.get(f"temperature_2m_max_{model}") or [None] * len(times))[index]
                 tmin = (daily.get(f"temperature_2m_min_{model}") or [None] * len(times))[index]
                 if precip is None or tmax is None or tmin is None:
                     continue
                 t_mean = (float(tmax) + float(tmin)) / 2.0
-                slr, snow_fraction = slr_and_snow_fraction(t_mean)
-                per_model_snow.append(float(precip) * snow_fraction * slr / 10.0)
+                # Native model snowfall (cm), not precip × our SLR ladder.
+                per_model_snow.append(float(snow) if snow is not None else 0.0)
                 per_model_precip.append(float(precip))
                 per_model_tmean.append(t_mean)
             if not per_model_snow:
@@ -555,8 +560,9 @@ def _current_depth_cm(band_payload: dict[str, Any]) -> int | None:
 # from a melt-out baseline of 0, accumulating SWE when the band is cold, melting
 # by positive degree-days, and converting SWE→depth with bulk settling toward a
 # max density. Two outputs per band:
-#   • season_snowfall_cm — total new snow that fell (no melt), the honest
-#     "how much has fallen" number; unbounded (full season, not a 90-day window).
+#   • season_snowfall_cm — the models' OWN native season snowfall total, band-
+#     scaled by snow-phase ratio (no SLR re-inflation); the honest "how much has
+#     fallen" number, unbounded (full season, not a 90-day window).
 #   • current_depth_cm  — modelled snow ON THE GROUND now (accum − melt − settle).
 # The daily driver series is Open-Meteo ARCHIVE (ERA5, season start → today−5,
 # no 92-day cap) stitched with the FORECAST past-days tail. One grid fetch per
@@ -572,6 +578,7 @@ SEASON_ANCHOR_MONTH_SH = 3
 TEMP_LAPSE_C_PER_M = 0.0065     # band temperature downscale from the grid cell
 SNOW_TMEAN_C = 1.0             # daily mean at/below this → precip (partly) snow
 TAU_SETTLE_DAYS = 20.0        # e-folding time of bulk-density settling
+NEW_SNOW_RHO_KG_M3 = 100.0    # fresh-snow density (settles toward RHO_MAX)
 RHO_MAX_KG_M3 = 450.0         # max seasonal snow density (settled pack)
 DDF_SWE_MM_PER_DEGDAY = 4.0   # degree-day melt factor in SWE (mm w.e. / +°C / d)
 ARCHIVE_LAG_DAYS = 5          # ERA5 latency; forecast past-days covers the tail
@@ -606,16 +613,17 @@ def _season_start_iso(lat: float) -> str:
     return date(year, anchor, 1).isoformat()
 
 
-def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, float]], float]:
-    """Daily grid series {iso_date: (precip_mm, tmean_c)} from season start to
-    today, plus the grid cell elevation (m). ARCHIVE (ERA5, no 92-day cap) covers
+def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, float, float]], float]:
+    """Daily grid series {iso_date: (precip_mm, tmean_c, snowfall_cm)} from season
+    start to today, plus the grid cell elevation (m). `snowfall_cm` is the model's
+    OWN native snowfall (grid elevation). ARCHIVE (ERA5, no 92-day cap) covers
     season start → today−ARCHIVE_LAG_DAYS; the FORECAST past-days tail fills the
     recent gap and today (overwriting any overlap). One grid fetch each; bands are
     derived later via a temperature lapse, so no `elevation` param here."""
     lat, lon = float(resort["lat"]), float(resort["lon"])
     start = date.fromisoformat(_season_start_iso(lat))
     today = datetime.now(tz=timezone.utc).date()
-    series: dict[str, tuple[float, float]] = {}
+    series: dict[str, tuple[float, float, float]] = {}
     grid_elev: float | None = None
 
     def _ingest(payload: dict[str, Any]) -> None:
@@ -623,12 +631,17 @@ def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, 
         if grid_elev is None and isinstance(payload.get("elevation"), (int, float)):
             grid_elev = float(payload["elevation"])
         daily = payload.get("daily") or {}
-        for t, p, tm in zip(daily.get("time") or [],
-                            daily.get("precipitation_sum") or [],
-                            daily.get("temperature_2m_mean") or []):
+        times = daily.get("time") or []
+        precs = daily.get("precipitation_sum") or []
+        tmeans = daily.get("temperature_2m_mean") or []
+        snows = daily.get("snowfall_sum") or []
+        for i, t in enumerate(times):
+            tm = tmeans[i] if i < len(tmeans) else None
             if tm is None:
                 continue
-            series[t] = (float(p or 0.0), float(tm))
+            p = precs[i] if i < len(precs) else 0.0
+            sf = snows[i] if i < len(snows) else 0.0
+            series[t] = (float(p or 0.0), float(tm), float(sf or 0.0))
 
     arch_end = today - timedelta(days=ARCHIVE_LAG_DAYS)
     if arch_end > start:
@@ -636,14 +649,14 @@ def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, 
             _ingest(polite_get(ARCHIVE_URL, {
                 "latitude": f"{lat:.5f}", "longitude": f"{lon:.5f}",
                 "start_date": start.isoformat(), "end_date": arch_end.isoformat(),
-                "daily": "precipitation_sum,temperature_2m_mean", "timezone": "auto",
+                "daily": "precipitation_sum,temperature_2m_mean,snowfall_sum", "timezone": "auto",
             }))
         except Exception:
             pass                                  # best-effort: forecast tail still runs
     try:
         _ingest(polite_get(FORECAST_URL, {
             "latitude": f"{lat:.5f}", "longitude": f"{lon:.5f}",
-            "daily": "precipitation_sum,temperature_2m_mean",
+            "daily": "precipitation_sum,temperature_2m_mean,snowfall_sum",
             "models": "ecmwf_ifs025", "past_days": 15, "forecast_days": 1, "timezone": "auto",
         }))
     except Exception:
@@ -651,25 +664,35 @@ def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, 
     return series, (grid_elev if grid_elev is not None else 0.0)
 
 
-def season_band_metrics(series: dict[str, tuple[float, float]],
+def season_band_metrics(series: dict[str, tuple[float, float, float]],
                         grid_elev: float,
                         band_elev: float | None) -> tuple[int, int]:
     """(season_snowfall_cm, current_depth_cm) for one band, run day-by-day from a
-    zero baseline. Accumulate new snow (temperature-dependent SLR), settle the
-    pack toward RHO_MAX, and ablate by degree-day melt in SWE."""
+    zero baseline.
+
+    season_snowfall_cm: the model's OWN native season snowfall (grid) redistributed
+    to this band by the band-vs-grid snow-phase (SWE) ratio — colder bands keep a
+    larger share, warmer bands less — so it stays calibrated to the models instead
+    of re-inflated by our SLR ladder. current_depth_cm: SWE accumulated when the
+    band is cold, converted to depth with fresh density NEW_SNOW_RHO settling toward
+    RHO_MAX, and ablated by degree-day melt in SWE (no SLR)."""
     target_elev = band_elev if isinstance(band_elev, (int, float)) else grid_elev
-    cum_snow_cm = 0.0
+    grid_native_snow_cm = 0.0     # model's own snowfall total at the grid cell
+    grid_swe_mm = 0.0             # snow-phase water at grid temperature
+    band_swe_total_mm = 0.0       # snow-phase water at band temperature
     swe_mm = 0.0
     depth_cm = 0.0
     for t in sorted(series):
-        precip_mm, tmean_grid = series[t]
+        precip_mm, tmean_grid, snow_grid_cm = series[t]
         tmean = tmean_grid - TEMP_LAPSE_C_PER_M * (target_elev - grid_elev)
-        slr, snow_frac = slr_and_snow_fraction(tmean)
-        if snow_frac > 0 and precip_mm > 0:
-            swe_add = precip_mm * snow_frac
-            cum_snow_cm += swe_add * slr / 10.0            # new-snow depth (cm)
-            rho_new = 1000.0 / slr                          # fresh density from SLR
-            depth_cm += swe_add * 100.0 / rho_new           # fresh-snow thickness (cm)
+        _, snow_frac_band = slr_and_snow_fraction(tmean)
+        _, snow_frac_grid = slr_and_snow_fraction(tmean_grid)
+        grid_native_snow_cm += snow_grid_cm
+        grid_swe_mm += precip_mm * snow_frac_grid
+        band_swe_total_mm += precip_mm * snow_frac_band
+        swe_add = precip_mm * snow_frac_band
+        if swe_add > 0:                                     # fresh snow → depth + SWE
+            depth_cm += swe_add * 100.0 / NEW_SNOW_RHO_KG_M3
             swe_mm += swe_add
         if depth_cm > 0 and swe_mm > 0:                     # settle toward RHO_MAX
             rho = 100.0 * swe_mm / depth_cm
@@ -685,7 +708,9 @@ def season_band_metrics(series: dict[str, tuple[float, float]],
             if swe_mm <= 0.01:
                 swe_mm = 0.0
                 depth_cm = 0.0
-    return round(cum_snow_cm), round(depth_cm)
+    season_snow_cm = (grid_native_snow_cm * band_swe_total_mm / grid_swe_mm
+                      if grid_swe_mm > 0 else 0.0)
+    return round(season_snow_cm), round(depth_cm)
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
