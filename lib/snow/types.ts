@@ -30,6 +30,8 @@ export interface TimeBlock {
   precip_mm_p50: number | null;
   wind_gust_kmh: number | null;
   freezing_level_m: number | null;
+  /** WMO weather interpretation code for this 6-hour block (Open-Meteo). */
+  weather_code?: number | null;
 }
 
 export interface DailyRow {
@@ -77,6 +79,13 @@ export interface SnowDepth {
   mid_cm: number | null;
   top_cm: number | null;
   estimate: boolean;
+  // Season-to-date total snowfall per band (cm). Mirrors iOS depth.season_snowfall.
+  season_snowfall?: {
+    base_cm?: number | null;
+    mid_cm?: number | null;
+    top_cm?: number | null;
+  } | null;
+  season_start?: string | null;
   // Provenance (additive; older cached rows lack them): what anchored the
   // absolute level, and the latest satellite snow-cover read used for gating.
   source?: "model" | "station";
