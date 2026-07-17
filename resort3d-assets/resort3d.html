@@ -1220,7 +1220,9 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     container: "map",
     transformRequest: routeDem,
     center: [(w + e_) / 2, (s + n) / 2],
-    zoom: 12.6, pitch: 66, bearing: 15,
+    // z14: first DEM requests stay on sharp V2 tiles and the pitched frustum
+    // covers far fewer edge tiles than the old z12.6 overview start.
+    zoom: 14, pitch: 66, bearing: 15,
     maxPitch: 85, attributionControl: true,   // 85 = MapLibre's hard ceiling for looking up
     // CJK slope/lift names render from the device font — the glyph server
     // only has to cover Latin/Cyrillic ranges.
@@ -2396,11 +2398,23 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   };
 
   map.on("load", () => {
-    // Fit BEFORE enabling terrain: an instant fitBounds while terrain is
-    // active can drop the camera below the surface → blank screen.
-    map.fitBounds([[w, s], [e_, n]], { padding: 40, duration: 0 });
-    map.setPitch(64); map.setBearing(15);
+    // Frame CLOSE first (zoom ≥ 14), then enable terrain, then (if the resort
+    // is larger) ease out to the true fit — so the first 3D paint only needs a
+    // handful of near DEM tiles instead of the old edge-tile storm at overview
+    // zoom. Jump still happens BEFORE setTerrain: an instant wide fitBounds
+    // while terrain is on can drop the camera under the mesh → blank screen.
+    const cam = map.cameraForBounds([[w, s], [e_, n]], { padding: 40 }) || {
+      center: [(w + e_) / 2, (s + n) / 2], zoom: 14
+    };
+    const fitZ = cam.zoom;
+    const startZ = Math.max(fitZ, 14);
+    map.jumpTo({ center: cam.center, zoom: startZ, bearing: 15, pitch: 64 });
     map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
+    if (fitZ < 13.95) {
+      map.once("idle", () => {
+        map.easeTo({ center: cam.center, zoom: fitZ, bearing: 15, pitch: 64, duration: 1200 });
+      });
+    }
     // Off-piste route drawing overlay — never let a feature fault break the map.
     // init() no longer fetches elev_5m.png (~550 KB); we load it after first idle
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
