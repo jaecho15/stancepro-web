@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-24T01:30:56+08:00",
+  "generated_at": "2026-06-24T05:20:09+08:00",
   "source": "Founder journal + DEVELOPMENT_TIMELINE.csv (git, docs, migrations)",
   "time_range_start": "2025-03-09",
   "time_range_end": "2025-12-21",
@@ -7076,7 +7076,7 @@
     }
   ],
   "cursor_estimates": {
-    "generated_at": "2026-06-24T01:30:56+08:00",
+    "generated_at": "2026-06-24T05:20:09+08:00",
     "methodology": "Calibrate on 2026 human Cursor sessions per active dev day; apply monthly era multipliers from founder journal (Cursor start Apr 2025, Ultra Oct 2025); blend era-weighted days, discounted flat active-day, and git-commit scaling.",
     "calibration_2026": {
       "human_sessions": 380,

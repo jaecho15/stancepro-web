@@ -23,6 +23,7 @@ import type {
   ForecastResponse,
   SnowDepth,
   SnowResort,
+  TendencyWeek,
   TimeBlock,
 } from "@/lib/snow/types";
 
@@ -66,13 +67,8 @@ function dayLabel(iso: string): string {
 function dayWeekday(iso: string): string {
   return parseISO(iso).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
 }
-function formatDate(iso: string): string {
-  return parseISO(iso).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+function dayMonthDay(iso: string): string {
+  return parseISO(iso).toLocaleDateString("en-US", { month: "numeric", day: "numeric", timeZone: "UTC" });
 }
 function fmt(v: number): string {
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
@@ -232,27 +228,6 @@ function LegendModal({ onClose }: { onClose: () => void }) {
         ))}
       </div>
     </div>
-  );
-}
-
-// ---- shared amount cell (D8-16 rows) ----
-
-function SnowAmount({ row }: { row: { snow_cm_p10: number; snow_cm_p50: number; snow_cm_p90: number; precip_mm_p50?: number | null } }) {
-  if (row.snow_cm_p50 <= 0 && (row.precip_mm_p50 ?? 0) > 0.5) {
-    const mm = row.precip_mm_p50 ?? 0;
-    return (
-      <span>
-        <span className="font-semibold text-sky-300">{mm.toFixed(mm >= 10 ? 0 : 1)}</span>
-        <span className="text-slate-500 text-xs"> mm rain</span>
-      </span>
-    );
-  }
-  if (row.snow_cm_p90 < 0.05) return <span className="text-slate-600">—</span>;
-  return (
-    <span>
-      <span className="font-semibold text-white">{fmt(row.snow_cm_p50)}</span>
-      <span className="text-slate-500 text-xs"> ({fmtInt(row.snow_cm_p10)}–{fmtInt(row.snow_cm_p90)}) cm</span>
-    </span>
   );
 }
 
@@ -885,23 +860,101 @@ function DepthProvenance({ depth }: { depth: SnowDepth }) {
 }
 
 // ============================================================================
-// D8-16 band rows
+// D8-16 fan chart (p50 curve + p10–p90 fan) + D17-44 week cards
 // ============================================================================
 
-function BandDayRow({ row, maxP90 }: { row: DailyRow; maxP90: number }) {
-  const barWidth = maxP90 > 0 ? Math.min(100, (row.snow_cm_p50 / maxP90) * 100) : 0;
-  const whiskerWidth = maxP90 > 0 ? Math.min(100, (row.snow_cm_p90 / maxP90) * 100) : 0;
+type Pt = { x: number; y: number };
+
+/** Smooth path through points via midpoint cubic segments (no y overshoot). */
+function smoothPath(points: Pt[]): string {
+  if (!points.length) return "";
+  let d = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i], p1 = points[i + 1];
+    const mx = (p0.x + p1.x) / 2;
+    d += ` C${mx.toFixed(1)},${p0.y.toFixed(1)} ${mx.toFixed(1)},${p1.y.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
+  }
+  return d;
+}
+function fanBandPath(top: Pt[], bottom: Pt[]): string {
+  let d = smoothPath(top);
+  const rev = [...bottom].reverse();
+  if (!rev.length) return d;
+  d += ` L${rev[0].x.toFixed(1)},${rev[0].y.toFixed(1)}`;
+  for (let i = 0; i < rev.length - 1; i++) {
+    const p0 = rev[i], p1 = rev[i + 1];
+    const mx = (p0.x + p1.x) / 2;
+    d += ` C${mx.toFixed(1)},${p0.y.toFixed(1)} ${mx.toFixed(1)},${p1.y.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)}`;
+  }
+  return d + " Z";
+}
+function fanLabel(v: number): string {
+  return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+}
+
+function SnowFanChart({ days, tint }: { days: DailyRow[]; tint: string }) {
+  const W = 560, H = 104, padT = 13;
+  const n = Math.max(days.length, 1);
+  const maxY = Math.max(1, Math.max(0, ...days.map((d) => d.snow_cm_p90)) * 1.1);
+  const plotH = H - padT;
+  const x = (i: number) => ((i + 0.5) / n) * W;
+  const y = (v: number) => padT + plotH * (1 - Math.min(v / maxY, 1));
+  const p90 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p90) }));
+  const p10 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p10) }));
+  const p50 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p50) }));
   return (
-    <div className="rounded-xl bg-slate-800/40 px-4 py-3 grid grid-cols-[8.5rem_1fr_auto] items-center gap-3">
-      <span className="flex items-center gap-2 text-sm text-slate-300">
-        <DayConditionIcon row={row} />
-        {formatDate(row.date)}
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+      <path d={fanBandPath(p90, p10)} fill={tint} fillOpacity={0.16} />
+      <path d={smoothPath(p50)} fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {p50.map((p, i) => (
+        <g key={days[i].date}>
+          <circle cx={p.x} cy={p.y} r={2.5} fill={tint} />
+          <text x={p.x} y={Math.max(9, p.y - 6)} textAnchor="middle" fontSize={9} fill="#e2e8f0">{fanLabel(days[i].snow_cm_p50)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function BandFanSection({ days }: { days: DailyRow[] }) {
+  return (
+    <div className="space-y-2">
+      <SectionHeader title="D8–16 band" subtitle="beyond model agreement · p50 + p10–p90" />
+      <div className="rounded-2xl bg-slate-800/40 p-3">
+        <SnowFanChart days={days} tint="#38BDF8" />
+        <div className="flex mt-1">
+          {days.map((day) => (
+            <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+              <span className="text-[8.5px] text-slate-500">{dayMonthDay(day.date)}</span>
+              {day.wind_dir_deg != null && <WindArrow deg={day.wind_dir_deg} className="w-2 h-2 text-slate-500" />}
+              {day.wind_kmh != null && <span className="text-[8px] text-slate-500">{day.wind_kmh}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function confidenceMeta(confidence: string | null | undefined): { color: string; short: string } {
+  const k = (confidence ?? "").toLowerCase();
+  if (k === "high") return { color: "#22C55E", short: "High" };
+  if (k === "medium") return { color: "#F59E0B", short: "Med" };
+  return { color: "#9CA3AF", short: "Low" };
+}
+
+function WeekCard({ week }: { week: TendencyWeek }) {
+  const c = confidenceMeta(week.confidence);
+  return (
+    <div className="shrink-0 w-[5.25rem] rounded-xl bg-slate-800/40 p-2 flex flex-col items-center gap-1">
+      <span className="text-[11px] font-medium text-slate-200">{week.week.replace(/D/g, "")}</span>
+      <span className="flex items-baseline gap-0.5">
+        <span className="text-sm font-semibold text-white">{fmt(week.snow_cm_p50)}</span>
+        <span className="text-[9px] text-slate-500">cm</span>
       </span>
-      <span className="relative h-5 rounded bg-slate-700/40 overflow-hidden">
-        <span className="absolute inset-y-0 left-0 bg-sky-500/25" style={{ width: `${whiskerWidth}%` }} />
-        <span className="absolute inset-y-0 left-0 bg-sky-400/80 rounded-r" style={{ width: `${barWidth}%` }} />
-      </span>
-      <span className="text-sm text-right"><SnowAmount row={row} /></span>
+      <span className="text-[9px] text-slate-500">{fmt(week.snow_cm_p10)}–{fmt(week.snow_cm_p90)}</span>
+      <span className="text-[9px] text-slate-500">≥10cm {Math.round((week.prob_snow_ge_10cm ?? 0) * 100)}%</span>
+      <span className="text-[9px] font-bold rounded-full px-1.5 py-0.5" style={{ color: c.color, background: `${c.color}33` }}>{c.short}</span>
     </div>
   );
 }
@@ -945,7 +998,6 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
   const quantRows = useMemo(() => bandRows.filter((r) => r.day_index >= 1 && r.day_index <= 7), [bandRows]);
   const bandOnlyRows = useMemo(() => bandRows.filter((r) => r.day_index >= 8 && r.day_index <= 16), [bandRows]);
-  const maxP90 = useMemo(() => bandRows.reduce((m, r) => Math.max(m, r.snow_cm_p90), 0), [bandRows]);
 
   useEffect(() => {
     if (quantRows.length && (!selectedDay || !quantRows.some((r) => r.date === selectedDay))) {
@@ -1081,35 +1133,15 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
         <DepthSection depth={depth} bands={presentBands} bandElevations={payload.bands ?? {}} incomingByBand={incomingByBand} />
       )}
 
-      {/* D8-16 band */}
-      {bandOnlyRows.length > 0 && (
-        <div className="space-y-2">
-          <SectionHeader title="D8–16 band" subtitle="beyond model agreement" />
-          {bandOnlyRows.map((row) => <BandDayRow key={`${row.band}-${row.date}`} row={row} maxP90={maxP90} />)}
-        </div>
-      )}
+      {/* D8-16 band — p50 curve + p10–p90 fan */}
+      {bandOnlyRows.length > 0 && <BandFanSection days={bandOnlyRows} />}
 
-      {/* Weekly tendency */}
+      {/* D17-44 weekly tendency */}
       {payload.tendency_weekly && payload.tendency_weekly.length > 0 && (
         <div className="space-y-2">
-          <SectionHeader title="Weeks 3–6 tendency" subtitle="51-member ensemble" />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {payload.tendency_weekly.map((week) => (
-              <div key={week.week} className="rounded-xl bg-slate-800/40 p-4">
-                <p className="text-xs text-slate-500 mb-1">{formatDate(week.date_start)} – {formatDate(week.date_end)}</p>
-                <p className="text-lg font-semibold text-white">
-                  {fmtInt(week.snow_cm_p50)}
-                  <span className="text-sm font-normal text-slate-500"> ({fmtInt(week.snow_cm_p10)}–{fmtInt(week.snow_cm_p90)}) cm</span>
-                </p>
-                {week.prob_snow_ge_10cm !== null && (
-                  <p className="text-xs text-slate-400 mt-1">
-                    ≥10 cm: {Math.round((week.prob_snow_ge_10cm ?? 0) * 100)}%
-                    {week.prob_snow_ge_30cm !== null && ` · ≥30 cm: ${Math.round((week.prob_snow_ge_30cm ?? 0) * 100)}%`}
-                  </p>
-                )}
-                <p className="text-xs text-slate-600 mt-1">{week.confidence} confidence</p>
-              </div>
-            ))}
+          <SectionHeader title="D17–44 outlook" subtitle="EC46 ensemble · weekly" />
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
+            {payload.tendency_weekly.map((week) => <WeekCard key={week.week} week={week} />)}
           </div>
         </div>
       )}

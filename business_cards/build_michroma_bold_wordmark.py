@@ -42,6 +42,14 @@ TITLE = (40, 40, 50)
 CLIP_SCALE = 8
 SPLIT = len("STANCE")
 TEXT = "STANCEPRO"
+C_HORIZONTAL_TERMINAL_RUN_RATIO = 0.20
+S_HORIZONTAL_TERMINAL_RUN_RATIO = 0.20
+V5_EQUAL_GLYPH_INK_WIDTH = 1804.0
+V5_EQUAL_GLYPH_ADVANCE = 1991.0
+TERMINAL_BOTTOM_OUTER_RATIO = 0.015
+TERMINAL_BOTTOM_INNER_RATIO = 0.167
+TERMINAL_TOP_INNER_RATIO = 0.831
+TERMINAL_TOP_OUTER_RATIO = 0.985
 
 
 @dataclass
@@ -169,8 +177,19 @@ def flatten_glyph_polygons(
             pyclipper.PFT_EVENODD,
         )
     else:
-        solution = outers
-    return [[(x / CLIP_SCALE, y / CLIP_SCALE) for x, y in s] for s in solution]
+        solution = pc.Execute(
+            pyclipper.CT_UNION,
+            pyclipper.PFT_NONZERO,
+            pyclipper.PFT_NONZERO,
+        )
+    normalized: list[list[tuple[float, float]]] = []
+    for path in solution:
+        points = [(x / CLIP_SCALE, y / CLIP_SCALE) for x, y in path]
+        is_outer = pyclipper.Orientation(path)
+        if points and (signed_area(points) < 0) != is_outer:
+            points.reverse()
+        normalized.append(points)
+    return normalized
 
 
 def glyph_compound_path_d(polygons: list[list[tuple[float, float]]]) -> str:
@@ -183,6 +202,141 @@ def offset_glyph_polygons(path_d: str, delta: float) -> list[list[tuple[float, f
     for sub in path.continuous_subpaths():
         polys.extend(offset_subpath(sub, delta))
     return polys
+
+
+def clip_polygon_axis(
+    poly: list[tuple[float, float]],
+    *,
+    axis: int,
+    boundary: float,
+    keep_greater: bool,
+) -> list[tuple[float, float]]:
+    """Clip a polygon against one horizontal or vertical boundary."""
+    if not poly:
+        return []
+    clipped: list[tuple[float, float]] = []
+    previous = poly[-1]
+    previous_inside = (
+        previous[axis] >= boundary if keep_greater else previous[axis] <= boundary
+    )
+    for current in poly:
+        current_inside = (
+            current[axis] >= boundary if keep_greater else current[axis] <= boundary
+        )
+        if current_inside != previous_inside:
+            delta = current[axis] - previous[axis]
+            if abs(delta) > 1e-9:
+                t = (boundary - previous[axis]) / delta
+                intersection = [
+                    previous[i] + t * (current[i] - previous[i]) for i in (0, 1)
+                ]
+                intersection[axis] = boundary
+                clipped.append((intersection[0], intersection[1]))
+        if current_inside:
+            clipped.append(current)
+        previous = current
+        previous_inside = current_inside
+    return clipped
+
+
+def clip_polygons_axis(
+    polygons: list[list[tuple[float, float]]],
+    *,
+    axis: int,
+    boundary: float,
+    keep_greater: bool,
+) -> list[list[tuple[float, float]]]:
+    return [
+        clipped
+        for poly in polygons
+        if len(
+            clipped := clip_polygon_axis(
+                poly,
+                axis=axis,
+                boundary=boundary,
+                keep_greater=keep_greater,
+            )
+        )
+        >= 3
+    ]
+
+
+def rectangle_polygon(
+    left: float,
+    bottom: float,
+    right: float,
+    top: float,
+) -> list[tuple[float, float]]:
+    """Return a clockwise rectangle, matching outer glyph orientation."""
+    return [(left, bottom), (left, top), (right, top), (right, bottom)]
+
+
+def scale_glyph_width(
+    polygons: list[list[tuple[float, float]]],
+    scale: float,
+) -> list[list[tuple[float, float]]]:
+    """Scale one glyph horizontally while keeping its left edge anchored."""
+    min_x = min(x for poly in polygons for x, _ in poly)
+    return [
+        [(min_x + (x - min_x) * scale, y) for x, y in poly]
+        for poly in polygons
+    ]
+
+
+def flatten_sc_terminals(
+    ch: str,
+    polygons: list[list[tuple[float, float]]],
+) -> list[list[tuple[float, float]]]:
+    """Replace Michroma's curled S/C tips with horizontal terminal strokes."""
+    xs = [x for poly in polygons for x, _ in poly]
+    ys = [y for poly in polygons for _, y in poly]
+    if not xs or not ys:
+        return polygons
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    width = max_x - min_x
+    height = max_y - min_y
+    if ch == "C":
+        right_start = max_x - width * C_HORIZONTAL_TERMINAL_RUN_RATIO
+        bottom_outer = min_y + height * TERMINAL_BOTTOM_OUTER_RATIO
+        bottom_inner = min_y + height * TERMINAL_BOTTOM_INNER_RATIO
+        top_inner = min_y + height * TERMINAL_TOP_INNER_RATIO
+        top_outer = min_y + height * TERMINAL_TOP_OUTER_RATIO
+        return flatten_glyph_polygons(
+            clip_polygons_axis(
+                polygons, axis=0, boundary=right_start, keep_greater=False
+            )
+            + [
+                rectangle_polygon(right_start, bottom_outer, max_x, bottom_inner),
+                rectangle_polygon(right_start, top_inner, max_x, top_outer),
+            ]
+        )
+
+    right_start = max_x - width * S_HORIZONTAL_TERMINAL_RUN_RATIO
+    top_inner = min_y + height * TERMINAL_TOP_INNER_RATIO
+    top_outer = min_y + height * TERMINAL_TOP_OUTER_RATIO
+    with_flat_top = (
+        clip_polygons_axis(
+            polygons, axis=0, boundary=right_start, keep_greater=False
+        )
+        + clip_polygons_axis(
+            polygons, axis=1, boundary=top_inner, keep_greater=False
+        )
+        + [rectangle_polygon(right_start, top_inner, max_x, top_outer)]
+    )
+
+    left_end = min_x + width * S_HORIZONTAL_TERMINAL_RUN_RATIO
+    bottom_outer = min_y + height * TERMINAL_BOTTOM_OUTER_RATIO
+    bottom_inner = min_y + height * TERMINAL_BOTTOM_INNER_RATIO
+    return flatten_glyph_polygons(
+        clip_polygons_axis(
+            with_flat_top, axis=0, boundary=left_end, keep_greater=True
+        )
+        + clip_polygons_axis(
+            with_flat_top, axis=1, boundary=bottom_inner, keep_greater=True
+        )
+        + [rectangle_polygon(min_x, bottom_outer, left_end, bottom_inner)]
+    )
 
 
 def transform_polygons(
@@ -264,9 +418,17 @@ def build_wordmark_art(font: TTFont, variant: Variant) -> tuple[list[GlyphArt], 
         pen = SVGPathPen(gs)
         gs[gname].draw(pen)
         polys = offset_glyph_polygons(pen.getCommands(), variant.offset)
+        advance = font["hmtx"][gname][0]
+        if variant.slug == "v5_ultra" and ch in {"S", "C"}:
+            polys = flatten_sc_terminals(ch, polys)
+        if variant.slug == "v5_ultra":
+            glyph_xs = [px for poly in polys for px, _ in poly]
+            ink_width = max(glyph_xs) - min(glyph_xs)
+            polys = scale_glyph_width(polys, V5_EQUAL_GLYPH_INK_WIDTH / ink_width)
+            advance = V5_EQUAL_GLYPH_ADVANCE
         fill = NAVY if i < SPLIT else BLUE_LIGHT
         glyphs.append(GlyphArt(polygons=polys, fill=fill, x=x))
-        x += font["hmtx"][gname][0] * (1.0 + variant.tracking)
+        x += advance * (1.0 + variant.tracking)
 
     min_x = 0.0
     max_x = x
