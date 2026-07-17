@@ -19,6 +19,7 @@ import { ClimateNotesGuide, RegionClimateNotes } from "@/components/snow/RegionC
 import { SaveResortButton } from "@/components/snow/SaveResortButton";
 import { ResortTabs } from "@/components/resort/ResortTabs";
 import { ResortFacilityStatsCard } from "@/components/resort/ResortFacilityStats";
+import { terrainResortId } from "@/lib/snow/terrain-id";
 
 export const revalidate = 3600;
 
@@ -108,7 +109,7 @@ export default async function ResortPage({ params }: Params) {
           </div>
 
           <ResortTabs
-            resortId={resort.resort_id}
+            terrainId={terrainResortId(resort.resort_id)}
             resortName={resort.display_name}
             forecast={<ForecastView resort={resort} />}
             season={

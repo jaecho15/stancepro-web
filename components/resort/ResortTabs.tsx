@@ -17,13 +17,15 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export function ResortTabs({
-  resortId,
+  terrainId,
   resortName,
   forecast,
   season,
   info,
 }: {
-  resortId: string;
+  // OSM/manual weather id for the 3D viewer (terrain artifacts are keyed by it,
+  // not the curated slug). Resolved by the page via terrainResortId().
+  terrainId: string;
   resortName: string;
   forecast: ReactNode;
   season: ReactNode;
@@ -71,7 +73,7 @@ export function ResortTabs({
         {mounted3d && (
           <div className="glass rounded-2xl overflow-hidden">
             <iframe
-              src={`/resort-3d/${resortId}/view?name=${encodeURIComponent(resortName)}`}
+              src={`/resort-3d/${terrainId}/view?name=${encodeURIComponent(resortName)}`}
               title={`${resortName} 3D terrain`}
               className="w-full h-[70vh] min-h-[420px] block border-0"
               allow="fullscreen"
