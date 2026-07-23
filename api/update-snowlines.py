@@ -14,7 +14,8 @@ Two-phase, stateless, async around AppEEARS' task queue:
   (`short_range_forecasts`), build a 5x5 point grid (~400 m spacing) around the
   centroid, fetch grid elevations (Open-Meteo elevation API) and EMBED each
   point's elevation in its sample id (`p{n}_e{elev}`) so Phase A needs no
-  side-channel, then submit VNP10A1 NDSI_Snow_Cover point tasks (last 3 days,
+  side-channel, then submit VJ110A1 (NOAA-20 VIIRS) NDSI_Snow_Cover point tasks
+  (last 3 days,
   chunked ≤400 points). Skipped if today's tasks already exist.
 
 Regression rules (validated on Cardrona/Mt Hutt, 2026-07-10):
@@ -156,7 +157,10 @@ def submit_tasks(token: str) -> dict:
             "task_name": f"{TASK_PREFIX}{today_tag}_p{part}",
             "params": {
                 "dates": dates,
-                "layers": [{"product": "VNP10A1.002", "layer": "NDSI_Snow_Cover"}],
+                # VJ110A1 (NOAA-20), not VNP10A1 (Suomi-NPP): SNPP's product
+                # stream stopped delivering granules after 2026-07-10 (aging
+                # platform, no recovery ETA); NOAA-20 is current and verified.
+                "layers": [{"product": "VJ110A1.002", "layer": "NDSI_Snow_Cover"}],
                 "coordinates": coordinates[i:i + POINTS_PER_TASK],
             },
         }
@@ -226,7 +230,7 @@ def collect_tasks(token: str) -> dict:
         data.raise_for_status()
         for row in csv.DictReader(io.StringIO(data.text)):
             try:
-                value = float(row["VNP10A1_002_NDSI_Snow_Cover"])
+                value = float(row["VJ110A1_002_NDSI_Snow_Cover"])
                 elev = int(row["ID"].rsplit("_e", 1)[1])
             except (KeyError, IndexError, ValueError):
                 continue
