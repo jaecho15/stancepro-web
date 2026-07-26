@@ -22,6 +22,9 @@ export interface TimeBlock {
   wind_kmh: number | null;
   rain_risk: boolean;
   temp_c_p50: number | null;
+  /** Apparent (feels-like) temperature, block p50 — absent on payloads cached
+   *  before 2026-07-26. */
+  feels_c_p50?: number | null;
   precip_type: string | null;
   snow_cm_p10: number;
   snow_cm_p50: number;

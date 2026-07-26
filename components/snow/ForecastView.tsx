@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { fetchForecastClient } from "@/lib/snow/fetch";
+import { useUnitFormat, useUnitPref, type UnitFormat, type UnitSystemPref } from "@/lib/snow/units";
 import type {
   BandKey,
   DailyRow,
@@ -110,13 +111,14 @@ function blockKind(b: TimeBlock): PrecipKind {
   if (b.precip_type === "snow") return "snow";
   return precipKind(b);
 }
+/** Headline amount, already display-converted (metric = unchanged). */
 function dayAmount(row: {
   snow_cm_p50: number;
   precip_mm_p50?: number | null;
-}): { value: number; unit: string } {
-  if (row.snow_cm_p50 > 0) return { value: row.snow_cm_p50, unit: "cm" };
-  if ((row.precip_mm_p50 ?? 0) > 0.5) return { value: row.precip_mm_p50 ?? 0, unit: "mm" };
-  return { value: 0, unit: "cm" };
+}, u: UnitFormat): { value: number; unit: string } {
+  if (row.snow_cm_p50 > 0) return { value: u.snow(row.snow_cm_p50), unit: u.snowUnit };
+  if ((row.precip_mm_p50 ?? 0) > 0.5) return { value: u.rain(row.precip_mm_p50 ?? 0), unit: u.rainUnit };
+  return { value: 0, unit: u.snowUnit };
 }
 function precipChance(row: {
   snow_cm_p10: number;
@@ -199,6 +201,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 // ---- ⓘ legend ----
 
 function LegendModal({ onClose }: { onClose: () => void }) {
+  const u = useUnitFormat();
   const rows: Array<[ReactNode, string, string]> = [
     [<PrecipIcon key="s" kind="snow" />, "Snow", "Falls as snow · number = expected cm (p50)"],
     [<PrecipIcon key="m" kind="mix" />, "Rain/snow mix", "Rain–snow line sits inside the resort"],
@@ -222,7 +225,7 @@ function LegendModal({ onClose }: { onClose: () => void }) {
             <span className="w-14 flex justify-center pt-0.5">{icon}</span>
             <div>
               <p className="text-sm text-white font-medium">{title}</p>
-              <p className="text-xs text-slate-400">{desc}</p>
+              <p className="text-xs text-slate-400">{u.swapUnitTokens(desc)}</p>
             </div>
           </div>
         ))}
@@ -235,7 +238,7 @@ function LegendModal({ onClose }: { onClose: () => void }) {
 // 1) Summary banner
 // ============================================================================
 
-function summarySentence(quantRows: DailyRow[], bandKey: BandKey): string {
+function summarySentence(quantRows: DailyRow[], bandKey: BandKey, u: UnitFormat): string {
   const bandLower = BAND_LABELS[bandKey].toLowerCase();
   const total = quantRows.reduce((s, r) => s + r.snow_cm_p50, 0);
   const peak = quantRows.reduce<DailyRow | null>((best, r) => (best && best.snow_cm_p50 >= r.snow_cm_p50 ? best : r), null);
@@ -243,7 +246,7 @@ function summarySentence(quantRows: DailyRow[], bandKey: BandKey): string {
     return `Little snow expected at ${bandLower} over the next 7 days.`;
   }
   const intensity = total >= 40 ? "Heavy snow ahead" : total >= 15 ? "Good snow ahead" : "Some snow expected";
-  let sentence = `${intensity} — biggest day ${dayLabel(peak.date)} (~${fmt(peak.snow_cm_p50)} cm at ${bandLower}).`;
+  let sentence = `${intensity} — biggest day ${dayLabel(peak.date)} (~${fmt(u.snow(peak.snow_cm_p50))} ${u.snowUnit} at ${bandLower}).`;
   if (quantRows.some((r) => r.rain_risk)) sentence += " Some rain possible.";
   else if (quantRows.every((r) => (r.tmean_c_p50 ?? 0) < 0)) sentence += " Staying cold.";
   return sentence;
@@ -263,12 +266,13 @@ function SummaryBanner({ text }: { text: string }) {
 // ============================================================================
 
 function SevenDayStrip({ rows, selectedDate, onSelect }: { rows: DailyRow[]; selectedDate: string | null; onSelect: (d: string) => void }) {
+  const u = useUnitFormat();
   return (
     <div className="space-y-1.5">
       <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
         {rows.map((row) => {
           const selected = row.date === selectedDate;
-          const amount = dayAmount(row);
+          const amount = dayAmount(row, u);
           const chance = precipChance(row);
           return (
             <button
@@ -329,13 +333,16 @@ function ForecastGrid({
   bandElevations,
   daysForBand,
   blockScaleMax,
+  selectedBand,
 }: {
   detailDays: DailyRow[];
   bands: BandKey[];
   bandElevations: Partial<Record<BandKey, number | null>>;
   daysForBand: (b: BandKey) => DailyRow[];
   blockScaleMax: number;
+  selectedBand: BandKey;
 }) {
+  const u = useUnitFormat();
   const n = detailDays.length;
   const tpl = gridTemplate(n);
   const dayCellClass = (i: number) => `min-w-0 ${i !== n - 1 ? "border-r border-slate-700/40" : ""}`;
@@ -357,7 +364,7 @@ function ForecastGrid({
         <div className="grid items-end" style={{ gridTemplateColumns: tpl }}>
           <span />
           {detailDays.map((day, i) => {
-            const amount = dayAmount(day);
+            const amount = dayAmount(day, u);
             const chance = precipChance(day);
             const range = dayTempRange(day);
             return (
@@ -369,7 +376,7 @@ function ForecastGrid({
                   <span className="text-[9px] text-slate-500">{amount.unit}</span>
                 </span>
                 {chance != null && <span className="text-[10px] font-semibold" style={{ color: ACCENT }}>{chance}%</span>}
-                <span className="text-[9px] text-slate-500">{fmtInt(range.max)}° / {fmtInt(range.min)}°</span>
+                <span className="text-[9px] text-slate-500">{u.tempInt(range.max)}° / {u.tempInt(range.min)}°</span>
               </div>
             );
           })}
@@ -402,7 +409,7 @@ function ForecastGrid({
         </div>
 
         <div className="h-px bg-slate-700/40 my-1.5" />
-        <p className="text-[9px] font-bold text-slate-500 mb-1">SNOWFALL BY ELEVATION (cm)</p>
+        <p className="text-[9px] font-bold text-slate-500 mb-1">SNOWFALL BY ELEVATION ({u.snowUnit})</p>
 
         {/* per-band elevation rows */}
         {bands.map((band, bi) => {
@@ -412,7 +419,7 @@ function ForecastGrid({
             <div key={band} className="grid py-1" style={{ gridTemplateColumns: tpl }}>
               <div className="flex flex-col items-center gap-0.5 self-center">
                 <MountainGlyph index={bi} count={bands.length} />
-                {elev != null && <span className="text-[8px] font-medium text-slate-500">{Math.round(elev)} m</span>}
+                {elev != null && <span className="text-[8px] font-medium text-slate-500">{u.elevationLabel(elev)}</span>}
               </div>
               {days.map((day, i) => (
                 <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1 items-end`}>
@@ -424,6 +431,43 @@ function ForecastGrid({
             </div>
           );
         })}
+
+        {/* temp + feels-like rows for the SELECTED band (parity with the apps) —
+            colored by the freezing boundary, which stays keyed on °C. */}
+        {(() => {
+          const tempDays = daysForBand(selectedBand);
+          if (!tempDays.some((d) => (d.time_of_day ?? []).length > 0)) return null;
+          const hasFeels = tempDays.some((d) => (d.time_of_day ?? []).some((b) => b.feels_c_p50 != null));
+          const tempColor = (c: number) => {
+            const r = Math.round(c);
+            return r > 0 ? "#EF4444" : r < 0 ? FREEZING_COLOR : "#94a3b8";
+          };
+          const row = (label: string, pick: (b: TimeBlock) => number | null | undefined) => (
+            <div className="grid py-0.5" style={{ gridTemplateColumns: tpl }}>
+              <span className="text-[8.5px] font-medium text-slate-500 self-center">{label}</span>
+              {tempDays.map((day, i) => (
+                <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1`}>
+                  {(day.time_of_day ?? []).map((b) => {
+                    const c = pick(b);
+                    return (
+                      <span key={b.block} className="text-[10px] font-semibold text-center"
+                            style={{ color: c != null ? tempColor(c) : "#64748b" }}>
+                        {c != null ? `${u.tempInt(c)}°` : "–"}
+                      </span>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          );
+          return (
+            <>
+              <div className="h-px bg-slate-700/40 my-1.5" />
+              {row("TEMP", (b) => b.temp_c_p50)}
+              {hasFeels && row("FEELS", (b) => b.feels_c_p50)}
+            </>
+          );
+        })()}
       </div>
     </div>
   );
@@ -431,13 +475,14 @@ function ForecastGrid({
 
 /** ElevBar with its period colour applied to the fill. */
 function ElevBarCell({ block, scaleMax }: { block: TimeBlock; scaleMax: number }) {
+  const u = useUnitFormat();
   const value = block.snow_cm_p50;
   const has = value >= 0.5;
   const h = Math.max(2, Math.min(value / scaleMax, 1) * 44);
   return (
     <div className="flex flex-col items-center justify-end h-[60px] gap-0.5 min-w-0">
       <span className={`text-[8px] font-semibold leading-none ${has ? "text-slate-100" : "text-transparent"}`}>
-        {has ? fmtInt(value) : "0"}
+        {has ? fmtInt(u.snow(value)) : "0"}
       </span>
       <span
         className="w-[11px] rounded-sm"
@@ -452,12 +497,13 @@ function ElevBarCell({ block, scaleMax }: { block: TimeBlock; scaleMax: number }
 // ============================================================================
 
 function WindTable({ days }: { days: DailyRow[] }) {
+  const u = useUnitFormat();
   const n = days.length;
   const tpl = gridTemplate(n);
   const dayCellClass = (i: number) => `min-w-0 ${i !== n - 1 ? "border-r border-slate-700/40" : ""}`;
   return (
     <div className="space-y-2">
-      <SectionHeader title="Wind" subtitle="at 10 m · m/s" />
+      <SectionHeader title="Wind" subtitle={`at 10 m · ${u.windUnit}`} />
       <div className="rounded-2xl bg-slate-800/40 p-3">
         {/* hours */}
         <div className="grid pb-1" style={{ gridTemplateColumns: tpl }}>
@@ -491,7 +537,8 @@ function WindTable({ days }: { days: DailyRow[] }) {
             {days.map((day, i) => (
               <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1`}>
                 {(day.time_of_day ?? []).map((b) => {
-                  const v = msFromKmh(kind === "gust" ? b.wind_gust_kmh : b.wind_kmh);
+                  const kmh = kind === "gust" ? b.wind_gust_kmh : b.wind_kmh;
+                  const v = kmh != null ? u.windFromKmh(kmh) : null;
                   return (
                     <span key={b.block} className="text-[11px] font-semibold text-center" style={{ color: kind === "gust" ? "#F59E0B" : "#14B8A6" }}>
                       {v ?? "–"}
@@ -522,6 +569,7 @@ function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
   satelliteSnowlineM: number | null;
   satelliteLabel: string | null;
 }) {
+  const u = useUnitFormat();
   const W = 560, H = 168, leftPad = 48, rightPad = 8, topPad = 10, bottomPad = 26;
   const plotW = W - leftPad - rightPad, plotH = H - topPad - bottomPad;
   const blocksPer = 4;
@@ -530,18 +578,24 @@ function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
   const blockSpacing = 4;
   const blockW = (dayW - blockSpacing * (blocksPer - 1)) / blocksPer;
 
+  // Values display-converted up front: the chart normalizes to the sample
+  // range, so a uniform unit scale keeps the shape and converts the axis.
+  const satelliteLine = satelliteSnowlineM != null ? u.elevation(satelliteSnowlineM) : null;
   const samples: Array<{ freezing: number | null; snow: number | null }> = days.flatMap((day) =>
-    (day.time_of_day ?? []).map((b) => ({
-      freezing: b.freezing_level_m,
-      snow: snowLevelM(b),
-    }))
+    (day.time_of_day ?? []).map((b) => {
+      const snow = snowLevelM(b);
+      return {
+        freezing: b.freezing_level_m != null ? u.elevation(b.freezing_level_m) : null,
+        snow: snow != null ? u.elevation(snow) : null,
+      };
+    })
   );
   const values: number[] = [];
   samples.forEach((s) => {
     if (s.freezing != null) values.push(s.freezing);
     if (s.snow != null) values.push(s.snow);
   });
-  if (satelliteSnowlineM != null) values.push(satelliteSnowlineM);
+  if (satelliteLine != null) values.push(satelliteLine);
   if (!values.length) {
     return (
       <div className="rounded-2xl bg-slate-800/40 p-6 text-center text-sm text-slate-500">
@@ -573,7 +627,7 @@ function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
 
   return (
     <div className="space-y-2">
-      <SectionHeader title="Snowline & freezing level" subtitle="m · median" />
+      <SectionHeader title="Snowline & freezing level" subtitle={`${u.elevationUnit} · median`} />
       <div className="flex items-center gap-4 px-1">
         <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded" style={{ background: SNOWLINE_COLOR }} /><span className="text-[9px] text-slate-400">Snowline</span></span>
         <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded" style={{ background: FREEZING_COLOR }} /><span className="text-[9px] text-slate-400">Freezing level</span></span>
@@ -599,8 +653,8 @@ function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
               </g>
             );
           })}
-          {satelliteSnowlineM != null && satelliteSnowlineM >= yMin && satelliteSnowlineM <= yMax && (
-            <line x1={leftPad} y1={y(satelliteSnowlineM)} x2={W - rightPad} y2={y(satelliteSnowlineM)} stroke={SNOWLINE_COLOR} strokeOpacity={0.7} strokeWidth={1} strokeDasharray="3 3" />
+          {satelliteLine != null && satelliteLine >= yMin && satelliteLine <= yMax && (
+            <line x1={leftPad} y1={y(satelliteLine)} x2={W - rightPad} y2={y(satelliteLine)} stroke={SNOWLINE_COLOR} strokeOpacity={0.7} strokeWidth={1} strokeDasharray="3 3" />
           )}
           {line("freezing", FREEZING_COLOR)}
           {line("snow", SNOWLINE_COLOR)}
@@ -627,7 +681,8 @@ type Indicator = {
 function computeIndicators(
   selectedDays: DailyRow[],
   bands: BandKey[],
-  daysForBand: (b: BandKey) => DailyRow[]
+  daysForBand: (b: BandKey) => DailyRow[],
+  u: UnitFormat
 ): Indicator[] {
   const out: Indicator[] = [];
 
@@ -638,14 +693,14 @@ function computeIndicators(
   }));
   if (peak) {
     const p = peak as { day: DailyRow; block: TimeBlock };
-    out.push({ icon: <Snowflake className="w-3.5 h-3.5" style={{ color: ACCENT }} />, title: "Peak snow", value: `${fmt(p.block.snow_cm_p50)} cm`, detail: `${dayWeekday(p.day.date)} ${enDash(p.block.hours)}`, description: "Heaviest 6-hour block" });
+    out.push({ icon: <Snowflake className="w-3.5 h-3.5" style={{ color: ACCENT }} />, title: "Peak snow", value: `${fmt(u.snow(p.block.snow_cm_p50))} ${u.snowUnit}`, detail: `${dayWeekday(p.day.date)} ${enDash(p.block.hours)}`, description: "Heaviest 6-hour block" });
   }
 
   // best elevation
   const totals = bands.map((b) => ({ band: b, total: daysForBand(b).reduce((s, r) => s + r.snow_cm_p50, 0) }));
   const bestElev = totals.reduce((best, t) => (best && best.total >= t.total ? best : t), totals[0]);
   if (bestElev && bestElev.total >= 1) {
-    out.push({ icon: <Mountain className="w-3.5 h-3.5" style={{ color: "#22C55E" }} />, title: "Best elevation", value: BAND_LABELS[bestElev.band], valueColor: "#22C55E", detail: `${Math.round(bestElev.total)} cm total`, description: "Most snow this window" });
+    out.push({ icon: <Mountain className="w-3.5 h-3.5" style={{ color: "#22C55E" }} />, title: "Best elevation", value: BAND_LABELS[bestElev.band], valueColor: "#22C55E", detail: `${Math.round(u.snow(bestElev.total))} ${u.snowUnit} total`, description: "Most snow this window" });
   }
 
   // strongest wind
@@ -657,10 +712,10 @@ function computeIndicators(
   }));
   if (wind) {
     const w = wind as { day: DailyRow; block: TimeBlock };
-    const speed = msFromKmh(w.block.wind_kmh);
-    const gust = msFromKmh(w.block.wind_gust_kmh);
+    const speed = w.block.wind_kmh != null ? u.windFromKmh(w.block.wind_kmh) : null;
+    const gust = w.block.wind_gust_kmh != null ? u.windFromKmh(w.block.wind_gust_kmh) : null;
     if (speed != null) {
-      out.push({ icon: <Wind className="w-3.5 h-3.5" style={{ color: "#38BDF8" }} />, title: "Strongest wind", value: gust != null ? `${speed}\u2192${gust} m/s` : `${speed} m/s`, detail: `${dayWeekday(w.day.date)} ${enDash(w.block.hours)}`, description: "Peak gust" });
+      out.push({ icon: <Wind className="w-3.5 h-3.5" style={{ color: "#38BDF8" }} />, title: "Strongest wind", value: gust != null ? `${speed}\u2192${gust} ${u.windUnit}` : `${speed} ${u.windUnit}`, detail: `${dayWeekday(w.day.date)} ${enDash(w.block.hours)}`, description: "Peak gust" });
     }
   }
 
@@ -726,7 +781,7 @@ function seasonCm(depth: SnowDepth, band: BandKey): number | null {
   return depth.season_snowfall?.[`${band}_cm` as const] ?? null;
 }
 
-function MountainBands({ rows, snowlineM }: { rows: DepthRowT[]; snowlineM: number | null }) {
+function MountainBands({ rows, snowlineM, elevationUnit = "m" }: { rows: DepthRowT[]; snowlineM: number | null; elevationUnit?: string }) {
   const W = 112, H = 128, top = 4, bot = H - 4, peak = W / 2, left = 4, right = W - 4;
   const count = rows.length;
   const edges = (y: number): [number, number] => {
@@ -751,7 +806,7 @@ function MountainBands({ rows, snowlineM }: { rows: DepthRowT[]; snowlineM: numb
           <g key={row.band}>
             <polygon points={`${la},${yA} ${ra},${yA} ${rb},${yB} ${lb},${yB}`} fill={ACCENT} fillOpacity={row.tintOpacity} />
             {row.elevationM != null && (
-              <text x={peak} y={(yA + yB) / 2 + 3} textAnchor="middle" fontSize={9} fontWeight={600} fill="#fff">{row.elevationM} m</text>
+              <text x={peak} y={(yA + yB) / 2 + 3} textAnchor="middle" fontSize={9} fontWeight={600} fill="#fff">{row.elevationM} {elevationUnit}</text>
             )}
           </g>
         );
@@ -783,6 +838,7 @@ function DepthSection({ depth, bands, bandElevations, incomingByBand }: {
   bandElevations: Partial<Record<BandKey, number | null>>;
   incomingByBand: (b: BandKey) => number;
 }) {
+  const u = useUnitFormat();
   const present = bands.filter((b) => depthCm(depth, b) != null || bandElevations[b] != null);
   const snowlineStatus = depth.snowline?.status;
   const snowlineM = depth.snowline?.snowline_m ?? null;
@@ -799,7 +855,8 @@ function DepthSection({ depth, bands, bandElevations, incomingByBand }: {
     else if (cm === 0 && satelliteSaysSnow(elev)) chip = "satSnow";
     else chip = depth.source === "station" ? "measured" : "estimate";
     const tintOpacity = present.length > 1 ? 0.82 + (0.18 * idx) / (present.length - 1) : 0.9;
-    return { band, elevationM: elev, depthCm: cm, incomingCm: incomingByBand(band), seasonCm: seasonCm(depth, band), tintOpacity, chip };
+    // elevationM display-converted AFTER the satellite chip logic (which runs on raw m).
+    return { band, elevationM: elev != null ? u.elevation(elev) : null, depthCm: cm, incomingCm: incomingByBand(band), seasonCm: seasonCm(depth, band), tintOpacity, chip };
   });
 
   return (
@@ -807,7 +864,11 @@ function DepthSection({ depth, bands, bandElevations, incomingByBand }: {
       <SectionHeader title="Snowpack" subtitle="on ground · next 7 days · season" />
       <div className="rounded-2xl bg-slate-800/40 p-3.5 space-y-2.5">
         <div className="flex items-center gap-3.5">
-          <MountainBands rows={rows} snowlineM={snowlineStatus === "snowline" ? snowlineM : null} />
+          <MountainBands
+            rows={rows}
+            snowlineM={snowlineStatus === "snowline" && snowlineM != null ? u.elevation(snowlineM) : null}
+            elevationUnit={u.elevationUnit}
+          />
           <div className="flex-1 min-w-0">
             <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 pb-1.5 border-b border-slate-700/40">
               <span className="text-[10px] font-semibold text-slate-300 pl-3">Depth</span>
@@ -822,15 +883,15 @@ function DepthSection({ depth, bands, bandElevations, incomingByBand }: {
                     {row.chip === "satSnow" ? (
                       <Snowflake className="w-3.5 h-3.5" style={{ color: ACCENT }} />
                     ) : row.depthCm != null ? (
-                      <span className="text-sm font-bold" style={{ color: ACCENT }}>{row.depthCm}<span className="text-[9px] text-slate-500 font-normal"> cm</span></span>
+                      <span className="text-sm font-bold" style={{ color: ACCENT }}>{u.snowInt(row.depthCm)}<span className="text-[9px] text-slate-500 font-normal"> {u.snowUnit}</span></span>
                     ) : (
                       <span className="text-slate-500">—</span>
                     )}
                     <span className="text-[8.5px] text-slate-500 truncate">{chipLabel(row.chip)}</span>
                   </div>
                 </div>
-                <span className="text-sm font-semibold" style={{ color: ACCENT }}>{row.incomingCm >= 0.5 ? `+${Math.round(row.incomingCm)}` : "—"}<span className="text-[9px] text-slate-500 font-normal">{row.incomingCm >= 0.5 ? " cm" : ""}</span></span>
-                <span className="text-sm font-semibold text-slate-300">{row.seasonCm && row.seasonCm > 0 ? row.seasonCm : "—"}<span className="text-[9px] text-slate-500 font-normal">{row.seasonCm && row.seasonCm > 0 ? " cm" : ""}</span></span>
+                <span className="text-sm font-semibold" style={{ color: ACCENT }}>{row.incomingCm >= 0.5 ? `+${Math.round(u.snow(row.incomingCm))}` : "—"}<span className="text-[9px] text-slate-500 font-normal">{row.incomingCm >= 0.5 ? ` ${u.snowUnit}` : ""}</span></span>
+                <span className="text-sm font-semibold text-slate-300">{row.seasonCm && row.seasonCm > 0 ? u.snowInt(row.seasonCm) : "—"}<span className="text-[9px] text-slate-500 font-normal">{row.seasonCm && row.seasonCm > 0 ? ` ${u.snowUnit}` : ""}</span></span>
               </div>
             ))}
           </div>
@@ -842,11 +903,12 @@ function DepthSection({ depth, bands, bandElevations, incomingByBand }: {
 }
 
 function DepthProvenance({ depth }: { depth: SnowDepth }) {
+  const u = useUnitFormat();
   const lines: string[] = [];
-  if (depth.station?.name) lines.push(`Anchored to ${depth.station.name} (${(depth.station.distance_km ?? 0).toFixed(1)} km)`);
+  if (depth.station?.name) lines.push(`Anchored to ${depth.station.name} (${u.distance(depth.station.distance_km ?? 0).toFixed(1)} ${u.imperial ? "mi" : "km"})`);
   const sl = depth.snowline;
   if (sl?.obs_date) {
-    if (sl.status === "snowline" && sl.snowline_m != null) lines.push(`Satellite snowline ${sl.snowline_m} m · ${sl.obs_date}`);
+    if (sl.status === "snowline" && sl.snowline_m != null) lines.push(`Satellite snowline ${u.elevation(sl.snowline_m)} ${u.elevationUnit} · ${sl.obs_date}`);
     else if (sl.status === "all_bare") lines.push(`Satellite saw bare terrain · ${sl.obs_date}`);
     else if (sl.status === "all_snow") lines.push(`Satellite saw full snow cover · ${sl.obs_date}`);
   }
@@ -892,7 +954,7 @@ function fanLabel(v: number): string {
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
 }
 
-function SnowFanChart({ days, tint }: { days: DailyRow[]; tint: string }) {
+function SnowFanChart({ days, tint, labelScale = 1 }: { days: DailyRow[]; tint: string; labelScale?: number }) {
   const W = 560, H = 104, padT = 13;
   const n = Math.max(days.length, 1);
   const maxY = Math.max(1, Math.max(0, ...days.map((d) => d.snow_cm_p90)) * 1.1);
@@ -909,7 +971,7 @@ function SnowFanChart({ days, tint }: { days: DailyRow[]; tint: string }) {
       {p50.map((p, i) => (
         <g key={days[i].date}>
           <circle cx={p.x} cy={p.y} r={2.5} fill={tint} />
-          <text x={p.x} y={Math.max(9, p.y - 6)} textAnchor="middle" fontSize={9} fill="#e2e8f0">{fanLabel(days[i].snow_cm_p50)}</text>
+          <text x={p.x} y={Math.max(9, p.y - 6)} textAnchor="middle" fontSize={9} fill="#e2e8f0">{fanLabel(days[i].snow_cm_p50 * labelScale)}</text>
         </g>
       ))}
     </svg>
@@ -917,17 +979,18 @@ function SnowFanChart({ days, tint }: { days: DailyRow[]; tint: string }) {
 }
 
 function BandFanSection({ days }: { days: DailyRow[] }) {
+  const u = useUnitFormat();
   return (
     <div className="space-y-2">
       <SectionHeader title="D8–16 band" subtitle="beyond model agreement · p50 + p10–p90" />
       <div className="rounded-2xl bg-slate-800/40 p-3">
-        <SnowFanChart days={days} tint="#38BDF8" />
+        <SnowFanChart days={days} tint="#38BDF8" labelScale={u.snowScale} />
         <div className="flex mt-1">
           {days.map((day) => (
             <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
               <span className="text-[8.5px] text-slate-500">{dayMonthDay(day.date)}</span>
               {day.wind_dir_deg != null && <WindArrow deg={day.wind_dir_deg} className="w-2 h-2 text-slate-500" />}
-              {day.wind_kmh != null && <span className="text-[8px] text-slate-500">{day.wind_kmh}</span>}
+              {day.wind_kmh != null && <span className="text-[8px] text-slate-500">{u.windKmh(day.wind_kmh)}</span>}
             </div>
           ))}
         </div>
@@ -944,16 +1007,17 @@ function confidenceMeta(confidence: string | null | undefined): { color: string;
 }
 
 function WeekCard({ week }: { week: TendencyWeek }) {
+  const u = useUnitFormat();
   const c = confidenceMeta(week.confidence);
   return (
     <div className="shrink-0 w-[5.25rem] rounded-xl bg-slate-800/40 p-2 flex flex-col items-center gap-1">
       <span className="text-[11px] font-medium text-slate-200">{week.week.replace(/D/g, "")}</span>
       <span className="flex items-baseline gap-0.5">
-        <span className="text-sm font-semibold text-white">{fmt(week.snow_cm_p50)}</span>
-        <span className="text-[9px] text-slate-500">cm</span>
+        <span className="text-sm font-semibold text-white">{fmt(u.snow(week.snow_cm_p50))}</span>
+        <span className="text-[9px] text-slate-500">{u.snowUnit}</span>
       </span>
-      <span className="text-[9px] text-slate-500">{fmt(week.snow_cm_p10)}–{fmt(week.snow_cm_p90)}</span>
-      <span className="text-[9px] text-slate-500">≥10cm {Math.round((week.prob_snow_ge_10cm ?? 0) * 100)}%</span>
+      <span className="text-[9px] text-slate-500">{fmt(u.snow(week.snow_cm_p10))}–{fmt(u.snow(week.snow_cm_p90))}</span>
+      <span className="text-[9px] text-slate-500">{u.imperial ? "≥4in" : "≥10cm"} {Math.round((week.prob_snow_ge_10cm ?? 0) * 100)}%</span>
       <span className="text-[9px] font-bold rounded-full px-1.5 py-0.5" style={{ color: c.color, background: `${c.color}33` }}>{c.short}</span>
     </div>
   );
@@ -963,10 +1027,36 @@ function WeekCard({ week }: { week: TendencyWeek }) {
 // Main view
 // ============================================================================
 
+function UnitsToggle() {
+  const [pref, setPref] = useUnitPref();
+  const options: Array<[UnitSystemPref, string]> = [
+    ["automatic", "Auto"],
+    ["metric", "°C·cm"],
+    ["imperial", "°F·in"],
+  ];
+  return (
+    <div className="flex rounded-lg bg-slate-800/60 p-0.5 gap-0.5 shrink-0" role="group" aria-label="Measurement units">
+      {options.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => setPref(key)}
+          className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+            pref === key ? "bg-slate-600/80 text-white" : "text-slate-500 hover:text-white"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ForecastView({ resort }: { resort: SnowResort }) {
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "empty">("loading");
   const [band, setBand] = useState<BandKey>("top");
+  const u = useUnitFormat();
   const [showLegend, setShowLegend] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
@@ -1038,8 +1128,9 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   );
 
   const indicators = useMemo(
-    () => computeIndicators(daysForBand(band), presentBands, daysForBand),
-    [daysForBand, band, presentBands]
+    () => computeIndicators(daysForBand(band), presentBands, daysForBand, u),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- u is value-keyed by imperial
+    [daysForBand, band, presentBands, u.imperial]
   );
 
   if (status === "loading") {
@@ -1069,37 +1160,40 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
   return (
     <div className="space-y-6">
-      {/* Band selector */}
-      <div className="flex rounded-xl bg-slate-800/60 p-1 gap-1 max-w-md">
-        {BAND_ORDER.map((key) => {
-          const elevation = payload.bands?.[key];
-          if (elevation === undefined) return null;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setBand(key)}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                band === key ? "bg-brand-500 text-white shadow" : "text-slate-400 hover:text-white"
-              }`}
-            >
-              {BAND_LABELS[key]}
-              {elevation !== null && <span className="block text-xs opacity-75">{Math.round(elevation)} m</span>}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setShowLegend(true)}
-          aria-label="What the icons mean"
-          className="px-3 text-slate-500 hover:text-white transition-colors"
-        >
-          <Info className="w-4 h-4" />
-        </button>
+      {/* Band selector + units */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex rounded-xl bg-slate-800/60 p-1 gap-1 max-w-md flex-1 min-w-[16rem]">
+          {BAND_ORDER.map((key) => {
+            const elevation = payload.bands?.[key];
+            if (elevation === undefined) return null;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setBand(key)}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  band === key ? "bg-brand-500 text-white shadow" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {BAND_LABELS[key]}
+                {elevation !== null && <span className="block text-xs opacity-75">{u.elevationLabel(elevation)}</span>}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setShowLegend(true)}
+            aria-label="What the icons mean"
+            className="px-3 text-slate-500 hover:text-white transition-colors"
+          >
+            <Info className="w-4 h-4" />
+          </button>
+        </div>
+        <UnitsToggle />
       </div>
 
       {/* 1) Summary */}
-      <SummaryBanner text={summarySentence(quantRows, band)} />
+      <SummaryBanner text={summarySentence(quantRows, band, u)} />
 
       {/* 2) 7-day strip */}
       <SevenDayStrip rows={quantRows} selectedDate={detailDays[0]?.date ?? null} onSelect={setSelectedDay} />
@@ -1112,6 +1206,7 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
           bandElevations={payload.bands ?? {}}
           daysForBand={daysForBand}
           blockScaleMax={detailBlockSnowMax}
+          selectedBand={band}
         />
       )}
 
