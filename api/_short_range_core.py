@@ -186,6 +186,7 @@ def hourly_band_day(
     block_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
+    block_feels: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
     day_wind: list[tuple[float, float, float]] = []
     block_wind: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
@@ -194,6 +195,7 @@ def hourly_band_day(
         snow_series = hourly.get(f"snowfall_{model}") or []
         precip_series = hourly.get(f"precipitation_{model}") or []
         temp_series = hourly.get(f"temperature_2m_{model}") or []
+        feels_series = hourly.get(f"apparent_temperature_{model}") or []
         wspd_series = hourly.get(f"wind_speed_10m_{model}") or []
         wdir_series = hourly.get(f"wind_direction_10m_{model}") or []
         wgst_series = hourly.get(f"wind_gusts_10m_{model}") or []
@@ -217,6 +219,9 @@ def hourly_band_day(
             block_snow[block_index][model] += snow_cm
             block_precip[block_index][model] += float(precip)
             block_temps[block_index][model].append(float(temp))
+            feels = feels_series[index] if index < len(feels_series) else None
+            if feels is not None:
+                block_feels[block_index][model].append(float(feels))
             wspd = wspd_series[index] if index < len(wspd_series) else None
             wdir = wdir_series[index] if index < len(wdir_series) else None
             if wspd is not None and wdir is not None:
@@ -240,6 +245,9 @@ def hourly_band_day(
         precip_p50 = round(_median([block_precip[block_index][m] for m in present]), 1)
         temp_means = [sum(block_temps[block_index][m]) / len(block_temps[block_index][m]) for m in present]
         temp_p50 = _median(temp_means)
+        feels_models = [m for m in present if block_feels[block_index][m]]
+        feels_means = [sum(block_feels[block_index][m]) / len(block_feels[block_index][m]) for m in feels_models]
+        feels_p50 = _median(feels_means) if feels_means else None
         _, snow_fraction = slr_and_snow_fraction(temp_p50)
         freezing = freezing_block.get((date, block_index))
         wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(block_wind[block_index])
@@ -254,6 +262,7 @@ def hourly_band_day(
                 "snow_cm_p90": p90,
                 "precip_mm_p50": precip_p50,
                 "temp_c_p50": round(temp_p50, 1),
+                "feels_c_p50": round(feels_p50, 1) if feels_p50 is not None else None,
                 "precip_type": "snow" if snow_fraction >= 0.8 else ("mix" if snow_fraction > 0.0 else "rain"),
                 "freezing_level_m": round(freezing) if freezing is not None else None,
                 "snow_level_margin_m": _snow_level_margin(band_elevation, freezing),
@@ -483,7 +492,7 @@ def fetch_band_forecast(
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
     hourly_vars = (
-        "temperature_2m,precipitation,snowfall,weather_code,"
+        "temperature_2m,apparent_temperature,precipitation,snowfall,weather_code,"
         "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
     )
     if include_freezing_level:
