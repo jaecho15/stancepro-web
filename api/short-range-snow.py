@@ -37,8 +37,16 @@ import _short_range_core as core  # noqa: E402
 import _snow_outlook_slug_map as slug_map  # noqa: E402
 
 TABLE = "short_range_forecasts"
+ARCHIVE_TABLE = "short_range_forecast_archive"
 DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 CONFIG_VERSION = "hybrid-tw-v2"  # base + wet-bulb phase override at band elevation
+
+# Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
+# that happens inside one TTL window is the same forecast, so it must land on
+# the same run_init_time and collapse via the primary key.
+ARCHIVE_CYCLE_H = 3
+ARCHIVE_TIMEOUT_S = 10   # bounds the latency the archive can add to a serve
+ARCHIVE_BANDS = ("base", "mid", "top")  # table CHECK constraint
 
 SUPABASE_URL = (
     os.environ.get("SUPABASE_URL")
@@ -51,6 +59,88 @@ READ_KEY = (
     or core.DEFAULT_SUPABASE_PUBLISHABLE_KEY
 )
 WRITE_KEY = os.environ.get("SUPABASE_SECRET_KEY")  # required only for caching
+
+
+# ---------------------------------------------------------------------------
+# Credential-safe logging
+# ---------------------------------------------------------------------------
+# A key stored with stray whitespace — a trailing newline is the routine
+# copy-paste slip when pasting into a Vercel env var — makes the HTTP stack
+# raise with the offending header value, i.e. the CREDENTIAL, verbatim in the
+# message (verified against requests 2.32.3):
+#   "<key>\n"    -> ValueError("Invalid header value b'Bearer <key>\n'")
+#                   raised by http.client; NOT a requests.RequestException, so
+#                   it escapes every narrow `except requests.RequestException`
+#                   in this file and reaches the generic 502 responder.
+#   "<key>\r\n"  -> requests.exceptions.InvalidHeader("... in header value:
+#                   'Bearer <key>\r\n'")  (is a RequestException)
+# So: no raw exception text may reach a log line OR a response body. Every
+# such path in this file goes through _safe_detail() / _scrub().
+_SECRET_ENV_VARS = (
+    "SUPABASE_SECRET_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+)
+_MIN_SECRET_LEN = 8  # a blank/short env var must never become a global blanker
+
+
+def _secret_values() -> list[str]:
+    """Every credential string currently worth redacting, longest first.
+
+    Re-read from os.environ on EVERY call rather than captured once at import:
+    if a key is rotated mid-process the module-level constants go stale, and a
+    redaction pinned to the old value would pass the NEW key straight through.
+    Both the raw and the stripped form are registered, because the whitespace
+    variant is precisely what ends up quoted inside the exception message.
+    """
+    values: set[str] = set()
+    candidates: list[object] = [WRITE_KEY, READ_KEY]
+    candidates += [os.environ.get(name) for name in _SECRET_ENV_VARS]
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        for variant in (candidate, candidate.strip()):
+            if len(variant) >= _MIN_SECRET_LEN:
+                values.add(variant)
+    return sorted(values, key=len, reverse=True)
+
+
+def _scrub(text: object) -> str:
+    """Remove any configured credential from `text`. Defence in depth only —
+    the primary rule is to emit type(exc).__name__ + a fixed description and
+    not exception text at all."""
+    out = str(text)
+    for secret in _secret_values():
+        out = out.replace(secret, "[redacted]")
+    return out
+
+
+def _is_credential_bearing(exc: BaseException) -> bool:
+    """True for the header-validation errors that quote the Authorization /
+    apikey VALUE in their message. Those are never echoed at all, scrubbed or
+    not — the scrubber is the second line of defence, not the first."""
+    try:
+        return isinstance(exc, ValueError) and "header value" in str(exc).lower()
+    except Exception:  # noqa: BLE001 — a hostile __str__ must not break logging
+        return True
+
+
+def _safe_detail(exc: BaseException, limit: int = 300) -> str:
+    """Exception type plus a scrubbed, truncated message — never the raw one."""
+    name = type(exc).__name__
+    if _is_credential_bearing(exc):
+        return (f"{name}: message withheld (it can embed a credential); check "
+                "the Supabase *_KEY env vars for stray whitespace/newline")
+    return f"{name}: {_scrub(exc)}"[:limit]
+
+
+def _safe_label(value: object, limit: int = 64) -> str:
+    """A caller-supplied identifier, safe to place in a single stderr line:
+    scrubbed, control characters flattened (no forged log lines), truncated."""
+    text = _scrub(value)
+    text = "".join(ch if ch.isprintable() else " " for ch in text).strip()
+    return text[:limit] or "<unknown>"
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -183,6 +273,241 @@ def _write_cache(resort: dict, payload: dict, summary: dict) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Forecast archive (append-only history of what we actually served)
+# ---------------------------------------------------------------------------
+# `short_range_forecasts` above is a SNAPSHOT keyed by resort_id: the three-days-
+# out forecast is overwritten by the one-day-out forecast, so "what did we
+# predict for this storm three days out?" is unanswerable from it. This writer
+# appends one row per (band, forecast day) per cycle into
+# public.short_range_forecast_archive so lead-time skill can be scored later.
+#
+# It is TELEMETRY: every failure path here returns quietly and the serve
+# continues. Nothing in this section may raise into the response path, and
+# nothing here may change the forecast or what the snapshot table receives.
+#
+# KNOWN LIMITATION — COVERAGE IS DRIVEN BY USER TRAFFIC (not fixed here; the
+# fix is an operational one, a scheduled sweep, not a code change in this
+# handler). This writer only fires on the FRESH-COMPUTE branch of _build(), and
+# no cron calls this endpoint. Therefore *which* resorts and *which* 3h cycles
+# appear in the archive is a function of who opened the app and when:
+#   - a resort nobody views in a given cycle has no row for that cycle;
+#   - a resort viewed once at 02:59 and again at 03:01 gets two cycles;
+#   - popular resorts are over-represented relative to quiet ones.
+# The archive is therefore an unbiased record of WHAT WE SERVED, but a biased
+# sample of the resort fleet. Any fleet-wide skill score computed from it must
+# be reported per-resort (or re-weighted), never as a single pooled number, and
+# gaps must be read as "not served" rather than "no forecast existed".
+
+
+def _num(value: object) -> float | None:
+    """Finite float or None. Never coerces a missing value into 0."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _archive_cycle(payload: dict, now: datetime) -> str:
+    """The pipeline CYCLE this compute belongs to, as an ISO timestamp.
+
+    run_init_time is a cycle, not the serve instant — Open-Meteo exposes no
+    model init hour, and if every refresh minted its own run_init_time the table
+    would fill with near-duplicate rows (one per user who opened the app). The
+    compute time is truncated DOWN to a 3-hour UTC boundary (00,03,06,...),
+    which is the serving cache TTL, so all refreshes inside one window share a
+    cycle and the primary key + ignore-duplicates keeps exactly one row per band
+    per forecast day.
+    """
+    stamp = _parse_iso(payload.get("generated_utc")) or now
+    stamp = stamp.astimezone(timezone.utc)
+    return stamp.replace(
+        hour=stamp.hour - (stamp.hour % ARCHIVE_CYCLE_H),
+        minute=0, second=0, microsecond=0,
+    ).isoformat()
+
+
+def _archive_rows(resort_id: str, payload: dict, run_init_time: str) -> tuple[list[dict], int]:
+    """(rows, skipped). Rows the archive cannot key or trust are dropped, never
+    patched with an invented value — a skipped row is a known hole, a fabricated
+    one is a silent lie in the verification series."""
+    rows: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    skipped = 0
+    daily = payload.get("daily")
+    daily = daily if isinstance(daily, list) else []  # a str/dict would "iterate"
+    if not resort_id:  # NOT NULL primary-key column, and never fabricable
+        return rows, len(daily)
+    for day in daily:
+        if not isinstance(day, dict):
+            skipped += 1
+            continue
+        date = day.get("date")
+        band = day.get("band")
+        # date and band are primary-key / CHECK columns: no source value, no row.
+        if not date or band not in ARCHIVE_BANDS:
+            skipped += 1
+            continue
+        # lead is an INDEX into the resort-LOCAL day sequence (timezone=auto).
+        # Never derive it by subtracting dates — a UTC delta is off by one for
+        # roughly half the fleet. The payload's day_index is 1-based.
+        try:
+            lead = int(day["day_index"]) - 1
+        except (KeyError, TypeError, ValueError):
+            skipped += 1
+            continue
+        if not 0 <= lead <= 45:  # table CHECK
+            skipped += 1
+            continue
+        key = (band, str(date))
+        if key in seen:  # defensive: one row per band per forecast day
+            skipped += 1
+            continue
+
+        low = _num(day.get("snow_cm_p10"))
+        median = _num(day.get("snow_cm_p50"))
+        high = _num(day.get("snow_cm_p90"))
+        ordered = [v for v in (low, median, high) if v is not None]
+        # The table CHECKs non-negative and low <= median <= high. Order
+        # statistics always satisfy both; if a payload ever does not, drop that
+        # single row rather than let it abort the whole batch (or reorder it,
+        # which would silently rewrite the forecast we served).
+        if any(v < 0 for v in ordered) or ordered != sorted(ordered):
+            skipped += 1
+            continue
+
+        seen.add(key)
+        rain_risk = day.get("rain_risk")
+        n_models = day.get("n_models")
+        rows.append({
+            "resort_id": resort_id,
+            "band": band,
+            "valid_date": date,
+            "run_init_time": run_init_time,
+            # KNOWN LIMITATION — lead_time_days IS NOT UNIQUE per
+            # (resort_id, band, run_init_time), and it is NOT part of the
+            # primary key. `lead` is the index into the resort-LOCAL day
+            # sequence, but the 3h cycle bucket is UTC. When resort-local
+            # midnight falls inside a cycle, two computes in the SAME cycle
+            # label the SAME valid_date with different leads (the later one
+            # smaller), and each also emits one extra day at the tail:
+            #   03:10 UTC compute -> valid_date D labelled lead 2
+            #   05:50 UTC compute -> valid_date D labelled lead 1  (local rollover)
+            # Both carry run_init_time 03:00, so the PK collides and
+            # `resolution=ignore-duplicates` keeps the FIRST write — i.e. the
+            # STALER (larger) lead label — while the extra tail row inserts
+            # cleanly. A schema change (putting the lead in the key, or storing
+            # the resort-local anchor date) is out of scope here.
+            # => ANY lead-time skill analysis MUST recompute the lead from
+            #    run_init_time and the resort-LOCAL date of valid_date, and must
+            #    NOT trust this stored label. It is retained as a debugging hint
+            #    only. Note also the tail asymmetry: the last valid_date of a
+            #    band can exist for some cycles and not others.
+            "lead_time_days": lead,
+            "band_elevation_m": _num(day.get("elevation_m")),
+            "config_version": CONFIG_VERSION,   # NOT NULL — the physics stamp
+            "snow_cm_low": low,                 # payload p10: order statistic,
+            "snow_cm_median": median,           # not a calibrated quantile —
+            "snow_cm_high": high,               # hence low/median/high here
+            "snow_cm_native": _num(day.get("snow_cm_model_native")),
+            "precip_mm": _num(day.get("precip_mm_p50")),
+            "tmean_c": _num(day.get("tmean_c_p50")),
+            "freezing_level_m": _num(day.get("freezing_level_m")),
+            "rain_risk": bool(rain_risk) if isinstance(rain_risk, bool) else None,
+            "n_models": int(n_models) if isinstance(n_models, int) and not isinstance(n_models, bool) else None,
+            # Only a FRESH compute reaches this writer; a cache hit is the same
+            # forecast already recorded.
+            "served_cached": False,
+        })
+    return rows, skipped
+
+
+def _write_archive(payload: object, fallback_resort_id: str, now: datetime) -> dict:
+    """Best-effort append into the forecast archive. NEVER raises — the serve
+    must not depend on telemetry.
+
+    Returns a status dict, reported verbatim in the response body:
+      status         "ok" | "no_rows" | "disabled_no_write_key" | "error"
+      rows_submitted rows SENT to PostgREST. NOT an insert count — see below.
+      rows_skipped   daily entries the archive refused to key or trust.
+
+    ROWS_SUBMITTED IS NOT ROWS INSERTED. The request below carries
+    `Prefer: resolution=ignore-duplicates,return=minimal`, so PostgREST replies
+    201 with an empty body whether it inserted every row or none of them: a
+    second FRESH compute inside the same 3h cycle re-sends its full row set,
+    inserts nothing (PK collision -> DO NOTHING), and would still report its
+    full count. The field is therefore NAMED for what it measures rather than
+    made exact — chosen deliberately over adding `count=exact`, because the
+    claim "PostgREST's exact count on an ON CONFLICT DO NOTHING insert equals
+    rows actually inserted" cannot be verified from here without writing to the
+    live database. Treat this number as "the writer ran and submitted N rows",
+    i.e. a liveness signal, never as archive growth. Real insert counts come
+    from counting rows in short_range_forecast_archive itself.
+    """
+    result: dict = {"status": "error", "rows_submitted": 0, "rows_skipped": 0}
+    resort_label = "<unknown>"
+    try:
+        # Resolved INSIDE the guard on purpose: the caller passes the raw
+        # payload, and a payload that is not a dict (or lacks resort_id) must
+        # degrade to a quiet telemetry miss, never raise into the response path.
+        data = payload if isinstance(payload, dict) else {}
+        resort_id = str(data.get("resort_id") or fallback_resort_id or "")
+        resort_label = _safe_label(resort_id)
+
+        if not WRITE_KEY:
+            # Serving stays degraded-not-broken (same posture as _write_cache),
+            # but this must NOT be silent: lost history is unrecoverable, so a
+            # writer disabled by a renamed/rotated/unset key is the one failure
+            # mode this pipeline cannot afford to hide. One clear line per
+            # fresh compute, and the same signal in the response body.
+            result["status"] = "disabled_no_write_key"
+            print("[archive] DISABLED: SUPABASE_SECRET_KEY is not set — forecast "
+                  "history is NOT being recorded and cannot be backfilled later "
+                  f"(resort {resort_label}, table {ARCHIVE_TABLE})",
+                  file=sys.stderr)
+            return result
+
+        run_init_time = _archive_cycle(data, now)
+        rows, skipped = _archive_rows(resort_id, data, run_init_time)
+        result["rows_skipped"] = skipped
+        if skipped:
+            print(f"[archive] {resort_label}: skipped {skipped} unusable daily row(s)",
+                  file=sys.stderr)
+        if not rows:
+            result["status"] = "no_rows"
+            return result
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/{ARCHIVE_TABLE}",
+            # Append-only: a second refresh in the same cycle is a no-op, it does
+            # not overwrite the row that recorded what we first served.
+            params={"on_conflict": "resort_id,band,valid_date,run_init_time"},
+            headers={
+                "apikey": WRITE_KEY,
+                "Authorization": f"Bearer {WRITE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=ignore-duplicates,return=minimal",
+            },
+            data=json.dumps(rows),
+            timeout=ARCHIVE_TIMEOUT_S,
+        )
+        response.raise_for_status()
+        result["status"] = "ok"
+        result["rows_submitted"] = len(rows)
+        return result
+    except Exception as exc:  # noqa: BLE001 — telemetry must never break a serve
+        # NEVER interpolate the exception itself. A credential carrying a
+        # trailing newline makes the HTTP stack raise with the key VERBATIM in
+        # the message; _safe_detail() drops that class of message entirely and
+        # scrubs whatever else it lets through against the CURRENT env values.
+        result["status"] = "error"
+        print(f"[archive] write failed for {resort_label}: {_safe_detail(exc)}",
+              file=sys.stderr)
+        return result
+
+
 def _fetch_resort_metadata(requested_id: str, weather_id: str) -> dict | None:
     """Resolve elev/country metadata from snow_outlook_resorts (still slug-keyed)."""
     if not (requested_id.startswith("osm-") or requested_id.startswith("manual-")):
@@ -234,10 +559,25 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
     except requests.RequestException:
         wrote = False
 
+    # Fresh compute only — append it to the history table before returning. This
+    # is the branch a cache hit never reaches, which is exactly right: a cache
+    # hit is the same forecast this write already recorded. Best-effort by
+    # construction: _write_archive swallows everything, including the resolution
+    # of the archive key from `payload`, which is why the raw payload (not
+    # payload.get(...)) is what crosses into it.
+    archive = _write_archive(payload, weather_id, now)
+
     return 200, {
         "resort_id": weather_id,
         "cached": False,
         "cache_written": wrote,
+        # SUBMITTED, not inserted (ignore-duplicates + return=minimal cannot
+        # tell them apart) — see _write_archive. Do not chart this as archive
+        # growth. `archive_status` is the writer's liveness signal:
+        # "disabled_no_write_key" means history is being lost right now.
+        "archive_status": archive["status"],
+        "archive_rows_submitted": archive["rows_submitted"],
+        "archive_rows_skipped": archive["rows_skipped"],
         "config_version": CONFIG_VERSION,
         "generated_at": payload.get("generated_utc"),
         "age_seconds": 0,
@@ -286,7 +626,13 @@ class handler(BaseHTTPRequestHandler):
         try:
             status, body = _build(resort_id, max_age_s, refresh, resort_override)
         except Exception as exc:  # noqa: BLE001 — surface as JSON, never 500 HTML
-            return self._send(502, {"error": "compute_failed", "detail": str(exc)})
+            # str(exc) is NOT safe here. _write_cache/_read_cache guard only
+            # `requests.RequestException`, but a key with a trailing "\n" makes
+            # http.client raise a PLAIN ValueError quoting the Authorization
+            # header — credential and all — which lands right here and would be
+            # served to the public over HTTP. Type + scrubbed/withheld message.
+            return self._send(502, {"error": "compute_failed",
+                                    "detail": _safe_detail(exc)})
         return self._send(status, body)
 
     def _send(self, status: int, body: dict):
