@@ -54,11 +54,27 @@ def _quantile(values: list[float], q: float) -> float:
     lo = int(math.floor(pos))
     hi = min(lo + 1, n - 1)
     frac = pos - lo
-    return xs[lo] + frac * (xs[hi] - xs[lo])
+    # numpy's _lerp switches formula at frac >= 0.5 for numerical symmetry;
+    # replicate it exactly or 1-ulp drift lands on round(x, 1) knife edges
+    # (e.g. median of [0.1, 4.2]: naive lerp → 2.1500000000000004 → 2.2,
+    # numpy → 2.15 → 2.1 under banker's rounding).
+    if frac >= 0.5:
+        return xs[hi] - (xs[hi] - xs[lo]) * (1.0 - frac)
+    return xs[lo] + (xs[hi] - xs[lo]) * frac
 
 
 def _median(values: list[float]) -> float:
-    return _quantile(values, 0.5)
+    # pandas Series.median() routes through np.median = mean-of-middle-two,
+    # which is NOT bitwise the same as the _lerp quantile at q=0.5 (1-ulp
+    # differences flip round(x, 1) on knife edges). Replicate np.median.
+    xs = sorted(float(v) for v in values)
+    n = len(xs)
+    if n == 0:
+        return float("nan")
+    mid = n // 2
+    if n % 2:
+        return xs[mid]
+    return (xs[mid - 1] + xs[mid]) / 2.0
 
 
 def _quantiles(values: list[float]) -> tuple[float, float, float]:
@@ -101,6 +117,76 @@ def slr_and_snow_fraction(t_mean_c: float) -> tuple[float, float]:
     if t_mean_c >= -12.0:
         return 14.0, 1.0
     return 17.0, 1.0
+
+
+# ---- hybrid wet-bulb phase override (2026-07-28) ----
+# NWP models decide rain-vs-snow at the grid cell's mean elevation, and
+# Open-Meteo's `elevation` parameter downscales temperature only — so a storm
+# whose snow line sits between the grid elevation and the band gets classified
+# rain even where the band is well below freezing (Cardrona 2026-07-30: 10-16 mm
+# precip, all-day sub-zero bands, native snowfall ≈ 0). The fix keeps the
+# model's own phase call as the prior and re-partitions only the contested
+# slice by the band's wet-bulb temperature:
+#   • rain → snow: the residual rain component (precip − native SWE, hourly, so
+#     mixed-phase hours are never double-counted) becomes snow on the Tw ramp.
+#     Reclassified snow uses a conservative 7-10:1 SLR — never the 14-17:1 cold
+#     tail that inflated the old precip×SLR pipeline at high, dry sites.
+#   • snow → rain: native snow is kept unless band Tw is clearly warm (shifted
+#     ramp, trusting the model through the ambiguous zone) — guards valley-floor
+#     bands that sit *below* the grid elevation.
+# Hours without relative_humidity fall back to native unchanged.
+OM_SNOW_CM_PER_MM = 0.7      # Open-Meteo snowfall convention: 0.7 cm per 1 mm SWE
+TW_CONVERT_HI_C = 1.0        # rain→snow ramp: full snow ≤0°C Tw → none ≥+1°C
+TW_KEEP_LO_C = 0.5           # snow→rain ramp: native snow kept ≤+0.5°C Tw...
+TW_KEEP_HI_C = 1.5           # ...fully rained out ≥+1.5°C Tw
+
+
+def wet_bulb_stull(temp_c: float, relative_humidity: float) -> float:
+    """Wet-bulb temperature (°C) from dry-bulb temp and RH (%), via the Stull
+    (2011, J. Appl. Meteor. Climatol.) empirical fit. Assumes ~1013 hPa; at
+    altitude it slightly overstates Tw, i.e. errs toward rain (conservative)."""
+    rh = min(max(relative_humidity, 5.0), 99.0)
+    t = temp_c
+    return (
+        t * math.atan(0.151977 * math.sqrt(rh + 8.313659))
+        + math.atan(t + rh)
+        - math.atan(rh - 1.676331)
+        + 0.00391838 * (rh ** 1.5) * math.atan(0.023101 * rh)
+        - 4.686035
+    )
+
+
+def _tw_convert_fraction(t_wet_c: float) -> float:
+    if t_wet_c >= TW_CONVERT_HI_C:
+        return 0.0
+    if t_wet_c >= 0.0:
+        return 1.0 - t_wet_c / TW_CONVERT_HI_C
+    return 1.0
+
+
+def _tw_keep_fraction(t_wet_c: float) -> float:
+    if t_wet_c <= TW_KEEP_LO_C:
+        return 1.0
+    if t_wet_c >= TW_KEEP_HI_C:
+        return 0.0
+    return (TW_KEEP_HI_C - t_wet_c) / (TW_KEEP_HI_C - TW_KEEP_LO_C)
+
+
+def hybrid_hourly_snow_cm(
+    native_cm: float, precip_mm: float, temp_c: float, rh_pct: float | None,
+) -> float:
+    """Effective new-snow (cm) for one model-hour at band elevation."""
+    if rh_pct is None:
+        return native_cm
+    t_wet = wet_bulb_stull(temp_c, float(rh_pct))
+    rain_mm = precip_mm - native_cm / OM_SNOW_CM_PER_MM
+    if rain_mm < 0.0:
+        rain_mm = 0.0
+    slr_reclass = 7.0 if temp_c >= -2.0 else 10.0
+    return (
+        native_cm * _tw_keep_fraction(t_wet)
+        + rain_mm * _tw_convert_fraction(t_wet) * slr_reclass / 10.0
+    )
 
 
 def _snow_level_margin(elevation: float | None, freezing: float | None) -> float | None:
@@ -195,6 +281,7 @@ def hourly_band_day(
         snow_series = hourly.get(f"snowfall_{model}") or []
         precip_series = hourly.get(f"precipitation_{model}") or []
         temp_series = hourly.get(f"temperature_2m_{model}") or []
+        rh_series = hourly.get(f"relative_humidity_2m_{model}") or []
         feels_series = hourly.get(f"apparent_temperature_{model}") or []
         wspd_series = hourly.get(f"wind_speed_10m_{model}") or []
         wdir_series = hourly.get(f"wind_direction_10m_{model}") or []
@@ -208,11 +295,20 @@ def hourly_band_day(
             if precip is None or temp is None:
                 continue
             block_index = int(stamp[11:13]) // 6
-            # Native model snowfall (cm) — trust each model's own microphysics
-            # rather than re-deriving from precip × our SLR ladder (which over-
-            # inflated fresh depth at very cold, high-altitude sites).
+            # Native model snowfall (cm) as the phase prior, with the hybrid
+            # wet-bulb override re-partitioning the contested slice at band
+            # elevation (see hybrid_hourly_snow_cm above). A missing snowfall
+            # sample means the prior is unknown, not zero — keep the old
+            # "no data → no snow" semantics rather than re-deriving all of
+            # the hour's precip.
             snow_hr = snow_series[index] if index < len(snow_series) else None
-            snow_cm = float(snow_hr) if snow_hr is not None else 0.0
+            rh_hr = rh_series[index] if index < len(rh_series) else None
+            if snow_hr is None:
+                snow_cm = 0.0
+            else:
+                snow_cm = hybrid_hourly_snow_cm(
+                    float(snow_hr), float(precip), float(temp), rh_hr,
+                )
             day_snow[model] += snow_cm
             day_precip[model] += float(precip)
             day_temps[model].append(float(temp))
@@ -248,7 +344,15 @@ def hourly_band_day(
         feels_models = [m for m in present if block_feels[block_index][m]]
         feels_means = [sum(block_feels[block_index][m]) / len(block_feels[block_index][m]) for m in feels_models]
         feels_p50 = _median(feels_means) if feels_means else None
-        _, snow_fraction = slr_and_snow_fraction(temp_p50)
+        # precip_type follows the EMITTED hybrid numbers (snow cm ÷ 0.7 → SWE mm
+        # share of the block precip) so a block can never show fresh cm labeled
+        # "rain"; dry blocks keep the dry-bulb ladder label.
+        if precip_p50 > 0.0:
+            snow_fraction = min(1.0, (p50 / OM_SNOW_CM_PER_MM) / precip_p50)
+        elif p50 > 0.0:
+            snow_fraction = 1.0
+        else:
+            _, snow_fraction = slr_and_snow_fraction(temp_p50)
         freezing = freezing_block.get((date, block_index))
         wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(block_wind[block_index])
         blocks.append(
@@ -492,8 +596,8 @@ def fetch_band_forecast(
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
     hourly_vars = (
-        "temperature_2m,apparent_temperature,precipitation,snowfall,weather_code,"
-        "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
+        "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,"
+        "snowfall,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
     )
     if include_freezing_level:
         hourly_vars += ",freezing_level_height"

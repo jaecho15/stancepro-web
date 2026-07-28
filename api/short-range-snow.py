@@ -38,7 +38,7 @@ import _snow_outlook_slug_map as slug_map  # noqa: E402
 
 TABLE = "short_range_forecasts"
 DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
-CONFIG_VERSION = "base"
+CONFIG_VERSION = "hybrid-tw-v1"  # base + wet-bulb phase override at band elevation
 
 SUPABASE_URL = (
     os.environ.get("SUPABASE_URL")
