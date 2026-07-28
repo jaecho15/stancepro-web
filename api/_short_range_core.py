@@ -128,9 +128,15 @@ def slr_and_snow_fraction(t_mean_c: float) -> tuple[float, float]:
 # model's own phase call as the prior and re-partitions only the contested
 # slice by the band's wet-bulb temperature:
 #   • rain → snow: the residual rain component (precip − native SWE, hourly, so
-#     mixed-phase hours are never double-counted) becomes snow on the Tw ramp.
-#     Reclassified snow uses a conservative 7-10:1 SLR — never the 14-17:1 cold
-#     tail that inflated the old precip×SLR pipeline at high, dry sites.
+#     mixed-phase hours are never double-counted) becomes snow on the Tw ramp,
+#     re-booked at OM_SNOW_CM_PER_MM — the SAME density Open-Meteo uses for the
+#     native snowfall it is joining. Anything else (the old 7-vs-10:1 split)
+#     makes one mm of SWE worth 43 % more cm depending on which model field it
+#     landed in, and manufactures a fake elevation gradient out of a temperature
+#     threshold: Whakapapa 2026-07-31 had identical 25.1 mm on all three bands
+#     yet came out 12.4/19.3/24.3 cm, a ramp neither snow-forecast.com nor
+#     MetService shows. Never the 14-17:1 cold tail either — that inflated the
+#     old precip×SLR pipeline at high, dry sites.
 #   • snow → rain: native snow is kept unless band Tw is clearly warm (shifted
 #     ramp, trusting the model through the ambiguous zone) — guards valley-floor
 #     bands that sit *below* the grid elevation.
@@ -182,10 +188,9 @@ def hybrid_hourly_snow_cm(
     rain_mm = precip_mm - native_cm / OM_SNOW_CM_PER_MM
     if rain_mm < 0.0:
         rain_mm = 0.0
-    slr_reclass = 7.0 if temp_c >= -2.0 else 10.0
     return (
         native_cm * _tw_keep_fraction(t_wet)
-        + rain_mm * _tw_convert_fraction(t_wet) * slr_reclass / 10.0
+        + rain_mm * _tw_convert_fraction(t_wet) * OM_SNOW_CM_PER_MM
     )
 
 
