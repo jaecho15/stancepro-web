@@ -597,6 +597,17 @@ def fetch_band_forecast(
         "models": models,
         "forecast_days": forecast_days,
         "timezone": "auto",
+        # Pin the model grid cell. Without this Open-Meteo's default
+        # (cell_selection=land, "a land cell at a similar elevation") re-picks
+        # the cell from the `elevation` we send, so each band can read a
+        # DIFFERENT grid column. Measured across the serving fleet 2026-07-29:
+        # 24 of 55 resorts had bands on different cells, concentrated in the
+        # Andes, with differences big enough to look like orography — Vallecitos
+        # ECMWF read 22.7 / 74.5 / 114.0 mm base/mid/top. That is not a vertical
+        # gradient, it is three different places. Pinning takes it to 0 of 55.
+        # It is invisible from the response: a multi-model call returns one
+        # lat/lon, and the `elevation` field only echoes what we asked for.
+        "cell_selection": "nearest",
     }
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
@@ -621,6 +632,9 @@ def fetch_tendency(resort: dict[str, Any], elevation_m: float | None) -> list[di
         "models": "ecmwf_ec46",
         "forecast_days": 46,
         "timezone": "auto",
+            # See fetch_band_forecast: pin the cell so the whole payload for
+            # one resort describes one place.
+            "cell_selection": "nearest",
     }
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
@@ -770,6 +784,7 @@ def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, 
                 "latitude": f"{lat:.5f}", "longitude": f"{lon:.5f}",
                 "start_date": start.isoformat(), "end_date": arch_end.isoformat(),
                 "daily": "precipitation_sum,temperature_2m_mean,snowfall_sum", "timezone": "auto",
+                "cell_selection": "nearest",
             }))
         except Exception:
             pass                                  # best-effort: forecast tail still runs
@@ -778,6 +793,7 @@ def fetch_season_series(resort: dict[str, Any]) -> tuple[dict[str, tuple[float, 
             "latitude": f"{lat:.5f}", "longitude": f"{lon:.5f}",
             "daily": "precipitation_sum,temperature_2m_mean,snowfall_sum",
             "models": "ecmwf_ifs025", "past_days": 15, "forecast_days": 1, "timezone": "auto",
+            "cell_selection": "nearest",
         }))
     except Exception:
         pass
