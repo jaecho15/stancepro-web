@@ -54,13 +54,17 @@ import requests
 
 TABLE = "short_range_forecasts"
 
-# The serving origin to call. VERCEL_URL is the per-deployment host, which is
-# what a cron invocation should hit: it keeps a preview deployment's sweep on
-# that preview rather than reaching across to production.
+# The serving origin to call. The production domain comes FIRST, and that
+# ordering is load-bearing: VERCEL_URL is the per-deployment host, and those
+# hosts sit behind Vercel's Deployment Protection. Measured 2026-07-29 — the
+# deployment URL answers 302 (SSO redirect) while www.stance-pro.com answers
+# 200, so preferring VERCEL_URL would have made every cron sweep fail all 55
+# resorts. It stays only as a last resort for an environment that genuinely has
+# no production alias.
 SITE_ORIGIN = (
     os.environ.get("SWEEP_ORIGIN")
-    or (f"https://{os.environ['VERCEL_URL']}" if os.environ.get("VERCEL_URL") else None)
     or "https://www.stance-pro.com"
+    or (f"https://{os.environ['VERCEL_URL']}" if os.environ.get("VERCEL_URL") else None)
 ).rstrip("/")
 
 SUPABASE_URL = (
@@ -126,6 +130,10 @@ def refresh(resort_id: str) -> tuple[str, bool, str | None, int | None]:
             f"{SITE_ORIGIN}/api/short-range-snow",
             params={"resort_id": resort_id, "refresh": "1"},
             timeout=PER_RESORT_TIMEOUT_S,
+            # Do NOT follow redirects. A protected origin answers 302 to an SSO
+            # page that then returns 200 with HTML, which would surface as a
+            # confusing JSON parse error instead of the real cause.
+            allow_redirects=False,
         )
         if response.status_code != 200:
             return resort_id, False, f"HTTP {response.status_code}", None
