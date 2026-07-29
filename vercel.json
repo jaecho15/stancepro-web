@@ -17,6 +17,9 @@
     },
     "api/update-climate-drivers.py": {
       "maxDuration": 60
+    },
+    "api/sweep-short-range.py": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -39,7 +42,13 @@
     {
       "path": "/api/update-climate-drivers",
       "schedule": "50 6 * * *"
+    },
+    {
+      "path": "/api/sweep-short-range",
+      "schedule": "10 7 * * *"
     }
   ],
-  "regions": ["sin1"]
+  "regions": [
+    "sin1"
+  ]
 }
