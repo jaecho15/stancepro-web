@@ -27,6 +27,7 @@ export const metadata: Metadata = {
 type SharedClip = {
   id: string;
   videoUrl: string;
+  downloadUrl: string | null;
   thumbUrl: string | null;
   capturedAt: string | null;
   durationMs: number | null;
@@ -66,6 +67,11 @@ async function resolveLink(token: string): Promise<SharedClip[] | "expired" | "m
       .from("ride-clips")
       .createSignedUrl(clip.storage_path, 3600);
     if (!video?.signedUrl) continue;
+    // Separate URL with Content-Disposition: attachment — a visible Download
+    // button, because long-pressing a <video> is not a control anyone finds.
+    const { data: attachment } = await supabase.storage
+      .from("ride-clips")
+      .createSignedUrl(clip.storage_path, 3600, { download: true });
     let thumbUrl: string | null = null;
     if (clip.thumbnail_path) {
       const { data: thumb } = await supabase.storage
@@ -76,6 +82,7 @@ async function resolveLink(token: string): Promise<SharedClip[] | "expired" | "m
     signed.push({
       id: clip.id,
       videoUrl: video.signedUrl,
+      downloadUrl: attachment?.signedUrl ?? null,
       thumbUrl,
       capturedAt: clip.captured_at,
       durationMs: clip.duration_ms,
@@ -132,8 +139,16 @@ export default async function ClipSharePage({
               src={clip.videoUrl}
               className="w-full rounded-xl bg-black"
             />
-            <figcaption className="mt-1 text-xs opacity-60">
-              {timeLabel(clip.capturedAt)}
+            <figcaption className="mt-1 flex items-center justify-between text-xs">
+              <span className="opacity-60">{timeLabel(clip.capturedAt)}</span>
+              {clip.downloadUrl && (
+                <a
+                  href={clip.downloadUrl}
+                  className="rounded-full border border-current px-3 py-1 opacity-80 hover:opacity-100"
+                >
+                  Download
+                </a>
+              )}
             </figcaption>
           </figure>
         ))}
