@@ -152,6 +152,11 @@
      centres here (skipping the resort-wide fit/face moves) and a one-off
      marker is dropped. Same text-node trick; unreplaced placeholder = none. -->
 <div id="focus" style="display:none">__FOCUS__</div>
+<!-- Optional ride-session track as JSON {name?, coordinates:[[lng,lat],...]}
+     (host-downsampled). Rendered as a solid line, armed for the fly-through
+     preview; elevations come from the LiDAR raster (host altitudes are a
+     different datum). Unreplaced placeholder = none. -->
+<div id="sessiontrack" style="display:none">__TRACK__</div>
 <div id="zbadge">z…</div>
 <div id="ctl">
   <button id="tbtn" class="on">2D</button>
@@ -176,7 +181,7 @@
 window.OffpisteDraw = (function(){
   var map, meta, art, elevImg=null, ready=false, southern=false;
   var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
-  var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null, selRoute=null;
+  var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null, selRoute=null, sessionRoute=null;
   var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
   var SRC="op-route", LYR="op-route-line";
   var WMx=20037508.342789244;
@@ -271,6 +276,7 @@ window.OffpisteDraw = (function(){
       var cx=cv.getContext("2d",{willReadFrequently:true}); cx.imageSmoothingEnabled=false; cx.drawImage(bmp,0,0);
       elevImg={data:cx.getImageData(0,0,bmp.width,bmp.height).data,W:bmp.width,H:bmp.height,b:meta.bounds_3857};
       ready=true; el.draw.disabled=false; if(el.aspect) el.aspect.disabled=false; if(el.pin) el.pin.disabled=false; if(el.routeBtn) el.routeBtn.disabled=false;
+      if(sessionRoute){ applySessionElev(); renderDock(); }   // profile now has real elevations
       // Offline serving currently works only on Android (shouldInterceptRequest);
       // iOS WKWebView can't intercept https+fetch, so hide the button there.
       if(el.offline){ if(window.AndroidOffpiste && window.AndroidOffpiste.onCacheResort){ el.offline.disabled=false; } else { el.offline.style.display="none"; } }
@@ -438,6 +444,10 @@ window.OffpisteDraw = (function(){
     map.addSource("op-saved-sel",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-saved-sel-line",type:"line",source:"op-saved-sel",layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-color":"#7fd8ff","line-width":5,"line-opacity":0.95}});
+    // Ride-session track (host-injected deep link): solid yellow, own layer.
+    map.addSource("op-session",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-session-line",type:"line",source:"op-session",layout:{"line-cap":"round","line-join":"round"},
+      paint:{"line-color":"#ffd60a","line-width":4,"line-opacity":0.9}});
     map.addSource(SRC,{type:"geojson",data:fc([])});
     map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
@@ -463,6 +473,12 @@ window.OffpisteDraw = (function(){
     if(selRoute && selRoute.coords.length>=2){
       var as=analyse(selRoute.coords);
       el.dock.classList.add("show"); renderSummary(as.stats, selRoute.coords, selRoute.name); renderProfile(as.profile); return;
+    }
+    // Session track: only once real elevations landed — an all-zero profile
+    // would show a misleading "drop 0 m / max 0°" card.
+    if(sessionRoute && sessionRoute.hasElev && sessionRoute.coords.length>=2){
+      var at=analyse(sessionRoute.coords);
+      el.dock.classList.add("show"); renderSummary(at.stats, sessionRoute.coords, sessionRoute.name); renderProfile(at.profile); return;
     }
     el.dock.classList.remove("show"); renderSummary(null, [], null);
   }
@@ -682,8 +698,37 @@ window.OffpisteDraw = (function(){
     var f=Math.max(0,Math.min(1,d/profScale.maxC));
     el.flyCursor.style.left=((6+f*(800-12))/800*100)+"%";
   }
-  // A route is flyable when one is being drawn, or a saved route is selected.
-  function canFly(){ return pts.length>=2 || !!(selRoute && selRoute.coords.length>=2); }
+  // A route is flyable when one is being drawn, a saved route is selected, or
+  // the host injected a ride-session track.
+  function canFly(){ return pts.length>=2 || !!(selRoute && selRoute.coords.length>=2)
+    || !!(sessionRoute && sessionRoute.coords.length>=2); }
+  // Elevations for the session track come from the LiDAR raster — the host's
+  // barometer-relative altitudes are a different datum. Null samples (outside
+  // the raster) carry the previous value so the profile stays continuous.
+  function applySessionElev(){
+    if(!sessionRoute || !elevImg) return;
+    var any=false, prev=0;
+    sessionRoute.coords.forEach(function(c){
+      var e=sampleElev(c[0],c[1]);
+      if(e!=null){ any=true; prev=e; }
+      c[2]=prev;
+    });
+    sessionRoute.hasElev=any;
+  }
+  // Host-injected ride-session track: draw it and arm the fly-through (the
+  // dock profile fills in once the elevation raster is loaded).
+  function loadSessionTrack(t){
+    var c = t && t.coordinates;
+    if(!c || c.length<2) return;
+    sessionRoute={ coords:c.map(function(p){ return [p[0],p[1],0]; }),
+                   name:(t.name!=null?String(t.name):null), hasElev:false };
+    applySessionElev();
+    if(map.getSource("op-session")) map.getSource("op-session").setData(fc([{type:"Feature",properties:{},
+      geometry:{type:"LineString",coordinates:sessionRoute.coords.map(function(p){ return [p[0],p[1]]; })}}]));
+    if(!routeOpen){ routeOpen=true; updOpToolsVis(); }   // surface the Fly button
+    if(el.fly && !flying) el.fly.disabled=!canFly();
+    renderDock();
+  }
   function updateSavedSel(){
     var s=map.getSource("op-saved-sel"); if(!s) return;
     s.setData(fc(selRoute ? [{type:"Feature",properties:{},
@@ -720,7 +765,9 @@ window.OffpisteDraw = (function(){
   function startFly(mode){
     if(flying || !canFly()) return;
     flyMode = FLY[mode] ? mode : "chase";
-    var coords=(pts.length>=2 ? pts : selRoute.coords).slice();
+    var coords=(pts.length>=2 ? pts
+      : (selRoute && selRoute.coords.length>=2) ? selRoute.coords
+      : sessionRoute.coords).slice();
     var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
     var total=cum[cum.length-1]; if(total<1) return;
     savedCam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
@@ -951,7 +998,7 @@ window.OffpisteDraw = (function(){
     // loadElev() (fetches elev_5m.png, ~550 KB) is NOT called here — the host
     // defers it to first idle so it never competes with the initial 3D render.
   }
-  return { init:init, loadElev:loadElev, loadSaved:loadSaved, loadWaypoints:loadWaypoints, setOfflineState:setOfflineState, setDepth:setDepth,
+  return { init:init, loadElev:loadElev, loadSaved:loadSaved, loadWaypoints:loadWaypoints, loadSessionTrack:loadSessionTrack, setOfflineState:setOfflineState, setDepth:setDepth,
     _sim:function(a,b,n){ if(!ready) return "not-ready"; if(!active) toggle(); pts=[];
       for(var i=0;i<=n;i++){ addAt(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n); } refresh(); return pts.length; },
     _state:function(){ return {active:active,n:pts.length,ready:ready}; } };
@@ -1340,6 +1387,16 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       if (f && isFinite(f.lng) && isFinite(f.lat)) focusPt = f;
     }
   } catch (err) { console.log("focus parse failed", err); }
+  // Host-injected ride-session track (ride-tracker deep link): drawn + armed
+  // for the fly-through once the map is up. Absent/unreplaced → null.
+  let sessionTrackData = null;
+  try {
+    const ts = (document.getElementById("sessiontrack").textContent || "").trim();
+    if (ts && !ts.startsWith("__")) {
+      const st = JSON.parse(ts);
+      if (st && Array.isArray(st.coordinates) && st.coordinates.length >= 2) sessionTrackData = st;
+    }
+  } catch (err) { console.log("session track parse failed", err); }
   const nearbyGeo = { type: "FeatureCollection", features: nearby.map(r => ({
     type: "Feature", properties: { name: r.n, id: r.id },
     geometry: { type: "Point", coordinates: [r.lo, r.la] } })) };
@@ -2644,7 +2701,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       setTimeout(startReveal, 600);   // backstop: an all-cache-hit load may emit no dem loading event
     }
     map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
-    if (focusPt) {
+    if (focusPt && focusPt.marker !== false) {   // marker:false = frame-only focus (e.g. whole-session view)
       // Display-only event marker — deliberately NOT a waypoint: the host's
       // post-ready loadWaypoints(reset:true) push would clear it, and waypoint
       // pins open an edit popup on tap. Markers are terrain-aware, so it rides
@@ -2667,6 +2724,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // init() no longer fetches elev_5m.png (~550 KB); we load it after first idle
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
     try { OffpisteDraw.init(map, meta, art, degraded); firstIdle.then(() => { try { OffpisteDraw.loadElev(); } catch (e) {} }); } catch (e) { console.log("op init failed", e); }
+    if (sessionTrackData) { try { OffpisteDraw.loadSessionTrack(sessionTrackData); } catch (e) { console.log("session track load failed", e); } }
     // Clip piste/lift geometry to this resort's terrain extent [w..e_, s..n].
     // geometry.json over-includes the whole valley; lines beyond the loaded z15
     // terrain drape at elevation 0 → stretched lines (esp. iOS WKWebView, which
