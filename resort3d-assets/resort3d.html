@@ -39,7 +39,8 @@
   #skybtn.on { background:rgba(20,24,40,.92); color:#fff; }
   #skybtn.day { background:rgba(240,186,70,.95); color:#3a2a00; }
   #skybtn.off { font-size:26px; }
-  #err { position:absolute; top:calc(var(--safe-top) + 12px); left:12px; right:12px; z-index:9;
+  /* Above #loading (15) so fail() banners stay visible during the fade-out. */
+  #err { position:absolute; top:calc(var(--safe-top) + 12px); left:12px; right:12px; z-index:16;
          font:14px -apple-system,Roboto,sans-serif; color:#B00; display:none;
          background:rgba(255,255,255,.9); border-radius:8px; padding:10px; }
   /* WebGL-unavailable fallback — the 3D terrain needs a WebGL context; when the
@@ -50,6 +51,17 @@
   #nowebgl > div { max-width:340px; font:15px/1.5 -apple-system,Roboto,sans-serif; color:#2a3542; }
   #nowebgl b { display:block; font-size:17px; margin-bottom:8px; }
   #nowebgl small { display:block; margin-top:12px; font-size:13px; color:#61708a; }
+  /* Loading overlay — covers the blank cream canvas while meta/DEM tiles come
+     in; faded out on the first settled 3D frame (firstIdle) or on any error
+     (fail()/nowebgl). Below #nowebgl (20), above the map and controls. */
+  #loading { position:absolute; inset:0; z-index:15; display:flex; flex-direction:column;
+             align-items:center; justify-content:center; gap:14px; background:#EAF0F5;
+             transition:opacity .45s ease; }
+  #loading .ld-spin { width:34px; height:34px; border-radius:50%;
+                      border:3px solid rgba(31,37,48,.15); border-top-color:#1F2530;
+                      animation:ldspin .9s linear infinite; }
+  #loading .ld-txt { font:600 14px -apple-system,Roboto,sans-serif; color:#2a3542; }
+  @keyframes ldspin { to { transform:rotate(360deg); } }
   /* Resort title fallback chip — top-center, shown only when the summit
      pin (preferred name placement) can't be derived from the elevation
      artifact. Kept clear of the host close button (top-left, iOS) and
@@ -115,6 +127,7 @@
 <body>
 <canvas id="sky"></canvas>
 <div id="map"></div>
+<div id="loading"><div class="ld-spin"></div><div class="ld-txt">Loading terrain…</div></div>
 <div id="err"></div>
 <div id="nowebgl"><div><b>3D terrain needs WebGL</b>Your browser couldn't start WebGL (3D graphics). Turn on hardware acceleration in your browser settings, then reload this page.<small>Chrome: Settings &rarr; System &rarr; "Use graphics acceleration when available", then reload.</small></div></div>
 <div id="title"></div>
@@ -150,7 +163,7 @@
 window.OffpisteDraw = (function(){
   var map, meta, art, elevImg=null, ready=false, southern=false;
   var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
-  var flying=false, flyRAF=null, savedCam=null, routeOpen=false;
+  var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null;
   var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
   var SRC="op-route", LYR="op-route-line";
   var WMx=20037508.342789244;
@@ -181,6 +194,12 @@ window.OffpisteDraw = (function(){
     + "#op-summary{color:#eaf;display:flex;gap:12px;flex-wrap:wrap;align-items:baseline;margin-bottom:3px}"
     + "#op-summary .big{font-size:15px;font-weight:700}#op-summary .g30{color:#ff9f0a}#op-summary .g45{color:#ff453a}"
     + "#op-prof{width:100%;height:74px;display:block}"
+    + "#op-prof-wrap{position:relative}"
+    + "#op-fly-cursor{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;border-radius:1px;background:#fff;display:none;pointer-events:none}"
+    + "#op-fly-cursor.show{display:block}"
+    + "#op-fly-mode{display:none;flex-direction:row;gap:6px}"
+    + "#op-fly-mode.show{display:flex}"
+    + ".op-fly-opt{background:rgba(20,24,34,.86);color:#eaf;border:0;border-radius:16px;padding:8px 12px;font:600 12px -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)}"
     + "#op-disc{color:#9fb0c2;font-size:11px;margin-top:3px}"
     + "#op-saved-chip{position:absolute;top:calc(var(--safe-top,0px) + 98px);left:8px;z-index:10;display:none;background:rgba(20,24,34,.8);color:#7fd8ff;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px}"
     + "#op-saved-chip.show{display:block}"
@@ -216,6 +235,7 @@ window.OffpisteDraw = (function(){
       +   '<button id="op-clear" class="op-btn" disabled>✕</button>'
       +   '<button id="op-save" class="op-btn op-save" disabled aria-label="Save"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M6 4h10l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/><path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0-4 0m4-10v4H8V4"/></svg></button>'
       +   '<button id="op-fly" class="op-btn" disabled aria-label="Fly"><svg width="24" height="24" viewBox="-1 -1 17 17" fill="none"><path fill="currentColor" transform="rotate(45 7.5 7.5)" d="M6.82.68H4.77c-.68 0-.68-.68 0-.68h5.45c.68 0 .68.68 0 .68H8.18S9 1.27 9 2.63V4h6v2L9 8l-.5 5l2.5 1.32V15H4v-.68L6.5 13L6 8L0 6V4h6V2.64c0-1.37.82-1.96.82-1.96"/></svg></button>'
+      +   '<div id="op-fly-mode"><button class="op-fly-opt" data-mode="chase">Bird’s eye</button><button class="op-fly-opt" data-mode="fpv">POV</button></div>'
       +   '<button id="op-offline" class="op-btn" disabled aria-label="Download for offline">⬇</button>'
       + '</div>'
       + '<div id="op-aspect-legend"></div>'
@@ -224,7 +244,7 @@ window.OffpisteDraw = (function(){
       + '<div id="op-oob">Outside LiDAR coverage — no accurate slope here</div>'
       + '<div id="op-dock">'
       +   '<div id="op-summary"></div>'
-      +   '<svg id="op-prof" viewBox="0 0 800 74" preserveAspectRatio="none"></svg>'
+      +   '<div id="op-prof-wrap"><svg id="op-prof" viewBox="0 0 800 74" preserveAspectRatio="none"></svg><div id="op-fly-cursor"></div></div>'
       +   '<div id="op-disc">Slope, aspect &amp; elevation reflect terrain geometry (LiDAR DEM) only — not snow conditions or avalanche risk.</div>'
       + '</div>';
     while(d.firstChild) document.body.appendChild(d.firstChild);
@@ -290,6 +310,7 @@ window.OffpisteDraw = (function(){
     if(el.draw)  el.draw.style.display =open?"":"none";
     if(el.pin)   el.pin.style.display  =open?"":"none";
     if(el.fly)   el.fly.style.display  =open?"":"none";
+    if(el.flyModeSel && !open) el.flyModeSel.classList.remove("show");
     if(el.undo)  el.undo.style.display =edit?"":"none";
     if(el.clear) el.clear.style.display=edit?"":"none";
     if(el.save)  el.save.style.display =(routeOpen&&active)?"":"none";
@@ -317,7 +338,9 @@ window.OffpisteDraw = (function(){
     el.draw.onclick=toggle;
     if(el.routeBtn) el.routeBtn.onclick=function(){ routeOpen=!routeOpen; if(!routeOpen){ if(active) toggle(); if(pinMode) togglePin(); } updOpToolsVis(); };
     if(el.aspect) el.aspect.onclick=toggleAspect;
-    if(el.fly) el.fly.onclick=toggleFly;
+    if(el.fly) el.fly.onclick=onFlyClick;
+    if(el.flyModeSel){ Array.prototype.forEach.call(el.flyModeSel.querySelectorAll(".op-fly-opt"), function(b){
+      b.onclick=function(){ el.flyModeSel.classList.remove("show"); startFly(b.getAttribute("data-mode")); }; }); }
     if(el.pin) el.pin.onclick=togglePin;
     if(el.offline) el.offline.onclick=requestOfflineCache;
     map.on("click", function(e){
@@ -399,6 +422,7 @@ window.OffpisteDraw = (function(){
     map.getSource(SRC).setData(fc(feats));
     syncEditBtns();
     if(el.fly && !flying) el.fly.disabled = pts.length<2;
+    if(el.flyModeSel && pts.length<2) el.flyModeSel.classList.remove("show");
     el.dock.classList.toggle("show", pts.length>=2);
     renderSummary(a.stats); renderProfile(a.profile);
   }
@@ -415,8 +439,9 @@ window.OffpisteDraw = (function(){
   }
   function renderProfile(prof){
     var svg=el.prof, W=800, H=74, pad=6;
-    if(prof.length<2){ svg.innerHTML=""; return; }
+    if(prof.length<2){ svg.innerHTML=""; profScale=null; return; }
     var maxC=prof[prof.length-1].cum||1;
+    profScale={maxC:maxC};
     var zs=prof.map(function(p){return p.z;}), zmin=Math.min.apply(null,zs), zmax=Math.max.apply(null,zs);
     function X(c){return pad+c/maxC*(W-2*pad);} function Y(z){return H-12-(z-zmin)/Math.max(1,zmax-zmin)*(H-2*pad-12);}
     var line=""; for(var i=0;i<prof.length;i++){ line+=(i?"L":"M")+X(prof[i].cum).toFixed(1)+","+Y(prof[i].z).toFixed(1)+" "; }
@@ -461,6 +486,7 @@ window.OffpisteDraw = (function(){
     el.clear=byId("op-clear"); el.save=byId("op-save"); el.oob=byId("op-oob");
     el.dock=byId("op-dock"); el.summary=byId("op-summary"); el.prof=byId("op-prof"); el.hint=byId("op-hint");
     el.savedChip=byId("op-saved-chip"); el.aspect=byId("op-aspect"); el.legend=byId("op-aspect-legend"); el.fly=byId("op-fly");
+    el.flyCursor=byId("op-fly-cursor"); el.flyModeSel=byId("op-fly-mode");
     el.pin=byId("op-pin"); el.wpInput=byId("op-wp-input"); el.offline=byId("op-offline"); el.routeBtn=byId("op-route-btn"); updOpToolsVis();
   }
   // ---- Waypoints (pin + note), personal, saved to Supabase ----
@@ -596,6 +622,7 @@ window.OffpisteDraw = (function(){
   function endFly(){
     flying=false;
     if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
+    if(el.flyCursor) el.flyCursor.classList.remove("show");
     if(el.fly){ el.fly.classList.remove("on"); el.fly.disabled=pts.length<2; }
     if(savedCam){ map.easeTo({center:savedCam.center,zoom:savedCam.zoom,bearing:savedCam.bearing,pitch:savedCam.pitch,duration:1200}); savedCam=null; }
   }
@@ -605,31 +632,54 @@ window.OffpisteDraw = (function(){
     return [ll[0] + (m*Math.sin(br))/(R*Math.cos(lat))*180/Math.PI,
             ll[1] + (m*Math.cos(br))/R*180/Math.PI];
   }
-  function toggleFly(){
+  // Mirror the fly progress onto the elevation profile: a vertical cursor at the
+  // same route distance the camera follows. X mapping matches renderProfile
+  // (pad 6 in the 800-wide viewBox, stretched to 100% of the dock width).
+  function updateFlyCursor(d){
+    if(!el.flyCursor || !profScale) return;
+    var f=Math.max(0,Math.min(1,d/profScale.maxC));
+    el.flyCursor.style.left=((6+f*(800-12))/800*100)+"%";
+  }
+  // Fly button: stop if already flying, else offer the two preview modes
+  // (bird's-eye chase cam vs POV) and start on the user's pick.
+  function onFlyClick(){
     if(flying){ endFly(); return; }
     if(!ready || pts.length<2) return;
+    if(el.flyModeSel) el.flyModeSel.classList.toggle("show");
+    else startFly("chase");
+  }
+  // Per-mode camera constants (metres): back/clear = camera offset behind/above
+  // the followed point, minclip = clearance over the terrain behind the camera,
+  // look = look-ahead distance, alpha = bearing low-pass factor (lower = steadier).
+  var FLY={ chase:{back:220,clear:200,minclip:45,look:90,alpha:0.25},
+            fpv:  {back:12, clear:7,  minclip:4, look:50,alpha:0.12} };
+  function startFly(mode){
+    if(flying || !ready || pts.length<2) return;
+    flyMode = FLY[mode] ? mode : "chase";
     var coords=pts.slice();
     var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
     var total=cum[cum.length-1]; if(total<1) return;
     savedCam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
     flying=true; el.fly.classList.add("on");
+    if(el.flyCursor){ el.flyCursor.classList.add("show"); updateFlyCursor(0); }
     if(active) toggle();                                   // leave draw mode during fly
     var dur=Math.min(20000,Math.max(6000,total/15*1000)); // ~15 m/s virtual, 6–20 s
     // Terrain-safe chase cam (MapLibre 4.7 has no FreeCameraOptions): place the
     // camera behind + above the point at an altitude above the rendered terrain
     // (via queryTerrainElevation, the mesh's own frame) so it never clips through
     // ridges, then let calculateCameraOptionsFromTo aim it at the line ahead.
-    var camBack=220, camClear=200, MINCLIP=45, prevBrg=null, lastPe=null;
+    var M=FLY[flyMode], camBack=M.back, camClear=M.clear, MINCLIP=M.minclip,
+        LOOK=M.look, BRG_A=M.alpha, prevBrg=null, lastPe=null;
     // Chase-cam options for distance d along the route. The bearing is low-pass
     // filtered (a winding route otherwise jitters the view left/right), and every
     // elevation sample falls back to the route point then 0 — so a camera position
     // that lands outside the loaded elev raster can't collapse the altitude to sea
     // level and drop the camera underground / into the distance.
     function camAt(d){
-      var pos=pointAlong(coords,cum,d), ahead=pointAlong(coords,cum,Math.min(total,d+90));
+      var pos=pointAlong(coords,cum,d), ahead=pointAlong(coords,cum,Math.min(total,d+LOOK));
       var raw=bearingBetween(pos,ahead);
       if(prevBrg==null){ prevBrg=raw; }
-      else { var dB=((raw-prevBrg+540)%360)-180; prevBrg=((prevBrg+dB*0.25)%360+360)%360; }
+      else { var dB=((raw-prevBrg+540)%360)-180; prevBrg=((prevBrg+dB*BRG_A)%360+360)%360; }
       var back=(prevBrg+180)%360;
       // Camera altitude MUST live in the same frame as the rendered terrain mesh.
       // queryTerrainElevation returns that frame (it's what the depth probe uses to
@@ -688,6 +738,7 @@ window.OffpisteDraw = (function(){
       else{
         var p=Math.min(1,(el-EST_MS)/dur);
         map.jumpTo(camAt(p*total));
+        updateFlyCursor(p*total);
         if(p>=1){ endFly(); return; }
       }
       flyRAF=requestAnimationFrame(frame);
@@ -855,6 +906,33 @@ const RAW_VER = "__CACHE_VER__";
 const VER = encodeURIComponent(
   RAW_VER && !RAW_VER.startsWith("__") ? RAW_VER : String(Math.floor(Date.now() / 3.6e6)));
 console.log("resort3d boot", RESORT_ID, APP_LANG, VER);
+// Loading overlay: localized label + a single idempotent dismiss. Faded out on
+// the first settled 3D frame (firstIdle below), on fail()/nowebgl so errors are
+// never covered. If boot is genuinely slow, keep the honest loading state and
+// change its copy instead of revealing the same blank cream canvas underneath.
+const hideLoading = () => {
+  const l = document.getElementById("loading");
+  if (!l || l.dataset.hidden) return;
+  l.dataset.hidden = "1";
+  // Drop input capture immediately — opacity fade alone still blocks the map
+  // and control column (z-index 1/9) for ~500 ms under a z-index 15 overlay.
+  l.style.pointerEvents = "none";
+  l.style.opacity = "0";
+  setTimeout(() => l.remove(), 500);
+};
+(() => {
+  const t = { ko: ["지형 불러오는 중…", "네트워크가 느립니다. 지형을 계속 불러오는 중…"],
+              ja: ["地形を読み込み中…", "通信が遅いため、地形を引き続き読み込んでいます…"],
+              fr: ["Chargement du terrain…", "Réseau lent. Le terrain continue de charger…"],
+              de: ["Gelände wird geladen…", "Langsames Netzwerk. Gelände wird weiter geladen…"],
+              zh: ["正在加载地形…", "网络较慢，仍在加载地形…"],
+              th: ["กำลังโหลดภูมิประเทศ…", "เครือข่ายช้า กำลังโหลดภูมิประเทศต่อ…"],
+              en: ["Loading terrain…", "Slow network. Still loading terrain…"] };
+  const el = document.querySelector("#loading .ld-txt");
+  const copy = t[APP_LANG] || t.en;
+  if (el) el.textContent = copy[0];
+  setTimeout(() => { if (el && document.body.contains(el)) el.textContent = copy[1]; }, 8000);
+})();
 // Backcountry mountains (curated bc-* catalog) live in their own artifact tree
 // but share everything else — the DEM core tile tree, router, drapes, contours.
 const ART_TREE = RESORT_ID.indexOf("bc-") === 0 ? "terrain_backcountry_v1" : "terrain_offpiste_v1";
@@ -874,6 +952,18 @@ function loadElevBitmap() {
     .then(b => b ? createImageBitmap(b) : null)
     .catch(() => null);
   return _elevBitmapP;
+}
+// Shared geometry.json loader — ONE fetch + ONE parse of the piste/lift GeoJSON,
+// reused by the degraded-bounds path, the deferred line-clip pass and the summit
+// re-anchor (which used to each fetch it separately). Failure resets the memo so
+// a transient network error doesn't poison the whole session.
+let _geoP = null;
+function loadGeometry() {
+  if (_geoP) return _geoP;
+  _geoP = fetch(art("geometry.json"))
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .catch(e => { _geoP = null; throw e; });
+  return _geoP;
 }
 // ---- Terrain V2: global tile-index DEM routing. ONE global index of the z14/z15
 // DEM tiles we published (terrain_v2/dem): routeDem hit → our tile, miss → AWS
@@ -1079,7 +1169,7 @@ const geoBounds3857 = gj => {
   const pl = (c - a) * 0.08 || 0.004, pt = (d - b) * 0.08 || 0.004;   // ~8% frame margin
   return [lon2m(a - pl), lat2m(b - pt), lon2m(c + pl), lat2m(d + pt)];
 };
-const fail = m => { const e = document.getElementById("err"); e.textContent = m; e.style.display = "block"; };
+const fail = m => { hideLoading(); const e = document.getElementById("err"); e.textContent = m; e.style.display = "block"; };
 const webglOK = () => { try { const c = document.createElement("canvas"); return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl"))); } catch (e) { return false; } };
 // App language → English → raw OSM name (parity with both apps' label pick).
 const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get", "name"]];
@@ -1099,7 +1189,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // from the geometry itself since there is no LiDAR bbox.
     degraded = true;
     try {
-      const gj = await (await fetch(art("geometry.json"))).json();
+      const gj = await loadGeometry();
       const bb = geoBounds3857(gj);
       if (!bb) throw new Error("empty geometry");
       meta = { resort_id: RESORT_ID, name: "", bounds_3857: bb, res_m: 30,
@@ -1213,7 +1303,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // WebGL is mandatory for the MapLibre 3D terrain; some desktop browsers ship
   // with hardware acceleration off, which makes context creation throw and
   // leaves a blank canvas. Surface an actionable message instead of constructing.
-  if (!webglOK()) { const _ng = document.getElementById("nowebgl"); if (_ng) _ng.style.display = "flex"; return; }
+  if (!webglOK()) { hideLoading(); const _ng = document.getElementById("nowebgl"); if (_ng) _ng.style.display = "flex"; return; }
 
   // Seed THIS resort's V2 tiles BEFORE the DEM source exists, so routeDem serves
   // sharp 5 m from the first request (no 30 m flash, no reload). Awaiting the
@@ -1383,6 +1473,39 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     map.once("load", () => setTimeout(fire, 1200));
     setTimeout(fire, 4000);   // absolute backstop if "load" is also delayed
   });
+  firstIdle.then(hideLoading);   // first settled 3D frame → drop the loading overlay
+
+  // ---- Unified post-load camera reveal --------------------------------------
+  // Two motions used to race each other: the zoom-out ease to the true fit
+  // (queued on the map's first "idle") and the face-the-mountain bearing spin
+  // (rAF setBearing after summit detection). setBearing() cancels an in-flight
+  // easeTo, so when the summit resolved fast the zoom-out died mid-flight and
+  // the map stayed close-in and off-centre; and on devices where the Three.js
+  // layers repaint forever, "idle" never fired and the zoom-out never ran at
+  // all. revealCamera() is now the ONLY post-load camera mover: every call
+  // eases toward the SAME final pose (fit centre/zoom, given bearing, pitch 64)
+  // so triggers compose instead of fighting. easeTo normalises the bearing to
+  // the shortest arc (user spec 2026-07-11 "최단 경로") and a user gesture both
+  // blocks future reveals (userMoved) and interrupts an in-flight one.
+  const camReveal = { done: false, fitApplied: false, userMoved: false, fit: null };
+  ["mousedown", "touchstart", "wheel"].forEach(ev =>
+    map.getCanvas().addEventListener(ev, () => { camReveal.userMoved = true; },
+                                     { once: true, passive: true }));
+  function revealCamera(bearing) {
+    if (camReveal.userMoved) return;
+    const delta = Math.abs(((((bearing - map.getBearing()) % 360) + 540) % 360) - 180);
+    // A later trigger with no new bearing to add only matters if the fit
+    // centre/zoom still hasn't been carried by an earlier reveal.
+    if (camReveal.done && delta < 1 && (camReveal.fitApplied || !camReveal.fit)) return;
+    camReveal.done = true;
+    const opts = { bearing, pitch: 64, duration: 1200 + delta * 12 };   // ~1.2–3.4 s by arc, as before
+    if (camReveal.fit) {
+      opts.center = camReveal.fit.center;
+      opts.zoom = camReveal.fit.zoom;
+      camReveal.fitApplied = true;
+    }
+    map.easeTo(opts);
+  }
   // Fleet index (961 KB) is only needed for NEIGHBOURS now that the focused
   // resort seeded from its own manifest — load it lazily after the first frame.
   // (Absent-manifest fallback already loaded it eagerly; loadV2Index is idempotent.)
@@ -1425,7 +1548,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // sampled on the same raster). Raster max stays only as the fallback when a
     // resort has no baked runs. Face-the-mountain + the chip then use this point.
     try {
-      const gj = await (await fetch(art("geometry.json"))).json();
+      const gj = await loadGeometry();
       const inExt = c => c[0] >= w && c[0] <= e_ && c[1] >= s && c[1] <= n;
       let hiC = null, hiE = -Infinity;
       const scanHi = c => {
@@ -1479,14 +1602,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
 
     // Face the mountain: once the first render settles, swing the camera to
     // look from the base area up toward the summit — the angle a paper trail
-    // map is drawn from. Skipped the moment the user touches the map (never
+    // map is drawn from. Goes through revealCamera (the unified post-load
+    // mover), which also skips it the moment the user touches the map (never
     // fight an interacting user); degraded resorts (no summit) never get here.
     if (summit.baseLon != null) {
-      let userMoved = false;
-      ["mousedown", "touchstart", "wheel"].forEach(ev =>
-        map.getCanvas().addEventListener(ev, () => { userMoved = true; }, { once: true, passive: true }));
       const face = () => {
-        if (userMoved) return;
+        if (camReveal.userMoved) return;
         // Base = lowest-elevation PISTE vertex (bottom of the runs); fall back
         // to the lowest inside pixel when geometry/sampling yields nothing.
         let bLon = summit.baseLon, bLat = summit.baseLat, lo = Infinity;
@@ -1509,25 +1630,15 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
         if (!dx && !dy) return;
         const target = Math.atan2(dx, dy) * 180 / Math.PI;
         // Shortest-path swing into the trail-map bearing (user spec 2026-07-11:
-        // "최단 경로" — signed delta in (−180,180], never more than a half turn;
-        // the earlier 360° pre-roll could reach ~715° and read as two spins).
-        // rAF-driven so a user touch cancels mid-flight (userMoved, per frame).
-        const start = map.getBearing();
-        const total = ((((target - start) % 360) + 540) % 360) - 180;   // (−180,180]
-        if (Math.abs(total) < 1) return;                                 // already facing it
-        const T = 1200 + Math.abs(total) * 12, t0 = performance.now();   // ~1.2–3.4 s by arc
-        const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-        const spin = now => {
-          if (userMoved) return;
-          const t = Math.min(1, (now - t0) / T);
-          map.setBearing(start + total * ease(t));
-          if (t < 1) requestAnimationFrame(spin);
-        };
-        requestAnimationFrame(spin);
+        // "최단 경로" — easeTo normalises the bearing to the signed shortest
+        // arc). One easeTo that ALSO carries the fit centre/zoom, replacing the
+        // old rAF setBearing spin that used to cancel the zoom-out ease
+        // mid-flight and leave the map close-in and off-centre.
+        revealCamera(target);
         console.log("orbit+face bearing", target.toFixed(0),
                     lo < Infinity ? "(piste base " + Math.round(lo) + "m)" : "(pixel base)");
       };
-      if (map.loaded()) face(); else map.once("idle", face);
+      face();   // already past firstIdle (the summit artifact was awaited on it)
     }
   })();
 
@@ -2429,12 +2540,26 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const fitZ = cam.zoom;
     const startZ = Math.max(fitZ, 14);
     map.jumpTo({ center: cam.center, zoom: startZ, bearing: 15, pitch: 64 });
-    map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
-    if (fitZ < 13.95) {
-      map.once("idle", () => {
-        map.easeTo({ center: cam.center, zoom: fitZ, bearing: 15, pitch: 64, duration: 1200 });
-      });
+    // Zoom-out to the true fit goes through the unified reveal (single easeTo
+    // shared with face-the-mountain, so the two no longer cancel each other).
+    // Synchronised with the START of 3D tile loading (first dem
+    // "sourcedataloading" after setTerrain, user spec 2026-07-22) rather than
+    // firstIdle: the ease runs WHILE the initial tiles stream in, so the tile
+    // loader targets the final fit view from the outset instead of loading the
+    // close-up set first and the fit-view set again after the overlay lifts.
+    // revealCamera is idempotent (done/fitApplied guards), so the event and the
+    // backstop double-firing is harmless.
+    camReveal.fit = { center: cam.center, zoom: fitZ };
+    if (fitZ < startZ - 0.05) {
+      const onDem = e => { if (e.sourceId === "dem") startReveal(); };
+      const startReveal = () => {
+        map.off("sourcedataloading", onDem);
+        revealCamera(map.getBearing());
+      };
+      map.on("sourcedataloading", onDem);
+      setTimeout(startReveal, 600);   // backstop: an all-cache-hit load may emit no dem loading event
     }
+    map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
     // Off-piste route drawing overlay — never let a feature fault break the map.
     // init() no longer fetches elev_5m.png (~550 KB); we load it after first idle
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
@@ -2444,10 +2569,14 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // terrain drape at elevation 0 → stretched lines (esp. iOS WKWebView, which
     // loads fewer far tiles). Drop features with no vertex inside the extent —
     // neighbouring resorts arrive via the on-demand nbgeo loader instead.
+    // Deferred to firstIdle (same pattern as contours/elev/sky): the first 3D
+    // paint is the terrain mesh alone, pistes/lifts fill in a beat later instead
+    // of competing with DEM tiles for first-paint bandwidth.
     (async () => {
       if (meta.destination_id) return;   // bc-*: no geometry.json baked (v1)
       try {
-        const gj = await (await fetch(art("geometry.json"))).json();
+        await firstIdle;
+        const gj = await loadGeometry();
         const inExtent = (a) => {
           if (!a) return false;
           if (typeof a[0] === "number") return a[0] >= w && a[0] <= e_ && a[1] >= s && a[1] <= n;
