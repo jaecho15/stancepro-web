@@ -91,6 +91,15 @@
               border:2px solid rgba(31,37,48,.85); margin-top:1px; }
   @keyframes peakbob { 0%,100% { transform:translateY(0); }
                        50% { transform:translateY(-6px); } }
+  /* One-off host-injected focus marker (e.g. ride-tracker event → 3D). */
+  .focus-pin { display:flex; flex-direction:column; align-items:center;
+               pointer-events:none; }
+  .focus-lbl { font:600 11px -apple-system,Roboto,sans-serif; color:#fff;
+               background:rgba(31,37,48,.86); padding:2px 8px; border-radius:8px;
+               white-space:nowrap; max-width:60vw; overflow:hidden;
+               text-overflow:ellipsis; margin-bottom:3px; }
+  .focus-dot { width:14px; height:14px; border-radius:50%; background:#ff9f0a;
+               border:2.5px solid #fff; box-shadow:0 0 8px rgba(0,0,0,.45); }
   /* Control column, bottom-right, clear of the attribution chip. */
   #ctl { position:absolute; bottom:calc(var(--safe-bottom) + 40px);
          right:calc(var(--safe-right) + 12px); z-index:9;
@@ -139,6 +148,10 @@
      {n: name, la: lat, lo: lon}, names already localized by the host.
      Same text-node trick; unreplaced placeholder = no nearby pins. -->
 <div id="nearby" style="display:none">__NEARBY__</div>
+<!-- Optional focus point as JSON {lng, lat, zoom?, label?} — the boot camera
+     centres here (skipping the resort-wide fit/face moves) and a one-off
+     marker is dropped. Same text-node trick; unreplaced placeholder = none. -->
+<div id="focus" style="display:none">__FOCUS__</div>
 <div id="zbadge">z…</div>
 <div id="ctl">
   <button id="tbtn" class="on">2D</button>
@@ -1317,6 +1330,16 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     const t = (document.getElementById("nearby").textContent || "").trim();
     if (t && !t.startsWith("__")) nearby = JSON.parse(t);
   } catch (err) { console.log("nearby parse failed", err); }
+  // Host-injected focus point (ride-tracker event deep link): boot camera
+  // centres here and a display-only marker is dropped. Absent/unreplaced → null.
+  let focusPt = null;
+  try {
+    const tf = (document.getElementById("focus").textContent || "").trim();
+    if (tf && !tf.startsWith("__")) {
+      const f = JSON.parse(tf);
+      if (f && isFinite(f.lng) && isFinite(f.lat)) focusPt = f;
+    }
+  } catch (err) { console.log("focus parse failed", err); }
   const nearbyGeo = { type: "FeatureCollection", features: nearby.map(r => ({
     type: "Feature", properties: { name: r.n, id: r.id },
     geometry: { type: "Point", coordinates: [r.lo, r.la] } })) };
@@ -2587,9 +2610,17 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // handful of near DEM tiles instead of the old edge-tile storm at overview
     // zoom. Jump still happens BEFORE setTerrain: an instant wide fitBounds
     // while terrain is on can drop the camera under the mesh → blank screen.
-    const cam = map.cameraForBounds([[w, s], [e_, n]], { padding: 40 }) || {
+    let cam = map.cameraForBounds([[w, s], [e_, n]], { padding: 40 }) || {
       center: [(w + e_) / 2, (s + n) / 2], zoom: 14
     };
+    if (focusPt) {
+      // Event focus: frame the point itself and pin the camera there — mark the
+      // reveal as user-moved so the resort-wide fit ease and face-the-mountain
+      // swing (which would carry the camera away from the event) never fire.
+      cam = { center: [focusPt.lng, focusPt.lat],
+              zoom: isFinite(focusPt.zoom) ? focusPt.zoom : Math.max(cam.zoom, 15) };
+      camReveal.userMoved = true;
+    }
     const fitZ = cam.zoom;
     const startZ = Math.max(fitZ, 14);
     map.jumpTo({ center: cam.center, zoom: startZ, bearing: 15, pitch: 64 });
@@ -2613,6 +2644,25 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       setTimeout(startReveal, 600);   // backstop: an all-cache-hit load may emit no dem loading event
     }
     map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
+    if (focusPt) {
+      // Display-only event marker — deliberately NOT a waypoint: the host's
+      // post-ready loadWaypoints(reset:true) push would clear it, and waypoint
+      // pins open an edit popup on tap. Markers are terrain-aware, so it rides
+      // the 3D surface without any elevation input.
+      const fp = document.createElement("div");
+      fp.className = "focus-pin";
+      if (focusPt.label != null && String(focusPt.label).trim()) {
+        const fl = document.createElement("div");
+        fl.className = "focus-lbl";
+        fl.textContent = String(focusPt.label);   // textContent — host strings can't inject HTML
+        fp.appendChild(fl);
+      }
+      const fd = document.createElement("div");
+      fd.className = "focus-dot";
+      fp.appendChild(fd);
+      new maplibregl.Marker({ element: fp, anchor: "bottom" })
+        .setLngLat([focusPt.lng, focusPt.lat]).addTo(map);
+    }
     // Off-piste route drawing overlay — never let a feature fault break the map.
     // init() no longer fetches elev_5m.png (~550 KB); we load it after first idle
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
