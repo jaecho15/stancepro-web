@@ -43,6 +43,8 @@
   #err { position:absolute; top:calc(var(--safe-top) + 12px); left:12px; right:12px; z-index:16;
          font:14px -apple-system,Roboto,sans-serif; color:#B00; display:none;
          background:rgba(255,255,255,.9); border-radius:8px; padding:10px; }
+  #err button { margin-left:10px; padding:5px 14px; border:0; border-radius:7px;
+                font:600 13px -apple-system,Roboto,sans-serif; color:#fff; background:#B00; }
   /* WebGL-unavailable fallback — the 3D terrain needs a WebGL context; when the
      browser can't provide one (hardware acceleration off), cover the blank
      canvas with an actionable message instead of leaving it empty. */
@@ -448,6 +450,11 @@ window.OffpisteDraw = (function(){
     map.addSource("op-session",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-session-line",type:"line",source:"op-session",layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-color":"#ffd60a","line-width":4,"line-opacity":0.9}});
+    // Session-replay position cue: a puck that travels the track while the
+    // camera stays put (see startPlayback).
+    map.addSource("op-play-cue",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-play-cue-dot",type:"circle",source:"op-play-cue",
+      paint:{"circle-radius":8,"circle-color":"#ff375f","circle-stroke-color":"#ffffff","circle-stroke-width":2.5}});
     map.addSource(SRC,{type:"geojson",data:fc([])});
     map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
@@ -682,6 +689,9 @@ window.OffpisteDraw = (function(){
     if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
     if(el.flyCursor) el.flyCursor.classList.remove("show");
     if(el.fly){ el.fly.classList.remove("on"); el.fly.disabled=!canFly(); }
+    var cs=map.getSource("op-play-cue"); if(cs) cs.setData(fc([]));
+    // savedCam is only set by the fly modes — a session replay never touches
+    // it, so ending a replay leaves the camera exactly where the user has it.
     if(savedCam){ map.easeTo({center:savedCam.center,zoom:savedCam.zoom,bearing:savedCam.bearing,pitch:savedCam.pitch,duration:1200}); savedCam=null; }
   }
   // Move a [lng,lat] by `m` metres along compass bearing `brg`.
@@ -749,21 +759,46 @@ window.OffpisteDraw = (function(){
     if(el.flyModeSel && !canFly()) el.flyModeSel.classList.remove("show");
     renderDock();
   }
-  // Fly button: stop if already flying, else offer the two preview modes
-  // (bird's-eye chase cam vs POV) and start on the user's pick.
+  // Fly button: stop if already flying. A ride-session track replays with a
+  // FIXED overview camera + moving cue (startPlayback — user feedback: the
+  // fly-along cam made session replays unreadable); drawn/saved routes offer
+  // the two fly modes (bird's-eye chase cam vs POV) and start on the pick.
   function onFlyClick(){
     if(flying){ endFly(); return; }
     if(!canFly()) return;
+    if(sessionReplayTarget()){ startPlayback(); return; }
     if(el.flyModeSel) el.flyModeSel.classList.toggle("show");
     else startFly("chase");
+  }
+  // The session track is the replay target only when nothing else is armed —
+  // a drawn or selected saved route keeps the normal fly-through.
+  function sessionReplayTarget(){
+    return !(pts.length>=2) && !(selRoute && selRoute.coords.length>=2)
+      && !!(sessionRoute && sessionRoute.coords.length>=2);
   }
   // Per-mode camera constants (metres): back/clear = camera offset behind/above
   // the followed point, minclip = clearance over the terrain behind the camera,
   // look = look-ahead distance, alpha = bearing low-pass factor (lower = steadier).
   var FLY={ chase:{back:220,clear:200,minclip:45,look:90,alpha:0.25},
             fpv:  {back:12, clear:7,  minclip:4, look:50,alpha:0.12} };
+  // Fly/replay pacing. The virtual ground speed was ~15 m/s originally; halved
+  // after user feedback ("비행기 모드도 속도가 너무 빨라"). The max-duration
+  // clamp is doubled in step so longer routes actually slow down instead of
+  // saturating at the old 20 s ceiling. Tune FLY_SPEED_MPS to taste.
+  var FLY_SPEED_MPS=7.5, FLY_DUR_MIN_MS=6000, FLY_DUR_MAX_MS=40000;
+  function flyDurMs(totalM){ return Math.min(FLY_DUR_MAX_MS,Math.max(FLY_DUR_MIN_MS,totalM/FLY_SPEED_MPS*1000)); }
+  // Camera-pose interpolation (shared by the fly establishing blend and the
+  // replay's one-time overview framing).
+  function slerpB(a,b,k){ var d=((b-a+540)%360)-180; return ((a+d*k)%360+360)%360; }   // shortest-angle bearing lerp
+  function LL(c){ return (c && c.lng!==undefined) ? [c.lng,c.lat] : c; }
+  function blend(from,to,k){                              // interpolate a camera pose
+    var f=LL(from.center), t=LL(to.center);
+    return { center:[f[0]+(t[0]-f[0])*k, f[1]+(t[1]-f[1])*k],
+             zoom:from.zoom+(to.zoom-from.zoom)*k, bearing:slerpB(from.bearing,to.bearing,k), pitch:from.pitch+(to.pitch-from.pitch)*k };
+  }
   function startFly(mode){
     if(flying || !canFly()) return;
+    if(sessionReplayTarget()){ startPlayback(); return; }  // session replay never flies
     flyMode = FLY[mode] ? mode : "chase";
     var coords=(pts.length>=2 ? pts
       : (selRoute && selRoute.coords.length>=2) ? selRoute.coords
@@ -774,7 +809,7 @@ window.OffpisteDraw = (function(){
     flying=true; el.fly.classList.add("on");
     if(el.flyCursor){ el.flyCursor.classList.add("show"); updateFlyCursor(0); }
     if(active) toggle();                                   // leave draw mode during fly
-    var dur=Math.min(20000,Math.max(6000,total/15*1000)); // ~15 m/s virtual, 6–20 s
+    var dur=flyDurMs(total);                              // pacing: FLY_SPEED_MPS
     // Terrain-safe chase cam (MapLibre 4.7 has no FreeCameraOptions): place the
     // camera behind + above the point at an altitude above the rendered terrain
     // (via queryTerrainElevation, the mesh's own frame) so it never clips through
@@ -818,13 +853,6 @@ window.OffpisteDraw = (function(){
         new maplibregl.LngLat(ahead[0],ahead[1]), altTo);
     }
     var t0=0, EST_MS=1200;
-    function slerpB(a,b,k){ var d=((b-a+540)%360)-180; return ((a+d*k)%360+360)%360; }   // shortest-angle bearing lerp
-    function LL(c){ return (c && c.lng!==undefined) ? [c.lng,c.lat] : c; }
-    function blend(from,to,k){                            // interpolate a camera pose
-      var f=LL(from.center), t=LL(to.center);
-      return { center:[f[0]+(t[0]-f[0])*k, f[1]+(t[1]-f[1])*k],
-               zoom:from.zoom+(to.zoom-from.zoom)*k, bearing:slerpB(from.bearing,to.bearing,k), pitch:from.pitch+(to.pitch-from.pitch)*k };
-    }
     // Single rAF loop. First EST_MS ms: an establishing blend from the saved view
     // to the LIVE chase pose (camAt recomputed every frame). Then the follow.
     // queryTerrainElevation drifts ~200 m with zoom/loaded tiles, so ANY pose
@@ -852,6 +880,53 @@ window.OffpisteDraw = (function(){
         updateFlyCursor(p*total);
         if(p>=1){ endFly(); return; }
       }
+      flyRAF=requestAnimationFrame(frame);
+    }
+    flyRAF=requestAnimationFrame(frame);
+  }
+  // ---- Session replay: FIXED overview camera + a cue moving along the track ----
+  // Ride-tracker feedback: flying the camera along a session made the replay
+  // unreadable ("정신이 하나도 없고 전체 경로를 볼 수가 없어"). Frame the whole
+  // track once (padded bounds + gentle pitch), then move ONLY the position cue;
+  // manual pan/rotate stays live for the rest of the replay and the camera is
+  // never restored/moved at the end.
+  var REPLAY={pitch:55, pad:70, estMs:1200, zoomBack:0.35};
+  function startPlayback(){
+    if(flying || !(sessionRoute && sessionRoute.coords.length>=2)) return;
+    var coords=sessionRoute.coords.slice();
+    var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
+    var total=cum[cum.length-1]; if(total<1) return;
+    flying=true; flyMode="replay"; el.fly.classList.add("on");
+    if(el.flyModeSel) el.flyModeSel.classList.remove("show");
+    if(el.flyCursor){ el.flyCursor.classList.add("show"); updateFlyCursor(0); }
+    if(active) toggle();                                   // leave draw mode during replay
+    var dur=flyDurMs(total);                               // pacing: FLY_SPEED_MPS
+    var cueSrc=map.getSource("op-play-cue");
+    function cueAt(d){ if(cueSrc) cueSrc.setData(fc([{type:"Feature",properties:{},
+      geometry:{type:"Point",coordinates:pointAlong(coords,cum,d)}}])); }
+    // One-time overview pose: cameraForBounds gives centre+zoom for the padded
+    // track bbox; pitch is applied on top with a small zoom back-off so the
+    // tilted view still contains the track. Bearing is kept as-is (no spin).
+    var pose=null;
+    try{
+      var b=new maplibregl.LngLatBounds([coords[0][0],coords[0][1]],[coords[0][0],coords[0][1]]);
+      coords.forEach(function(c){ b.extend([c[0],c[1]]); });
+      var co=map.cameraForBounds(b,{padding:REPLAY.pad});
+      if(co) pose={center:co.center,zoom:co.zoom-REPLAY.zoomBack,bearing:map.getBearing(),pitch:REPLAY.pitch};
+    }catch(e){}
+    var from={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
+    var t0=0;
+    function frame(now){
+      if(!flying) return;
+      if(!t0) t0=now;
+      var ms=now-t0;
+      if(pose){
+        if(ms<REPLAY.estMs){ var k=ms/REPLAY.estMs; k=k*k*(3-2*k); map.jumpTo(blend(from,pose,k)); }
+        else { map.jumpTo(pose); pose=null; }              // framing done — camera is the user's
+      }
+      var p=Math.min(1,Math.max(0,ms-REPLAY.estMs)/dur);
+      cueAt(p*total); updateFlyCursor(p*total);
+      if(p>=1){ endFly(); return; }
       flyRAF=requestAnimationFrame(frame);
     }
     flyRAF=requestAnimationFrame(frame);
@@ -1033,24 +1108,69 @@ const hideLoading = () => {
   l.style.opacity = "0";
   setTimeout(() => l.remove(), 500);
 };
-(() => {
-  const t = { ko: ["지형 불러오는 중…", "네트워크가 느립니다. 지형을 계속 불러오는 중…"],
-              ja: ["地形を読み込み中…", "通信が遅いため、地形を引き続き読み込んでいます…"],
-              fr: ["Chargement du terrain…", "Réseau lent. Le terrain continue de charger…"],
-              de: ["Gelände wird geladen…", "Langsames Netzwerk. Gelände wird weiter geladen…"],
-              zh: ["正在加载地形…", "网络较慢，仍在加载地形…"],
-              th: ["กำลังโหลดภูมิประเทศ…", "เครือข่ายช้า กำลังโหลดภูมิประเทศต่อ…"],
-              en: ["Loading terrain…", "Slow network. Still loading terrain…"] };
-  const el = document.querySelector("#loading .ld-txt");
-  const copy = t[APP_LANG] || t.en;
-  if (el) el.textContent = copy[0];
-  setTimeout(() => { if (el && document.body.contains(el)) el.textContent = copy[1]; }, 8000);
+// Boot copy: [loading, slow-network, net-fail, retry-button]. Shared by the
+// initial overlay and the retry path below.
+const BOOT_COPY = (() => {
+  const t = { ko: ["지형 불러오는 중…", "네트워크가 느립니다. 지형을 계속 불러오는 중…",
+                   "네트워크 연결이 불안정하여 지형을 불러오지 못했습니다.", "다시 시도"],
+              ja: ["地形を読み込み中…", "通信が遅いため、地形を引き続き読み込んでいます…",
+                   "通信が不安定なため、地形を読み込めませんでした。", "再試行"],
+              fr: ["Chargement du terrain…", "Réseau lent. Le terrain continue de charger…",
+                   "Connexion instable — le terrain n'a pas pu être chargé.", "Réessayer"],
+              de: ["Gelände wird geladen…", "Langsames Netzwerk. Gelände wird weiter geladen…",
+                   "Instabile Verbindung — das Gelände konnte nicht geladen werden.", "Erneut versuchen"],
+              zh: ["正在加载地形…", "网络较慢，仍在加载地形…",
+                   "网络不稳定，地形加载失败。", "重试"],
+              th: ["กำลังโหลดภูมิประเทศ…", "เครือข่ายช้า กำลังโหลดภูมิประเทศต่อ…",
+                   "เครือข่ายไม่เสถียร ไม่สามารถโหลดภูมิประเทศได้", "ลองอีกครั้ง"],
+              en: ["Loading terrain…", "Slow network. Still loading terrain…",
+                   "Unstable network — the terrain could not be loaded.", "Retry"] };
+  return t[APP_LANG] || t.en;
 })();
+const armLoadingCopy = () => {
+  const el = document.querySelector("#loading .ld-txt");
+  if (el) el.textContent = BOOT_COPY[0];
+  setTimeout(() => { if (el && document.body.contains(el)) el.textContent = BOOT_COPY[1]; }, 8000);
+};
+armLoadingCopy();
+// Rebuild the overlay for a user-initiated retry — hideLoading() removes the
+// node from the DOM, so a fresh one is created with the same markup/CSS.
+const showLoading = () => {
+  const old = document.getElementById("loading");
+  if (old) { if (!old.dataset.hidden) return; old.remove(); }
+  const l = document.createElement("div");
+  l.id = "loading";
+  l.innerHTML = '<div class="ld-spin"></div><div class="ld-txt"></div>';
+  document.body.appendChild(l);
+  armLoadingCopy();
+};
 // Backcountry mountains (curated bc-* catalog) live in their own artifact tree
 // but share everything else — the DEM core tile tree, router, drapes, contours.
 const ART_TREE = RESORT_ID.indexOf("bc-") === 0 ? "terrain_backcountry_v1" : "terrain_offpiste_v1";
 const BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/" + ART_TREE + "/" + RESORT_ID + "/";
 const art = f => BASE + f + "?v=" + VER;
+// Boot-critical artifact fetch with transport retry. Two failure classes must
+// not be conflated: HTTP 4xx = the object genuinely doesn't exist (Supabase
+// answers 400/404; the iOS loopback maps remote 4xx → 404) → surface at once,
+// so degraded resorts never wait through retries; anything else (fetch reject,
+// 5xx — the iOS loopback answers 503 when Supabase is unreachable) = transport
+// trouble → back off and retry before giving up.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const artMissing = e => !!(e && e.artMissing);
+async function fetchArt(url, tries) {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return r;
+      const err = new Error("HTTP " + r.status);
+      if (r.status >= 400 && r.status < 500) err.artMissing = true;
+      throw err;
+    } catch (e) {
+      if (artMissing(e) || i >= tries - 1) throw e;
+      await sleep(1500 * (i + 1));
+    }
+  }
+}
 // Shared elev_5m.png loader — ONE fetch + ONE decode of the ~550 KB terrain-RGB
 // artifact, reused by BOTH the summit detector (downscaled to 240 px) and the
 // off-piste elevation sampler (full-res). Both now fire on firstIdle, so without
@@ -1073,8 +1193,8 @@ function loadElevBitmap() {
 let _geoP = null;
 function loadGeometry() {
   if (_geoP) return _geoP;
-  _geoP = fetch(art("geometry.json"))
-    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  _geoP = fetchArt(art("geometry.json"), 3)
+    .then(r => r.json())
     .catch(e => { _geoP = null; throw e; });
   return _geoP;
 }
@@ -1283,32 +1403,56 @@ const geoBounds3857 = gj => {
   return [lon2m(a - pl), lat2m(b - pt), lon2m(c + pl), lat2m(d + pt)];
 };
 const fail = m => { hideLoading(); const e = document.getElementById("err"); e.textContent = m; e.style.display = "block"; };
+// Recoverable variant of fail(): localized network message + a Retry button;
+// resolves when the user taps it. No location.reload() — both apps inject the
+// page via loadHTMLString/loadDataWithBaseURL, where a reload lands on a blank
+// origin instead of the page.
+const failRetry = () => new Promise(res => {
+  hideLoading();
+  const e = document.getElementById("err");
+  e.textContent = BOOT_COPY[2] + " ";
+  const b = document.createElement("button");
+  b.textContent = BOOT_COPY[3];
+  b.onclick = () => { e.style.display = "none"; showLoading(); res(); };
+  e.appendChild(b);
+  e.style.display = "block";
+});
 const webglOK = () => { try { const c = document.createElement("canvas"); return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl"))); } catch (e) { return false; } };
 // App language → English → raw OSM name (parity with both apps' label pick).
 const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get", "name"]];
 
 (async () => {
   let meta, degraded = false;
-  try {
-    const r = await fetch(art("meta.json"));
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    meta = await r.json();
-  } catch (e) {
-    // No LiDAR off-piste artifacts (≈half the fleet is in countries without a
-    // national-LiDAR adapter — build_offpiste_raster skips them). Degrade to an
-    // honest bare preview: the global Terrarium mesh + the OSM piste/lift lines
-    // (geometry.json exists for every catalog resort), and NO computed
-    // hillshade/slope/cliff — we never fabricate a safety overlay. Bounds come
-    // from the geometry itself since there is no LiDAR bbox.
-    degraded = true;
+  // Meta acquisition loops until it succeeds or is genuinely impossible: a
+  // transport failure (weak Wi-Fi) shows the retry banner and tries again on
+  // tap — it must never end in a terminal "no terrain data".
+  for (;;) {
     try {
-      const gj = await loadGeometry();
-      const bb = geoBounds3857(gj);
-      if (!bb) throw new Error("empty geometry");
-      meta = { resort_id: RESORT_ID, name: "", bounds_3857: bb, res_m: 30,
-               attribution: "Mapzen Terrain (AWS)", dem_source: "Mapzen Terrain (AWS)",
-               safety_native: null, dem_tiles: null };
-    } catch (e2) { return fail("no terrain data: " + e2); }
+      try {
+        const r = await fetchArt(art("meta.json"), 3);
+        meta = await r.json();
+        degraded = false;
+      } catch (e) {
+        if (!artMissing(e)) throw e;   // transport / truncated body → retry banner
+        // No LiDAR off-piste artifacts (≈half the fleet is in countries without a
+        // national-LiDAR adapter — build_offpiste_raster skips them). Degrade to an
+        // honest bare preview: the global Terrarium mesh + the OSM piste/lift lines
+        // (geometry.json exists for every catalog resort), and NO computed
+        // hillshade/slope/cliff — we never fabricate a safety overlay. Bounds come
+        // from the geometry itself since there is no LiDAR bbox.
+        degraded = true;
+        const gj = await loadGeometry();
+        const bb = geoBounds3857(gj);
+        if (!bb) return fail("no terrain data: empty geometry");
+        meta = { resort_id: RESORT_ID, name: "", bounds_3857: bb, res_m: 30,
+                 attribution: "Mapzen Terrain (AWS)", dem_source: "Mapzen Terrain (AWS)",
+                 safety_native: null, dem_tiles: null };
+      }
+      break;
+    } catch (e) {
+      if (artMissing(e)) return fail("no terrain data: " + e);   // geometry absent too
+      await failRetry();
+    }
   }
   const [minx, miny, maxx, maxy] = meta.bounds_3857;
   const w = m2lon(minx), e_ = m2lon(maxx), s = m2lat(miny), n = m2lat(maxy);
