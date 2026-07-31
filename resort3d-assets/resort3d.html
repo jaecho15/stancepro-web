@@ -163,7 +163,7 @@
 window.OffpisteDraw = (function(){
   var map, meta, art, elevImg=null, ready=false, southern=false;
   var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
-  var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null;
+  var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null, selRoute=null;
   var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
   var SRC="op-route", LYR="op-route-line";
   var WMx=20037508.342789244;
@@ -297,7 +297,7 @@ window.OffpisteDraw = (function(){
     if(active && pinMode) togglePin();   // draw and pin modes are mutually exclusive
     el.draw.classList.toggle("on",active);
     if(el.hint) el.hint.classList.toggle("show",active);
-    if(active){ map.dragPan.disable(); }
+    if(active){ map.dragPan.disable(); if(selRoute) selectSaved(null); }   // drawing takes the dock over
     else{ map.dragPan.enable(); map.dragRotate.enable(); }
     updOpToolsVis();
   }
@@ -336,7 +336,7 @@ window.OffpisteDraw = (function(){
   }
   function wire(){
     el.draw.onclick=toggle;
-    if(el.routeBtn) el.routeBtn.onclick=function(){ routeOpen=!routeOpen; if(!routeOpen){ if(active) toggle(); if(pinMode) togglePin(); } updOpToolsVis(); };
+    if(el.routeBtn) el.routeBtn.onclick=function(){ routeOpen=!routeOpen; if(!routeOpen){ if(active) toggle(); if(pinMode) togglePin(); if(selRoute) selectSaved(null); } updOpToolsVis(); };
     if(el.aspect) el.aspect.onclick=toggleAspect;
     if(el.fly) el.fly.onclick=onFlyClick;
     if(el.flyModeSel){ Array.prototype.forEach.call(el.flyModeSel.querySelectorAll(".op-fly-opt"), function(b){
@@ -344,10 +344,19 @@ window.OffpisteDraw = (function(){
     if(el.pin) el.pin.onclick=togglePin;
     if(el.offline) el.offline.onclick=requestOfflineCache;
     map.on("click", function(e){
-      if(!pinMode) return;
-      var lng=e.lngLat.lng, lat=e.lngLat.lat, elev=sampleElev(lng,lat);
-      var wp={lng:lng,lat:lat,elev:elev,label:""};
-      waypoints.push(wp); addWpMarker(wp); openWpNameDialog(wp);
+      if(pinMode){
+        var lng=e.lngLat.lng, lat=e.lngLat.lat, elev=sampleElev(lng,lat);
+        var wp={lng:lng,lat:lat,elev:elev,label:""};
+        waypoints.push(wp); addWpMarker(wp); openWpNameDialog(wp);
+        return;
+      }
+      // Tap a saved (dashed) route → select it for preview; tap empty map →
+      // deselect. A route being drawn keeps priority over saved-route taps.
+      if(active || flying || pts.length>=2) return;
+      var fs=[]; try{ fs=map.queryRenderedFeatures(
+        [[e.point.x-8,e.point.y-8],[e.point.x+8,e.point.y+8]],{layers:["op-saved-line"]}); }catch(x){}
+      if(fs.length && fs[0].properties && fs[0].properties.idx!=null) selectSaved(fs[0].properties.idx);
+      else if(selRoute) selectSaved(null);
     });
     el.undo.onclick=function(){ if(pinMode) undoWaypoint(); else { pts.pop(); refresh(); } };
     el.clear.onclick=function(){ if(pinMode) clearWaypoints(); else { pts=[]; refresh(); } };
@@ -391,17 +400,18 @@ window.OffpisteDraw = (function(){
 
   function distM(a,b){ var R=6378137, dLat=(b[1]-a[1])*Math.PI/180, dLon=(b[0]-a[0])*Math.PI/180,
     lat=(a[1]+b[1])/2*Math.PI/180; return Math.hypot(dLon*Math.cos(lat),dLat)*R; }
-  function analyse(){
+  function analyse(arr){
+    arr=arr||pts;
     var segs=[], profile=[], cum=0, len=0, s30=0, s45=0, maxS=0, sumS=0, zmin=1/0, zmax=-1/0;
-    for(var i=1;i<pts.length;i++){
-      var d=distM(pts[i-1],pts[i]); var dz=pts[i][2]-pts[i-1][2];
+    for(var i=1;i<arr.length;i++){
+      var d=distM(arr[i-1],arr[i]); var dz=arr[i][2]-arr[i-1][2];
       var slope=Math.atan2(Math.abs(dz),Math.max(d,0.5))*180/Math.PI;
-      segs.push({slope:slope,d:d}); profile.push({cum:cum,z:pts[i-1][2],slope:slope});
+      segs.push({slope:slope,d:d}); profile.push({cum:cum,z:arr[i-1][2],slope:slope});
       cum+=d; len+=d; sumS+=slope; maxS=Math.max(maxS,slope);
       if(slope>=30)s30+=d; if(slope>=45)s45+=d;
     }
-    for(var j=0;j<pts.length;j++){ zmin=Math.min(zmin,pts[j][2]); zmax=Math.max(zmax,pts[j][2]); }
-    if(pts.length) profile.push({cum:cum,z:pts[pts.length-1][2],slope:0});
+    for(var j=0;j<arr.length;j++){ zmin=Math.min(zmin,arr[j][2]); zmax=Math.max(zmax,arr[j][2]); }
+    if(arr.length) profile.push({cum:cum,z:arr[arr.length-1][2],slope:0});
     return {segs:segs,profile:profile,stats:{len:len,drop:(zmax-zmin)||0,maxS:maxS,
       meanS:segs.length?sumS/segs.length:0, pct30:len?s30/len*100:0, pct45:len?s45/len*100:0}};
   }
@@ -411,6 +421,10 @@ window.OffpisteDraw = (function(){
     map.addSource("op-saved",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-saved-line",type:"line",source:"op-saved",layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-color":"#7fd8ff","line-width":3,"line-opacity":0.75,"line-dasharray":[2,1.5]}});
+    // Selected saved route: solid highlight over the dashed base line.
+    map.addSource("op-saved-sel",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-saved-sel-line",type:"line",source:"op-saved-sel",layout:{"line-cap":"round","line-join":"round"},
+      paint:{"line-color":"#7fd8ff","line-width":5,"line-opacity":0.95}});
     map.addSource(SRC,{type:"geojson",data:fc([])});
     map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
@@ -421,16 +435,31 @@ window.OffpisteDraw = (function(){
       geometry:{type:"LineString",coordinates:[[pts[i][0],pts[i][1]],[pts[i+1][0],pts[i+1][1]]]}}; });
     map.getSource(SRC).setData(fc(feats));
     syncEditBtns();
-    if(el.fly && !flying) el.fly.disabled = pts.length<2;
-    if(el.flyModeSel && pts.length<2) el.flyModeSel.classList.remove("show");
-    el.dock.classList.toggle("show", pts.length>=2);
-    renderSummary(a.stats); renderProfile(a.profile);
+    if(el.fly && !flying) el.fly.disabled = !canFly();
+    if(el.flyModeSel && !canFly()) el.flyModeSel.classList.remove("show");
+    renderDock(a);
   }
-  function renderSummary(s){
-    if(pts.length<2){ el.summary.innerHTML=""; return; }
-    var asp = routeAspect();
+  // The dock shows the route being drawn; with nothing drawn, the selected
+  // saved route (name + stats + profile) takes its place.
+  function renderDock(aDrawn){
+    if(!el.dock) return;
+    if(pts.length>=2){
+      var ad=aDrawn||analyse();
+      el.dock.classList.add("show"); renderSummary(ad.stats, pts, null); renderProfile(ad.profile); return;
+    }
+    if(selRoute && selRoute.coords.length>=2){
+      var as=analyse(selRoute.coords);
+      el.dock.classList.add("show"); renderSummary(as.stats, selRoute.coords, selRoute.name); renderProfile(as.profile); return;
+    }
+    el.dock.classList.remove("show"); renderSummary(null, [], null);
+  }
+  function esc(t){ return String(t).replace(/[&<>"']/g,function(c){ return "&#"+c.charCodeAt(0)+";"; }); }
+  function renderSummary(s,arr,name){
+    if(!s||!arr||arr.length<2){ el.summary.innerHTML=""; return; }
+    var asp = routeAspect(arr);
     el.summary.innerHTML =
-      '<span class="big">'+Math.round(s.len)+' m</span>'
+      (name?'<span class="big" style="color:#7fd8ff">'+esc(name)+'</span>':'')
+    + '<span class="big">'+Math.round(s.len)+' m</span>'
     + (asp ? '<span>faces '+asp+'</span>' : '')
     + '<span>drop '+Math.round(s.drop)+' m</span>'
     + '<span>max <b>'+s.maxS.toFixed(0)+'°</b> · avg '+s.meanS.toFixed(0)+'°</span>'
@@ -623,7 +652,7 @@ window.OffpisteDraw = (function(){
     flying=false;
     if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
     if(el.flyCursor) el.flyCursor.classList.remove("show");
-    if(el.fly){ el.fly.classList.remove("on"); el.fly.disabled=pts.length<2; }
+    if(el.fly){ el.fly.classList.remove("on"); el.fly.disabled=!canFly(); }
     if(savedCam){ map.easeTo({center:savedCam.center,zoom:savedCam.zoom,bearing:savedCam.bearing,pitch:savedCam.pitch,duration:1200}); savedCam=null; }
   }
   // Move a [lng,lat] by `m` metres along compass bearing `brg`.
@@ -640,11 +669,33 @@ window.OffpisteDraw = (function(){
     var f=Math.max(0,Math.min(1,d/profScale.maxC));
     el.flyCursor.style.left=((6+f*(800-12))/800*100)+"%";
   }
+  // A route is flyable when one is being drawn, or a saved route is selected.
+  function canFly(){ return pts.length>=2 || !!(selRoute && selRoute.coords.length>=2); }
+  function updateSavedSel(){
+    var s=map.getSource("op-saved-sel"); if(!s) return;
+    s.setData(fc(selRoute ? [{type:"Feature",properties:{},
+      geometry:{type:"LineString",coordinates:selRoute.coords.map(function(p){return [p[0],p[1]];})}}] : []));
+  }
+  // Select a saved route for preview (idx into savedRoutes; null deselects):
+  // solid highlight on the map, dock shows its profile, Fly is armed.
+  function selectSaved(idx){
+    if(idx==null){ selRoute=null; }
+    else{
+      var rt=savedRoutes[idx]||{}, c=rt.geometry&&rt.geometry.coordinates;
+      if(!c||c.length<2) return;
+      selRoute={idx:idx, coords:c.slice(), name:rt.name||null};
+      if(!routeOpen){ routeOpen=true; updOpToolsVis(); }   // surface the Fly button
+    }
+    updateSavedSel();
+    if(el.fly && !flying) el.fly.disabled=!canFly();
+    if(el.flyModeSel && !canFly()) el.flyModeSel.classList.remove("show");
+    renderDock();
+  }
   // Fly button: stop if already flying, else offer the two preview modes
   // (bird's-eye chase cam vs POV) and start on the user's pick.
   function onFlyClick(){
     if(flying){ endFly(); return; }
-    if(!ready || pts.length<2) return;
+    if(!canFly()) return;
     if(el.flyModeSel) el.flyModeSel.classList.toggle("show");
     else startFly("chase");
   }
@@ -654,9 +705,9 @@ window.OffpisteDraw = (function(){
   var FLY={ chase:{back:220,clear:200,minclip:45,look:90,alpha:0.25},
             fpv:  {back:12, clear:7,  minclip:4, look:50,alpha:0.12} };
   function startFly(mode){
-    if(flying || !ready || pts.length<2) return;
+    if(flying || !canFly()) return;
     flyMode = FLY[mode] ? mode : "chase";
-    var coords=pts.slice();
+    var coords=(pts.length>=2 ? pts : selRoute.coords).slice();
     var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
     var total=cum[cum.length-1]; if(total<1) return;
     savedCam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
@@ -817,12 +868,13 @@ window.OffpisteDraw = (function(){
     if(el.legend) el.legend.classList.toggle("show",aspectOn);
   }
   // Dominant compass aspect of the drawn line (circular mean) → cardinal label.
-  function routeAspect(){
-    if(pts.length<2||!elevImg) return null;
+  function routeAspect(arr){
+    arr=arr||pts;
+    if(arr.length<2||!elevImg) return null;
     var sx=0,sy=0,n=0,W=elevImg.W,H=elevImg.H,b=elevImg.b;
-    for(var i=0;i<pts.length;i++){
-      var px=Math.round((lon2mx(pts[i][0])-b[0])/(b[2]-b[0])*(W-1));
-      var py=Math.round((b[3]-lat2my(pts[i][1]))/(b[3]-b[1])*(H-1));
+    for(var i=0;i<arr.length;i++){
+      var px=Math.round((lon2mx(arr[i][0])-b[0])/(b[2]-b[0])*(W-1));
+      var py=Math.round((b[3]-lat2my(arr[i][1]))/(b[3]-b[1])*(H-1));
       var a=aspectAtPx(px,py);
       if(a&&a.bearing!=null){ sx+=Math.sin(a.bearing*Math.PI/180); sy+=Math.cos(a.bearing*Math.PI/180); n++; }
     }
@@ -835,12 +887,13 @@ window.OffpisteDraw = (function(){
   function loadSaved(routes){
     savedRoutes = routes || [];
     var feats=[];
-    savedRoutes.forEach(function(rt){
+    savedRoutes.forEach(function(rt,i){
       var c = rt && rt.geometry && rt.geometry.coordinates;
       if(!c || c.length<2) return;
-      feats.push({type:"Feature",properties:{},geometry:{type:"LineString",coordinates:c.map(function(p){return [p[0],p[1]];})}});
+      feats.push({type:"Feature",properties:{idx:i,name:rt.name||""},geometry:{type:"LineString",coordinates:c.map(function(p){return [p[0],p[1]];})}});
     });
     if(map.getSource("op-saved")) map.getSource("op-saved").setData(fc(feats));
+    if(selRoute){ selRoute=null; updateSavedSel(); renderDock(); }   // stale after reload
     if(el.savedChip){
       if(savedRoutes.length){ el.savedChip.textContent = savedRoutes.length+" saved route"+(savedRoutes.length>1?"s":""); el.savedChip.classList.add("show"); }
       else el.savedChip.classList.remove("show");
