@@ -214,7 +214,7 @@ class ArchiveStats:
 def _observation(station_id: str, source: str, observed_at, *, name, lat, lon,
                  elevation_m, stats: ArchiveStats,
                  depth_cm=None, swe_mm=None, precip_accum_mm=None,
-                 precip_daily_mm=None) -> dict | None:
+                 precip_daily_mm=None, elevation_source=None) -> dict | None:
     """Build one archive row, or None if it cannot legally be stored.
 
     Values arrive UNROUNDED, already converted into the column's unit. Rounding
@@ -274,6 +274,11 @@ def _observation(station_id: str, source: str, observed_at, *, name, lat, lon,
         # network: differencing precip_daily_mm is meaningless (it resets daily),
         # and reading precip_accum_mm as a day's total is off by a whole season.
         "precip_daily_mm": None if precip_daily_mm is None else round(precip_daily_mm, 2),
+        # 'name' means a surveyed height stated by the station itself; 'dem' is
+        # a terrain lookup that ran 29 m and 148 m low on the two stations that
+        # can be checked. A consumer that cannot tell them apart will eventually
+        # lapse-rate a temperature with the second kind.
+        "elevation_source": elevation_source,
         "ingest_source": "live",
     }
 
@@ -621,8 +626,22 @@ def _aic_terrain_elevations(points: list[tuple[float, float]]) -> dict[tuple[flo
     return {point: height for point, height in zip(points, heights) if height is not None}
 
 
-def _aic_elevation(lat: float, lon: float, elevations: dict) -> float | None:
-    return elevations.get((lat, lon))
+def _aic_elevation(name: str, lat: float, lon: float,
+                   elevations: dict) -> tuple[float | None, str | None]:
+    """Elevation and its provenance. A height stated in the station's own name
+    beats the DEM, because it is a surveyed figure and the DEM is not.
+
+    Measured 2026-08-01 on the two stations that state theirs — CERRO CASA QUILA
+    (1600) and (1800) — the DEM read 29 m and 148 m low. Both low, one badly so,
+    at sites 300 m apart. So where the name is available it is not merely
+    preferred, it is a different class of number, and elevation_source says
+    which class the row carries.
+    """
+    stated = re.search(r"\((\d{3,4})\)\s*$", name)
+    if stated:
+        return float(stated.group(1)), "name"
+    height = elevations.get((lat, lon))
+    return (height, "dem") if height is not None else (None, None)
 
 
 def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
@@ -670,6 +689,29 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
     picking one now would bury the discrepancy. Each gets its own station_id
     (`#pillow` suffix) so both series accumulate and the question stays open and
     answerable later.
+
+    THE EAN FIELD GOES BLANK PART OF THE DAY — WATCH skipped_no_value
+    -------------------------------------------------------------------------
+    Observed 2026-08-01, several hours apart, same URL:
+
+        earlier   12 of 13 SWE readings parsed
+        later      1 of 13 — every standard `Equivalente Agua Nieve` served as
+                   `----`, with ONLY the snow-pillow sensor still reporting
+
+    Stable across repeat fetches 20 s apart, so it is a state and not a flap.
+    The stations were still transmitting — `ultima actualizacion` read the
+    current date on 84 of 87 stations — so this is the EAN field being cleared,
+    not the network going down.
+
+    That makes the scrape hour decide whether a run collects twelve SWE series
+    or one, and a run inside the blank window looks successful: it returns rows,
+    no adapter error, and a quietly enormous `skipped_no_value`. Which hours are
+    safe is not yet known. Until it is, treat a collapse in SWE yield as the
+    alarm — `skipped_no_value` jumping while `collected` falls is this, not a
+    parsing bug, and the fix is the schedule rather than the regex.
+
+    Nothing is written for a blanked sensor: `----` is missing data, never zero,
+    and storing it as 0 mm would put a fake snowpack collapse into the series.
 
     SAMPLING TIME IS FIXED AND MUST STAY FIXED
     -------------------------------------------------------------------------
@@ -790,11 +832,12 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
             # copying it onto the #pillow row would double-count the same
             # measurement under two station_ids.
             suffix = "#pillow" if "Snow Pillow" in label else ""
+            height, height_source = _aic_elevation(name, lat, lon, elevations)
             observation = _observation(
                 f"aic:{slug}{suffix}", "aic", observed_at,
                 precip_daily_mm=None if suffix else daily_precip_mm,
                 name=name, lat=lat, lon=lon,
-                elevation_m=_aic_elevation(lat, lon, elevations),
+                elevation_m=height, elevation_source=height_source,
                 stats=stats, swe_mm=float(millimetres.group(1)),
             )
             if observation:
