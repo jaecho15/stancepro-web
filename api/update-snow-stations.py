@@ -158,6 +158,7 @@ JMA_LATEST_TIME_URL = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 JMA_MAP_URL = "https://www.jma.go.jp/bosai/amedas/data/map/{stamp}.json"
 JMA_META_URL = "https://www.jma.go.jp/bosai/amedas/const/amedastable.json"
 AIC_STATIONS_URL = "https://www.aic.gob.ar/estaciones"
+OPEN_METEO_ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
 
 IN_TO_CM = 2.54
 IN_TO_MM = 25.4
@@ -212,7 +213,8 @@ class ArchiveStats:
 
 def _observation(station_id: str, source: str, observed_at, *, name, lat, lon,
                  elevation_m, stats: ArchiveStats,
-                 depth_cm=None, swe_mm=None, precip_accum_mm=None) -> dict | None:
+                 depth_cm=None, swe_mm=None, precip_accum_mm=None,
+                 precip_daily_mm=None) -> dict | None:
     """Build one archive row, or None if it cannot legally be stored.
 
     Values arrive UNROUNDED, already converted into the column's unit. Rounding
@@ -243,12 +245,14 @@ def _observation(station_id: str, source: str, observed_at, *, name, lat, lon,
             return None
         return value
 
-    depth_cm, swe_mm, precip_accum_mm = valid(depth_cm), valid(swe_mm), valid(precip_accum_mm)
+    depth_cm, swe_mm = valid(depth_cm), valid(swe_mm)
+    precip_accum_mm, precip_daily_mm = valid(precip_accum_mm), valid(precip_daily_mm)
     if negative_fields:
         stats.negative_fields_dropped += negative_fields
         stats.rows_with_negative_field += 1
 
-    if depth_cm is None and swe_mm is None and precip_accum_mm is None:
+    if (depth_cm is None and swe_mm is None
+            and precip_accum_mm is None and precip_daily_mm is None):
         stats.skipped_no_value += 1
         return None
 
@@ -266,6 +270,10 @@ def _observation(station_id: str, source: str, observed_at, *, name, lat, lon,
         "depth_cm": None if depth_cm is None else round(depth_cm),
         "swe_mm": None if swe_mm is None else round(swe_mm, 2),
         "precip_accum_mm": None if precip_accum_mm is None else round(precip_accum_mm, 2),
+        # A day's total, NOT an accumulator. These two never both apply to one
+        # network: differencing precip_daily_mm is meaningless (it resets daily),
+        # and reading precip_accum_mm as a day's total is off by a whole season.
+        "precip_daily_mm": None if precip_daily_mm is None else round(precip_daily_mm, 2),
         "ingest_source": "live",
     }
 
@@ -562,6 +570,61 @@ def _rows_amedas() -> tuple[list[dict], list[dict], ArchiveStats]:
     return snapshot, archive, stats
 
 
+def _aic_terrain_elevations(points: list[tuple[float, float]]) -> dict[tuple[float, float], float]:
+    """Ground elevation for AIC sites, from a DEM — NOT the station's surveyed height.
+
+    AIC does not publish station elevation anywhere on the map or the station
+    list, and without it a reading cannot be placed against a forecast band: our
+    Andean bands span roughly 1,400-1,850 m and a station 500 m below the base
+    band is a different climate, not a validation of it.
+
+    So elevation is looked up from Open-Meteo's DEM at the station coordinate.
+    That is terrain height at a grid cell, which is NOT the same quantity as a
+    surveyed instrument elevation: it carries the DEM's own error, and in steep
+    terrain the cell average can sit well off the actual mast.
+
+    HOW FAR OFF, MEASURED
+    -------------------------------------------------------------------------
+    Two AIC stations put their true height in their own name, which makes them
+    an accidental control. Run 2026-08-01:
+
+        CERRO CASA QUILA (1600)   DEM 1571 m    -29 m
+        CERRO CASA QUILA (1800)   DEM 1652 m   -148 m
+
+    Both low, one badly so, and the two sites are 300 m apart horizontally. So
+    treat these numbers as good enough to say which forecast band a station
+    belongs near, and not good enough to lapse-rate a temperature with or to
+    call a 100 m disagreement meaningful. Every row records that the value is
+    DEM-derived, so the whole set can be replaced the day AIC supplies surveyed
+    figures — which is one of the things the Part 5 data request asks for.
+
+    A failure here degrades to NULL elevation, exactly the state before this
+    function existed; it must never sink the archive write.
+    """
+    if not points:
+        return {}
+    try:
+        response = requests.get(
+            OPEN_METEO_ELEVATION_URL,
+            params={"latitude": ",".join(f"{lat:.6f}" for lat, _ in points),
+                    "longitude": ",".join(f"{lon:.6f}" for _, lon in points)},
+            timeout=TIMEOUT_S,
+        )
+        response.raise_for_status()
+        heights = response.json().get("elevation") or []
+    except Exception:  # noqa: BLE001 — elevation is an enrichment, never a gate
+        return {}
+    if len(heights) != len(points):
+        # A partial response cannot be aligned to inputs positionally without
+        # risking one station's height being written onto another's row.
+        return {}
+    return {point: height for point, height in zip(points, heights) if height is not None}
+
+
+def _aic_elevation(lat: float, lon: float, elevations: dict) -> float | None:
+    return elevations.get((lat, lon))
+
+
 def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
     """Argentine AIC — the first snow-water-equivalent network in the fleet's
     southern hemisphere, and the only one sitting ON our resorts.
@@ -608,8 +671,19 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
     (`#pillow` suffix) so both series accumulate and the question stays open and
     answerable later.
 
-    Elevation is not published on the map, so elevation_m is NULL. Band-level
-    comparison needs it and will have to come from another source.
+    SAMPLING TIME IS FIXED AND MUST STAY FIXED
+    -------------------------------------------------------------------------
+    The Vercel cron for this worker is `20 5 * * *` — 05:20 UTC daily, which is
+    02:20 in Argentina (UTC-3), so each run reads the previous day's settled
+    figures. Vercel crons are UTC and do not shift with daylight saving, which
+    is the property that matters. A snow pillow has a daily melt/refreeze cycle,
+    so its reading depends on the hour it is taken: if sampling time drifted, a
+    day-to-day delta would blend real snowfall with the diurnal cycle and the
+    two could not be separated afterwards. Do not move this schedule without
+    re-basing the series.
+
+    Elevation comes from a DEM rather than from AIC — see
+    `_aic_terrain_elevations` for what that does and does not license.
     """
     response = requests.get(AIC_STATIONS_URL, timeout=TIMEOUT_S)
     response.raise_for_status()
@@ -630,7 +704,22 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
 
     stats = ArchiveStats()
     archive: list[dict] = []
-    for message in re.finditer(r"var mensaje(\d+) = '(.*?)';\s*var infowindow\1", page, re.S):
+    messages = list(re.finditer(r"var mensaje(\d+) = '(.*?)';\s*var infowindow\1", page, re.S))
+
+    # Elevation is fetched ONCE for the snow sites, before any row is built, so
+    # the DEM lookup is a single request per run rather than one per station.
+    # Only SWE-carrying sites are asked about — the ~85 river gauges are not
+    # archived here, so their heights would be a wasted lookup.
+    snow_points: list[tuple[float, float]] = []
+    for message in messages:
+        place = positions.get(message.group(1))
+        if not place:
+            continue
+        if re.search(r'<td class="MenDatosBold">(?:[^<]*Equivalente Agua Nieve|EAN )', message.group(2)):
+            snow_points.append((place[0], place[1]))
+    elevations = _aic_terrain_elevations(sorted(set(snow_points)))
+
+    for message in messages:
         index, blob = message.group(1), message.group(2)
         place = positions.get(index)
         if not place:
@@ -666,16 +755,46 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
             year, month, day, tzinfo=timezone(timedelta(hours=-3)),  # Argentina, UTC-3
         ).isoformat()
 
+        # The rain gauge on the same mast, kept as its own column. Only labels
+        # that SAY they are a day's total are taken: "Precipitacion Diaria",
+        # anything "diaria", anything "24hs". Deliberately NOT taken are the
+        # bare tipping-bucket counters ("LluviaTippingBucket") and anything
+        # "totalizada" — the first does not state its window and the second is
+        # an accumulator, and guessing wrong here puts a season total in a
+        # column documented as one day. None of the excluded labels appears on
+        # an SWE station today (checked across all ~97 stations, 2026-08-01); if
+        # one ever does it is dropped loudly below rather than mis-stored.
+        daily_precip_mm = None
+        for label, value in readings.items():
+            lowered = label.lower()
+            if "totaliz" in lowered:
+                continue
+            if "diaria" not in lowered and "24hs" not in lowered:
+                continue
+            if "precipitaci" not in lowered and "lluvia" not in lowered:
+                continue
+            parsed = re.match(r'^(-?[\d.]+)\s*mm$', value)
+            if parsed:
+                daily_precip_mm = float(parsed.group(1))
+                break
+            stats.skipped_no_value += 1
+
         slug = re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or index
         for label in swe_labels:
             millimetres = re.match(r'^(-?[\d.]+)\s*mm$', readings[label])
             if not millimetres:
                 stats.skipped_no_value += 1
                 continue
+            # A site with two SWE sensors is two series, but it still has ONE
+            # rain gauge. The gauge reading rides on the primary series only —
+            # copying it onto the #pillow row would double-count the same
+            # measurement under two station_ids.
             suffix = "#pillow" if "Snow Pillow" in label else ""
             observation = _observation(
                 f"aic:{slug}{suffix}", "aic", observed_at,
-                name=name, lat=lat, lon=lon, elevation_m=None,
+                precip_daily_mm=None if suffix else daily_precip_mm,
+                name=name, lat=lat, lon=lon,
+                elevation_m=_aic_elevation(lat, lon, elevations),
                 stats=stats, swe_mm=float(millimetres.group(1)),
             )
             if observation:
