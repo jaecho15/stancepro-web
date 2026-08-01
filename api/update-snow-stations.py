@@ -76,10 +76,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from html import unescape
 from http.server import BaseHTTPRequestHandler
 
 import requests
@@ -142,11 +144,11 @@ ARCHIVE_POST_TIMEOUT_S = 30.0   # per-chunk cap when the budget is not the bindi
 # next run's re-submission a no-op.
 ARCHIVE_MIN_POST_S = 2.0
 ARCHIVE_CONNECT_TIMEOUT_S = 5.0
-# IMIS first, on purpose: the SLF endpoint is a rolling ~24 h window with no
-# history, so an IMIS row not archived today is gone permanently. SNOTEL is
-# backfillable from the AWDB REST API, so it is the safe one to lose to a
-# deadline.
-ARCHIVE_PRIORITY = ("imis", "amedas", "snotel")
+# Unbackfillable networks first, on purpose. The SLF endpoint is a rolling ~24 h
+# window and AIC publishes no history for its snow stations at all, so a row not
+# archived today is gone permanently for either. SNOTEL is backfillable from the
+# AWDB REST API, so it is the safe one to lose to a deadline.
+ARCHIVE_PRIORITY = ("aic", "imis", "amedas", "snotel")
 
 SNOTEL_STATIONS_URL = "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/stations"
 SNOTEL_DATA_URL = "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/data"
@@ -155,6 +157,7 @@ SLF_MEASUREMENTS_URL = "https://measurement-api.slf.ch/public/api/imis/measureme
 JMA_LATEST_TIME_URL = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 JMA_MAP_URL = "https://www.jma.go.jp/bosai/amedas/data/map/{stamp}.json"
 JMA_META_URL = "https://www.jma.go.jp/bosai/amedas/const/amedastable.json"
+AIC_STATIONS_URL = "https://www.aic.gob.ar/estaciones"
 
 IN_TO_CM = 2.54
 IN_TO_MM = 25.4
@@ -559,6 +562,128 @@ def _rows_amedas() -> tuple[list[dict], list[dict], ArchiveStats]:
     return snapshot, archive, stats
 
 
+def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
+    """Argentine AIC — the first snow-water-equivalent network in the fleet's
+    southern hemisphere, and the only one sitting ON our resorts.
+
+    AIC (Autoridad Interjurisdiccional de las Cuencas de los rios Limay, Neuquen
+    y Negro) runs ~97 hydrometeorological stations across northern Patagonia.
+    Twelve report `Equivalente Agua Nieve` (snow water equivalent) and three of
+    those are effectively on a resort we serve — Cerro Chapelco 0.0 km, Caviahue
+    0.1 km, Batea Mahuida 0.0 km — with Cerro Nevado 31 km from Catedral.
+
+    WHY THIS NETWORK MATTERS MORE THAN ITS SIZE
+    -------------------------------------------------------------------------
+    SWE is the measurement that separates our two error sources. A depth report
+    cannot tell "we predicted the wrong amount of water" from "we predicted the
+    wrong density", and until this adapter every southern-hemisphere resort had
+    neither. Measured 2026-07-29: 53 of 55 serving resorts had no station within
+    50 km, New Zealand and the Andes had zero.
+
+    THERE IS NO HISTORY ENDPOINT — TODAY'S READ IS THE ONLY READ
+    -------------------------------------------------------------------------
+    The public site exposes per-station history for exactly two lowland showcase
+    stations (Fernandez Oro, Paseo de la Costa); `estaciones-detalle?a=<n>`
+    ignores its parameter and re-serves the list page. So the snow stations have
+    a live snapshot and nothing else: a day not captured here is gone for good.
+    That is why `aic` sits at the front of ARCHIVE_PRIORITY alongside IMIS.
+
+    WHAT IS DELIBERATELY NOT WRITTEN
+    -------------------------------------------------------------------------
+    `Precipitacion Diaria` is a DAILY total, and precip_accum_mm is documented
+    as season-cumulative — the column everyone downstream will difference. That
+    is precisely the PRCP-vs-PREC trap described above for SNOTEL, so the daily
+    value is dropped rather than parked in a column that would silently turn a
+    per-day figure into a nonsense delta. Depth is not written because AIC does
+    not measure it. That also means this adapter contributes NOTHING to the
+    `snow_stations` snapshot, whose serving path wants a measured depth anchor:
+    it returns an empty snapshot list on purpose and is archive-only.
+
+    TWO SWE SENSORS AT ONE SITE ARE KEPT APART
+    -------------------------------------------------------------------------
+    Cerro Nevado publishes both a standard `Equivalente Agua Nieve` (260.01 mm)
+    and an `EAN Snow Pillow Sensor` (642.4 mm) — the same site, the same day,
+    2.5x apart. Merging them would invent a number neither sensor reported, and
+    picking one now would bury the discrepancy. Each gets its own station_id
+    (`#pillow` suffix) so both series accumulate and the question stays open and
+    answerable later.
+
+    Elevation is not published on the map, so elevation_m is NULL. Band-level
+    comparison needs it and will have to come from another source.
+    """
+    response = requests.get(AIC_STATIONS_URL, timeout=TIMEOUT_S)
+    response.raise_for_status()
+    page = response.text
+
+    # Readings live in Google Maps infowindow HTML built inline as `var mensajeN`;
+    # coordinates and name come from the matching `var markerN`. Both are keyed
+    # by the same index, which is the only thing joining a reading to a place.
+    positions: dict[str, tuple[float, float, str]] = {}
+    for marker in re.finditer(
+        r'var marker(\d+) = new google\.maps\.Marker\(\{ map: mapa, '
+        r'position: new google\.maps\.LatLng\(([-\d.]+),([-\d.]+)\),\s*title:"([^"]*)"',
+        page,
+    ):
+        positions[marker.group(1)] = (
+            float(marker.group(2)), float(marker.group(3)), marker.group(4).strip(),
+        )
+
+    stats = ArchiveStats()
+    archive: list[dict] = []
+    for message in re.finditer(r"var mensaje(\d+) = '(.*?)';\s*var infowindow\1", page, re.S):
+        index, blob = message.group(1), message.group(2)
+        place = positions.get(index)
+        if not place:
+            stats.dropped_no_station_meta += 1
+            continue
+        lat, lon, name = place
+
+        readings: dict[str, str] = {}
+        for cell in re.finditer(
+            r'<td class="MenDatosBold">([^<]+)</td><td align="right">([^<]*)</td>', blob,
+        ):
+            readings[unescape(cell.group(1)).strip()] = cell.group(2).strip()
+
+        swe_labels = [label for label in readings
+                      if "Equivalente Agua Nieve" in label or label.startswith("EAN ")]
+        # Most of the ~97 stations are river gauges with no snow sensor. They are
+        # not archivable here and are skipped WITHOUT a counter — counting them
+        # would report ~85 phantom losses a day and bury a real one. Only a
+        # station that actually carries an SWE reading can be "skipped".
+        if not swe_labels:
+            continue
+
+        # Per-station update date, dd/mm/yyyy, no clock time. Stations update on
+        # their own cadence — two were a day behind the rest when sampled — so
+        # this must come from the row and never from "now", or a stale reading
+        # would be archived under today and read later as a fresh observation.
+        stamped = re.search(r'ltima actualizaci[^:]*:\s*(\d{2})/(\d{2})/(\d{4})', blob)
+        if not stamped:
+            stats.skipped_no_timestamp += len(swe_labels)
+            continue
+        day, month, year = (int(part) for part in stamped.groups())
+        observed_at = datetime(
+            year, month, day, tzinfo=timezone(timedelta(hours=-3)),  # Argentina, UTC-3
+        ).isoformat()
+
+        slug = re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or index
+        for label in swe_labels:
+            millimetres = re.match(r'^(-?[\d.]+)\s*mm$', readings[label])
+            if not millimetres:
+                stats.skipped_no_value += 1
+                continue
+            suffix = "#pillow" if "Snow Pillow" in label else ""
+            observation = _observation(
+                f"aic:{slug}{suffix}", "aic", observed_at,
+                name=name, lat=lat, lon=lon, elevation_m=None,
+                stats=stats, swe_mm=float(millimetres.group(1)),
+            )
+            if observation:
+                archive.append(observation)
+
+    return [], archive, stats
+
+
 # --- credential-safe error text -------------------------------------------
 # A Supabase key with a stray newline makes http.client raise a plain
 # ValueError whose message quotes the Authorization header VALUE verbatim, and
@@ -591,7 +716,8 @@ def collect() -> tuple[list[dict], dict[str, list[dict]], dict[str, ArchiveStats
     archive: dict[str, list[dict]] = {}
     stats: dict[str, ArchiveStats] = {}
     errors: dict[str, str] = {}
-    for name, adapter in (("snotel", _rows_snotel), ("imis", _rows_slf), ("amedas", _rows_amedas)):
+    for name, adapter in (("snotel", _rows_snotel), ("imis", _rows_slf),
+                          ("amedas", _rows_amedas), ("aic", _rows_aic)):
         try:
             snapshot_rows, archive_rows, adapter_stats = adapter()
             rows.extend(snapshot_rows)
