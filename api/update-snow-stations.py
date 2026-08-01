@@ -197,6 +197,10 @@ class ArchiveStats:
         self.rows_with_negative_field = 0  # rows that lost >=1 field that way (per ROW)
         self.rows_submitted = 0            # rows POSTed and accepted — NOT rows inserted
         self.error: str | None = None
+        self.samples: list[dict] | None = None   # raw scrape record, blanks included
+        self.samples_written: int | None = None
+        self.samples_error: str | None = None
+        self.swe_blank: int | None = None  # SWE sensors that served no value
 
     def as_dict(self) -> dict:
         return {
@@ -208,6 +212,14 @@ class ArchiveStats:
             "negative_fields_dropped": self.negative_fields_dropped,
             "rows_with_negative_field": self.rows_with_negative_field,
             "error": self.error,
+            # Sampling counters, present only for sources that keep a raw scrape
+            # record. swe_blank is the one to watch: it rising while `collected`
+            # falls is the EAN blank window, not a parser regression, and no
+            # per-run success flag can show it.
+            **({"samples_written": self.samples_written}
+               if self.samples_written is not None else {}),
+            **({"swe_blank": self.swe_blank} if self.swe_blank is not None else {}),
+            **({"samples_error": self.samples_error} if self.samples_error else {}),
         }
 
 
@@ -713,16 +725,22 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
     Nothing is written for a blanked sensor: `----` is missing data, never zero,
     and storing it as 0 mm would put a fake snowpack collapse into the series.
 
-    SAMPLING TIME IS FIXED AND MUST STAY FIXED
+    SAMPLE OFTEN INSTEAD OF PICKING A SAFE HOUR
     -------------------------------------------------------------------------
-    The Vercel cron for this worker is `20 5 * * *` — 05:20 UTC daily, which is
-    02:20 in Argentina (UTC-3), so each run reads the previous day's settled
-    figures. Vercel crons are UTC and do not shift with daylight saving, which
-    is the property that matters. A snow pillow has a daily melt/refreeze cycle,
-    so its reading depends on the hour it is taken: if sampling time drifted, a
-    day-to-day delta would blend real snowfall with the diurnal cycle and the
-    two could not be separated afterwards. Do not move this schedule without
-    re-basing the series.
+    An earlier version of this docstring said the sampling hour was fixed and
+    must stay fixed, on the reasoning that a snow pillow has a melt/refreeze
+    cycle and a drifting sample hour would blend the diurnal signal into every
+    delta. That reasoning is still true and it is no longer the design, because
+    it assumed a safe hour exists and that we know which one — and the blank
+    window above shows we do not.
+
+    So this worker runs several times a day and keeps every sample in
+    `snow_station_samples`, blanks included. The diurnal concern is handled
+    where it belongs, at read time: the canonical sample for a delta is
+    whichever sits nearest 09:00 local, chosen by the
+    `snow_station_daily_coverage` sibling view rather than by whichever run
+    happened to fire. That is strictly better than a fixed hour — a fixed hour
+    inside the blank window silently returns nothing at all.
 
     Elevation comes from a DEM rather than from AIC — see
     `_aic_terrain_elevations` for what that does and does not license.
@@ -746,6 +764,11 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
 
     stats = ArchiveStats()
     archive: list[dict] = []
+    # Every SWE station seen this pass, value or not. A station serving '----'
+    # produces a sample row with swe_mm NULL, which is what lets the blank
+    # window be characterised later without a bespoke probe.
+    samples: list[dict] = []
+    capture_ts = datetime.now(tz=timezone.utc).isoformat()
     messages = list(re.finditer(r"var mensaje(\d+) = '(.*?)';\s*var infowindow\1", page, re.S))
 
     # Elevation is fetched ONCE for the snow sites, before any row is built, so
@@ -823,7 +846,24 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
 
         slug = re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or index
         for label in swe_labels:
-            millimetres = re.match(r'^(-?[\d.]+)\s*mm$', readings[label])
+            suffix = "#pillow" if "Snow Pillow" in label else ""
+            served = readings[label]
+            millimetres = re.match(r'^(-?[\d.]+)\s*mm$', served)
+            height, height_source = _aic_elevation(name, lat, lon, elevations)
+            # Recorded whether or not it parsed. A sample with swe_mm NULL is
+            # the evidence that this station served '----' at this hour, and
+            # that evidence is the only way the blank window gets characterised.
+            samples.append({
+                "station_id": f"aic:{slug}{suffix}",
+                "capture_ts": capture_ts,
+                "source": "aic",
+                "observed_at": observed_at,
+                "name": name, "lat": lat, "lon": lon,
+                "elevation_m": height, "elevation_source": height_source,
+                "swe_mm": float(millimetres.group(1)) if millimetres else None,
+                "precip_daily_mm": None if suffix else daily_precip_mm,
+                "raw_swe_text": served[:64],
+            })
             if not millimetres:
                 stats.skipped_no_value += 1
                 continue
@@ -831,8 +871,6 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
             # rain gauge. The gauge reading rides on the primary series only —
             # copying it onto the #pillow row would double-count the same
             # measurement under two station_ids.
-            suffix = "#pillow" if "Snow Pillow" in label else ""
-            height, height_source = _aic_elevation(name, lat, lon, elevations)
             observation = _observation(
                 f"aic:{slug}{suffix}", "aic", observed_at,
                 precip_daily_mm=None if suffix else daily_precip_mm,
@@ -843,6 +881,10 @@ def _rows_aic() -> tuple[list[dict], list[dict], ArchiveStats]:
             if observation:
                 archive.append(observation)
 
+    # Carried on stats because collect() already threads that object through and
+    # widening the 3-tuple would touch every adapter for one source's benefit.
+    stats.samples = samples
+    stats.swe_blank = sum(1 for s in samples if s["swe_mm"] is None)
     return [], archive, stats
 
 
@@ -914,6 +956,42 @@ def upsert(rows: list[dict]) -> int:
     )
     response.raise_for_status()
     return len(rows)
+
+
+def append_samples(stats: dict[str, ArchiveStats]) -> None:
+    """Write this run's raw scrape record, blanks included.
+
+    Separate from `append_observations` and deliberately unconditional on value:
+    a station that served '----' produces a row here with swe_mm NULL, and those
+    rows are the only evidence of when AIC's EAN field is blank. Dropping them
+    because they carry no measurement would delete the exact signal they exist
+    to capture.
+
+    Best-effort like the archive — it runs after serving is already safe and
+    swallows failures into stats.error. Small by construction (13 rows a run),
+    so it needs no chunking or deadline arithmetic.
+    """
+    if not WRITE_KEY:
+        return
+    for source, source_stats in stats.items():
+        rows = getattr(source_stats, "samples", None)
+        if not rows:
+            continue
+        try:
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/snow_station_samples"
+                "?on_conflict=station_id,capture_ts",
+                headers={
+                    "apikey": WRITE_KEY, "Authorization": f"Bearer {WRITE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=ignore-duplicates,return=minimal",
+                },
+                json=rows, timeout=ARCHIVE_POST_TIMEOUT_S,
+            )
+            response.raise_for_status()
+            source_stats.samples_written = len(rows)
+        except Exception as exc:  # noqa: BLE001 — telemetry must not break serving
+            source_stats.samples_error = _safe_detail(exc)
 
 
 def append_observations(archive: dict[str, list[dict]], stats: dict[str, ArchiveStats],
@@ -1015,6 +1093,11 @@ class handler(BaseHTTPRequestHandler):
             append_observations(archive, stats, deadline=started + ARCHIVE_DEADLINE_S)
         except Exception as exc:  # noqa: BLE001 — archive never breaks the run
             print(f"[archive] append failed: {_safe_detail(exc)}", file=sys.stderr)
+
+        try:
+            append_samples(stats)
+        except Exception as exc:  # noqa: BLE001 — same contract as the archive
+            print(f"[samples] append failed: {_safe_detail(exc)}", file=sys.stderr)
 
         counts: dict[str, int] = {}
         for row in rows:

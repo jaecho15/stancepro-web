@@ -24,16 +24,8 @@
   },
   "crons": [
     {
-      "path": "/api/update-snow-stations",
-      "schedule": "20 5 * * *"
-    },
-    {
-      "path": "/api/update-snowlines",
-      "schedule": "40 5 * * *"
-    },
-    {
-      "path": "/api/update-season-status",
-      "schedule": "10 6 * * *"
+      "path": "/api/sweep-short-range",
+      "schedule": "10 7 * * *"
     },
     {
       "path": "/api/update-annual-history",
@@ -44,8 +36,44 @@
       "schedule": "50 6 * * *"
     },
     {
-      "path": "/api/sweep-short-range",
-      "schedule": "10 7 * * *"
+      "path": "/api/update-season-status",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 11 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 14 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 17 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 2 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 20 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 23 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 5 * * *"
+    },
+    {
+      "path": "/api/update-snow-stations",
+      "schedule": "20 8 * * *"
+    },
+    {
+      "path": "/api/update-snowlines",
+      "schedule": "40 5 * * *"
     }
   ],
   "regions": [

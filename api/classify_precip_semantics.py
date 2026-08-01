@@ -62,9 +62,18 @@ import urllib.request
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://ryiitcblrrqvjvxkobpf.supabase.co")
 TABLE = "snow_station_observations"
 
-MIN_DAYS_FOR_DAILY = 3     # one decrease inside this window settles it
+MIN_DAYS_FOR_DAILY = 3     # one qualifying decrease inside this window settles it
 MIN_DAYS_FOR_ANNUAL = 21   # never call a station an accumulator on a short storm
 ANNUAL_MIN_RISE_MM = 50.0  # and not without a rise no daily series would show
+
+# Not every decrease is evidence. An accumulator can tick DOWN slightly without
+# ceasing to be an accumulator — a late correction, a sensor re-zero, a
+# retransmitted value — and treating any drop as proof of a daily series would
+# misclassify a station on one noisy reading, in the direction that silently
+# admits a season total into scoring. So a decrease only counts when it looks
+# like a RESET: the series falls to near zero, or falls by a lot.
+RESET_FLOOR_MM = 1.0       # 'near zero' after the drop
+MIN_RESET_DROP_MM = 5.0    # below this, a decline is noise, not a reset
 
 
 def _key() -> str:
@@ -94,10 +103,25 @@ def classify(series: list[tuple[str, float]]) -> tuple[str, str]:
     if len(values) < MIN_DAYS_FOR_DAILY:
         return "unknown", f"only {len(values)} day(s) of history"
 
-    decreases = sum(1 for i in range(1, len(values)) if values[i] < values[i - 1] - 1e-9)
-    if decreases:
-        # Conclusive. An accumulator does not go down mid-season.
-        return "daily_0700", f"{decreases} decrease(s) over {len(values)} days"
+    resets, minor = 0, 0
+    for i in range(1, len(values)):
+        drop = values[i - 1] - values[i]
+        if drop <= 1e-9:
+            continue
+        if values[i] <= RESET_FLOOR_MM or drop >= MIN_RESET_DROP_MM:
+            resets += 1
+        else:
+            minor += 1                      # noise; deliberately not evidence
+    if resets:
+        # Conclusive. An accumulator does not fall to zero mid-season.
+        note = f"{resets} reset-shaped drop(s) over {len(values)} days"
+        if minor:
+            note += f" ({minor} minor decline(s) ignored as noise)"
+        return "daily_0700", note
+    if minor:
+        return "unknown", (f"{minor} small decline(s) over {len(values)} days but no "
+                           f"reset-shaped drop; a correction on an accumulator looks "
+                           f"like this too")
 
     if len(values) < MIN_DAYS_FOR_ANNUAL:
         return "unknown", (f"no decrease yet, but {len(values)} days is short of "
