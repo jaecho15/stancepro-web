@@ -113,7 +113,8 @@ def _grid_elevations(coords: list[tuple[float, float]]) -> list[float | None]:
 
 # --- Phase B: submit -----------------------------------------------------------
 
-def submit_tasks(token: str) -> dict:
+def submit_tasks(token: str, start_date: str | None = None,
+                 end_date: str | None = None) -> dict:
     """Submit today's point tasks unless they already exist."""
     today_tag = datetime.now(tz=timezone.utc).strftime("%Y%m%d")
     existing = requests.get(f"{APPEEARS}/task", params={"limit": 60},
@@ -147,14 +148,18 @@ def submit_tasks(token: str) -> dict:
             "category": resort_id,
         })
 
-    end = date.today()
-    start = end - timedelta(days=LOOKBACK_DAYS)
+    # Defaults to the rolling window; a backfill passes an explicit range.
+    # AppEEARS itself has no such limit — LOOKBACK_DAYS was the only thing
+    # keeping this to recent days.
+    end = date.fromisoformat(end_date) if end_date else date.today()
+    start = date.fromisoformat(start_date) if start_date else end - timedelta(days=LOOKBACK_DAYS)
     dates = [{"startDate": start.strftime("%m-%d-%Y"), "endDate": end.strftime("%m-%d-%Y")}]
     submitted = 0
     for part, i in enumerate(range(0, len(coordinates), POINTS_PER_TASK), start=1):
         task = {
             "task_type": "point",
-            "task_name": f"{TASK_PREFIX}{today_tag}_p{part}",
+            "task_name": f"{TASK_PREFIX}{today_tag}_p{part}" if not start_date
+                             else f"{TASK_PREFIX}bf{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}_p{part}",
             "params": {
                 "dates": dates,
                 # VJ110A1 (NOAA-20), not VNP10A1 (Suomi-NPP): SNPP's product
@@ -241,21 +246,55 @@ def collect_tasks(token: str) -> dict:
                 by_key.setdefault((resort, row["Date"]), []).append(
                     (elev, value >= SNOW_MIN_NDSI))
 
-    # most recent confident read per resort
+    # EVERY (resort, day) read, kept for the history table — including the ones
+    # the confidence rules reject. A cloudy day is a real fact about coverage:
+    # without it, "40 scored days" cannot be told apart from "200 asked, 160
+    # cloudy", and the second is what decides whether a cell can ever reach the
+    # minimum n (EXPERIMENT.md A4.2).
+    history: list[dict] = []
+    # most recent confident read per resort — the snapshot table's contract
     best: dict[str, dict] = {}
     for (resort, obs_date), samples in by_key.items():
         read = _regress(samples)
+        lo, hi = span.get(resort, (None, None))
         if read is None:
+            history.append({
+                "resort_id": resort, "obs_date": obs_date, "status": "insufficient",
+                "snowline_m": None, "sampled_min_m": lo, "sampled_max_m": hi,
+                "clear_n": len(samples), "total_n": GRID_N * GRID_N, "fit_err_n": None,
+            })
             continue
         status, snowline_m, fit_err = read
+        history.append({
+            "resort_id": resort, "obs_date": obs_date, "status": status,
+            "snowline_m": snowline_m, "sampled_min_m": lo, "sampled_max_m": hi,
+            "clear_n": len(samples), "total_n": GRID_N * GRID_N, "fit_err_n": fit_err,
+        })
         current = best.get(resort)
         if current is None or obs_date > current["obs_date"]:
-            lo, hi = span[resort]
             best[resort] = {
                 "resort_id": resort, "obs_date": obs_date, "status": status,
                 "snowline_m": snowline_m, "sampled_min_m": lo, "sampled_max_m": hi,
                 "clear_n": len(samples), "total_n": GRID_N * GRID_N, "fit_err_n": fit_err,
             }
+
+    # History first: the snapshot can be rebuilt from any later run, but a day
+    # that is not written here is gone once the task bundle expires.
+    history_written = 0
+    if history and WRITE_KEY:
+        try:
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/snowline_observations",
+                params={"on_conflict": "resort_id,obs_date"},
+                headers={"apikey": WRITE_KEY, "Authorization": f"Bearer {WRITE_KEY}",
+                         "Content-Type": "application/json",
+                         "Prefer": "resolution=merge-duplicates,return=minimal"},
+                data=json.dumps(history), timeout=60,
+            )
+            response.raise_for_status()
+            history_written = len(history)
+        except Exception:  # noqa: BLE001 — history must not break the snapshot
+            history_written = -1
 
     written = 0
     if best and WRITE_KEY:
@@ -273,7 +312,8 @@ def collect_tasks(token: str) -> dict:
         )
         response.raise_for_status()
         written = len(rows)
-    return {"tasks_ingested": len(done), "resorts_read": len(best), "written": written}
+    return {"tasks_ingested": len(done), "resorts_read": len(best), "written": written,
+            "history_rows": history_written}
 
 
 class handler(BaseHTTPRequestHandler):
@@ -286,7 +326,10 @@ class handler(BaseHTTPRequestHandler):
         try:
             token = _appeears_token()
             result["collect"] = collect_tasks(token)
-            result["submit"] = submit_tasks(token)
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            result["submit"] = submit_tasks(
+                token, (query.get("start") or [None])[0], (query.get("end") or [None])[0])
             result["write_key_present"] = bool(WRITE_KEY)
             self._send(200, result)
         except Exception as exc:  # noqa: BLE001
