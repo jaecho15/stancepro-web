@@ -14,8 +14,11 @@
  * straight from `short_range_forecasts`. Everything below the fetch is
  * production code on production data.
  *
- * Not linked from anywhere and carries no auth, so it must never hold anything
- * that is not already public in a forecast payload.
+ * Not linked from anywhere and carries no auth. It is also compiled out of
+ * production: the live forecast page sits behind the auth gate for a reason,
+ * and an unauthenticated route rendering a frozen payload has no business
+ * existing there even though the data itself is public. Locally it is the only
+ * way to review a rendering change.
  */
 
 import { useEffect, useState } from "react";
@@ -36,6 +39,7 @@ const FIXTURE_RESORT = {
 
 export default function DevForecastPage() {
   const [ready, setReady] = useState(false);
+
 
   useEffect(() => {
     const original = window.fetch;
@@ -61,6 +65,17 @@ export default function DevForecastPage() {
       window.fetch = original;
     };
   }, []);
+
+  // AFTER every hook: an early return placed between useState and useEffect
+  // changes the hook count between environments, which is the rules-of-hooks
+  // violation that type-checking does not catch and the build happily ships.
+  if (process.env.NODE_ENV === "production") {
+    return (
+      <main className="min-h-screen bg-slate-900 p-6">
+        <p className="text-sm text-slate-400">Not available.</p>
+      </main>
+    );
+  }
 
   return (
     // Deliberately chrome-free: the preview pane cannot scroll reliably (a
