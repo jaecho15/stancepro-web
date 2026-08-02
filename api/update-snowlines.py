@@ -15,8 +15,9 @@ Two-phase, stateless, async around AppEEARS' task queue:
   centroid, fetch grid elevations (Open-Meteo elevation API) and EMBED each
   point's elevation in its sample id (`p{n}_e{elev}`) so Phase A needs no
   side-channel, then submit VJ110A1 (NOAA-20 VIIRS) NDSI_Snow_Cover point tasks
-  (last 3 days,
-  chunked ≤400 points). Skipped if today's tasks already exist.
+  chunked ≤400 points). The daily path covers the last 3 days and is skipped if
+  today's tasks exist; a backfill (?start=&end=) is keyed by its WINDOW instead,
+  so it is never suppressed by the daily guard.
 
 Regression rules (validated on Cardrona/Mt Hutt, 2026-07-10):
   clear pixels < 12 → no read; all snow / all bare → classified directly;
@@ -113,16 +114,34 @@ def _grid_elevations(coords: list[tuple[float, float]]) -> list[float | None]:
 
 # --- Phase B: submit -----------------------------------------------------------
 
+def _backfill_tag(start_date: str | None, end_date: str | None) -> str:
+    """Window identity for a backfill task name. Two requests for the same
+    window are the same task; the daily tag would collide across windows."""
+    return f"bf{(start_date or '').replace('-', '')}_{(end_date or '').replace('-', '')}"
+
+
 def submit_tasks(token: str, start_date: str | None = None,
                  end_date: str | None = None) -> dict:
     """Submit today's point tasks unless they already exist."""
     today_tag = datetime.now(tz=timezone.utc).strftime("%Y%m%d")
-    existing = requests.get(f"{APPEEARS}/task", params={"limit": 60},
+    backfill = bool(start_date or end_date)
+    existing = requests.get(f"{APPEEARS}/task", params={"limit": 200},
                             headers={"Authorization": f"Bearer {token}"}, timeout=TIMEOUT_S)
     existing.raise_for_status()
-    if any((t.get("task_name") or "").startswith(f"{TASK_PREFIX}{today_tag}")
-           for t in existing.json()):
-        return {"submitted": 0, "note": "today's tasks already exist"}
+    names = {(t.get("task_name") or "") for t in existing.json()}
+
+    if not backfill:
+        # Daily path: one set of tasks per day, no more.
+        if any(n.startswith(f"{TASK_PREFIX}{today_tag}") for n in names):
+            return {"submitted": 0, "note": "today's tasks already exist"}
+    else:
+        # A backfill is keyed by the WINDOW it covers, not by the day it was
+        # asked for. Sharing the daily guard meant a backfill submitted after
+        # the 05:40 cron was silently dropped — the run reported success and
+        # queued nothing, which is how the first attempt at this failed.
+        window_tag = _backfill_tag(start_date, end_date)
+        if any(n.startswith(f"{TASK_PREFIX}{window_tag}") for n in names):
+            return {"submitted": 0, "note": f"backfill {window_tag} already queued"}
 
     resorts = _served_resorts()
     # Build every grid first, then resolve elevations in ONE batched pass —
@@ -158,8 +177,8 @@ def submit_tasks(token: str, start_date: str | None = None,
     for part, i in enumerate(range(0, len(coordinates), POINTS_PER_TASK), start=1):
         task = {
             "task_type": "point",
-            "task_name": f"{TASK_PREFIX}{today_tag}_p{part}" if not start_date
-                             else f"{TASK_PREFIX}bf{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}_p{part}",
+            "task_name": (f"{TASK_PREFIX}{today_tag}_p{part}" if not backfill
+                              else f"{TASK_PREFIX}{_backfill_tag(start_date, end_date)}_p{part}"),
             "params": {
                 "dates": dates,
                 # VJ110A1 (NOAA-20), not VNP10A1 (Suomi-NPP): SNPP's product
