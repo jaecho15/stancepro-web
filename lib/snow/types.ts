@@ -65,16 +65,28 @@ export interface DailyRow {
   tier?: "high" | "moderate" | "low";
   reasons?: string[];
   /**
-   * Whether a single number is defensible for this row. Decided by lead band,
-   * NOT by the tier: held at a fixed lead the tier does not predict forecast
-   * revision (see scripts/TIER_METRIC.md). True only for D1-4.
+   * Whether a single number is defensible for this row. True for D1-8 only;
+   * D9-16 is band-only (DECISIONS.md #1).
    */
   show_point_value?: boolean;
-  lead_band?: "D1-4" | "D5-7" | "D8-16";
+  lead_band?: "D1-8" | "D9-16";
   /** Rain veto AND region lock AND something actually forecast. */
   alert_eligible?: boolean;
   /** Wind transport — a slope statement, deliberately not a confidence one. */
   slope_condition?: "wind_transport" | "strong_wind_transport" | null;
+  /**
+   * Centred 3-day rolling sum, D9-16 only (DECISIONS.md #1, step 1). At ten
+   * days out a model places a storm within a few days rather than on a day, so
+   * the daily band there is mostly empty — measured on a live payload, five of
+   * eight days had p10 = p50 = p90 = 0. The window says what is knowable.
+   * Absent on rows before D9 and on payloads cached before this shipped.
+   */
+  roll3_cm_p10?: number;
+  roll3_cm_p50?: number;
+  roll3_cm_p90?: number;
+  roll3_days?: number;
+  roll3_date_start?: string;
+  roll3_date_end?: string;
   /** WMO weather interpretation code (Open-Meteo). Optional on older caches. */
   weather_code?: number | null;
   time_of_day?: TimeBlock[];

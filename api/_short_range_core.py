@@ -223,9 +223,8 @@ def _rain_risk(elevation: float | None, freezing: float | None) -> bool:
 # Anchors are therefore per lead band, measured from the forecast archive
 # (rows with p90 >= 1 cm and p50 >= 0.5 cm), so "wide" means wide FOR THIS LEAD:
 #
-#     D1-4    n=1530   p50 1.25   p75 1.99   p90 3.12   models 4.0
-#     D5-7    n=647    p50 2.17   p75 3.49   p90 6.46   models 3.8
-#     D8-16   n=1281   p50 1.57   p75 1.61   p90 1.67   models 2.1
+#     D1-8    n=2324   p50 1.52   p75 2.43   p90 4.32   models 3.9
+#     D9-16   n=1134   p50 1.57   p75 1.60   p90 1.64   models 1.9
 #
 # D8-16 IS DEGENERATE AND IS TREATED AS SUCH
 # Its spread barely moves — 1.57 at the median, 1.67 at the 90th. With 2.1
@@ -250,9 +249,11 @@ TIER_MARGIN_MARGINAL_M = 150.0  # band this close to the snow level is a coin to
 
 # (p90-p10)/p50 anchors per lead band: (moderate, low). None = do not discriminate.
 TIER_SPREAD_ANCHORS = {
-    "D1-4": (1.99, 3.12),
-    "D5-7": (3.49, 6.46),
-    "D8-16": None,              # degenerate; see above
+    "D1-8": (2.43, 4.32),
+    # Still no anchor: measured across 1,281 archive rows the D9+ relative
+    # spread runs 1.54-1.59 end to end, which is a fixed multiple of the median
+    # rather than information. A threshold there would invent a distinction.
+    "D9-16": None,
 }
 
 # Wind is NOT a confidence axis. High wind does not make a total wrong, it makes
@@ -267,11 +268,16 @@ WIND_STRONG_TRANSPORT_KMH = 110  # provisional (240-row sample)
 
 
 def lead_band(day_index: int) -> str:
-    if day_index <= 4:
-        return "D1-4"
-    if day_index <= 7:
-        return "D5-7"
-    return "D8-16"
+    """Two zones, per DECISIONS.md #1.
+
+    The boundary is 8 because that is where the forecast stops being the same
+    object: `layer` already changes there, the hourly multi-model window ends,
+    and model count falls from 4 to about 2. The earlier D5 cut had no such
+    basis — it came from a constant asserting skill drops there, and measured
+    per lead day the spread actually steps at D3 and again at D5-6, so D5 was
+    never a single clean break.
+    """
+    return "D1-8" if day_index <= 8 else "D9-16"
 
 
 def forecast_tier(
@@ -310,7 +316,7 @@ def forecast_tier(
     # D8-16 runs about two, so demoting D8-16 for "only two" fires on the normal
     # case and says nothing.
     if n_models is not None:
-        if band == "D8-16":
+        if band == "D9-16":
             if n_models <= 1:
                 demote(1, "single_model")
         elif n_models <= 2:
@@ -352,9 +358,10 @@ def forecast_tier(
     return {
         "tier": tier,
         "reasons": reasons,
-        # Display hint only. D1-4 shows a point value; beyond that the band is
-        # the honest object and a single number implies precision we do not have.
-        "show_point_value": band == "D1-4",
+        # DECISIONS.md #1. D9-16 is range-only: with ~1.9 models its p10-p90 is
+        # a min/max of two runs, so a point value there claims a precision that
+        # does not exist even by the pipeline's own arithmetic.
+        "show_point_value": band == "D1-8",
         "lead_band": band,
         # Gate fields for a notification feature that does not exist yet. Stored
         # now so the day it ships the gate is already populated and auditable,
@@ -672,7 +679,48 @@ def band_daily_rows(
                 ),
             }
         )
+    _attach_rolling_window(rows)
     return rows
+
+
+# ---- D9-16 episode view (DECISIONS.md #1, step 1) ----
+# D9-16 is band-only, and on its own the daily band there is close to empty:
+# measured on a live payload, five of eight days had p10 = p50 = p90 = 0 and one
+# more was a single model, so only two days carried any width at all. A viewer
+# sees a flat line.
+#
+# That is a real property of the forecast, not a rendering bug — at ten days out
+# a model places a storm within a few days, not on a day. Summing a centred
+# 3-day window says the thing that is actually knowable: "roughly this much,
+# somewhere around here". A storm on the 15th then also lifts the 14th and 16th
+# instead of leaving them empty.
+#
+# Quantiles are summed across the window rather than re-derived, which is an
+# APPROXIMATION and overstates width: it implicitly assumes the days are
+# perfectly correlated, so a true 3-day p90 would be narrower than this sum.
+# Recorded here because the alternative — re-quantiling from members — needs the
+# ensemble API, which is step 2 of the same decision.
+ROLLING_WINDOW_DAYS = 3
+ROLLING_FROM_DAY_INDEX = 9
+
+
+def _attach_rolling_window(rows: list[dict[str, Any]]) -> None:
+    """Add centred 3-day rolling sums to D9-16 rows, in place."""
+    ordered = sorted(rows, key=lambda r: r.get("day_index") or 0)
+    half = ROLLING_WINDOW_DAYS // 2
+    for position, row in enumerate(ordered):
+        if (row.get("day_index") or 0) < ROLLING_FROM_DAY_INDEX:
+            continue
+        lo = max(0, position - half)
+        hi = min(len(ordered), position + half + 1)
+        window = ordered[lo:hi]
+        row["roll3_days"] = len(window)
+        row["roll3_date_start"] = window[0]["date"]
+        row["roll3_date_end"] = window[-1]["date"]
+        for key, source in (("roll3_cm_p10", "snow_cm_p10"),
+                            ("roll3_cm_p50", "snow_cm_p50"),
+                            ("roll3_cm_p90", "snow_cm_p90")):
+            row[key] = round(sum(float(w.get(source) or 0.0) for w in window), 1)
 
 
 def tendency_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:

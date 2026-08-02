@@ -286,7 +286,7 @@ function summarySentence(quantRows: DailyRow[], bandKey: BandKey, u: UnitFormat)
   const total = quantRows.reduce((s, r) => s + r.snow_cm_p50, 0);
   const peak = quantRows.reduce<DailyRow | null>((best, r) => (best && best.snow_cm_p50 >= r.snow_cm_p50 ? best : r), null);
   if (total < 1 || !peak || peak.snow_cm_p50 < 1) {
-    return `Little snow expected at ${bandLower} over the next 7 days.`;
+    return `Little snow expected at ${bandLower} over the next 8 days.`;
   }
   const intensity = total >= 40 ? "Heavy snow ahead" : total >= 15 ? "Good snow ahead" : "Some snow expected";
   let sentence = `${intensity} — biggest day ${dayLabel(peak.date)} (~${fmt(u.snow(peak.snow_cm_p50))} ${u.snowUnit} at ${bandLower}).`;
@@ -1055,7 +1055,7 @@ function DepthSection({ depth, bands, bandElevations, incomingByBand }: {
 
   return (
     <div className="space-y-2">
-      <SectionHeader title="Snowpack" subtitle="on ground · next 7 days · season" />
+      <SectionHeader title="Snowpack" subtitle="on ground · next 8 days · season" />
       <div className="rounded-2xl bg-slate-800/40 p-3.5 space-y-2.5">
         <div className="flex items-center gap-3.5">
           <MountainBands
@@ -1148,40 +1148,57 @@ function fanLabel(v: number): string {
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
 }
 
-function SnowFanChart({ days, tint, labelScale = 1 }: { days: DailyRow[]; tint: string; labelScale?: number }) {
+function SnowFanChart({ days, tint, labelScale = 1, rolling = false }:
+  { days: DailyRow[]; tint: string; labelScale?: number; rolling?: boolean }) {
   const W = 560, H = 104, padT = 13;
   const n = Math.max(days.length, 1);
-  const maxY = Math.max(1, Math.max(0, ...days.map((d) => d.snow_cm_p90)) * 1.1);
+  // D9-16 draws the centred 3-day window, not the day (DECISIONS.md #1 step 1).
+  // The daily series there is mostly zeros — a storm is placed within a few
+  // days, not on one — so a day-by-day band renders as a flat line at the axis.
+  const lo = (d: DailyRow) => (rolling ? d.roll3_cm_p10 ?? d.snow_cm_p10 : d.snow_cm_p10);
+  const mid = (d: DailyRow) => (rolling ? d.roll3_cm_p50 ?? d.snow_cm_p50 : d.snow_cm_p50);
+  const hi = (d: DailyRow) => (rolling ? d.roll3_cm_p90 ?? d.snow_cm_p90 : d.snow_cm_p90);
+  const maxY = Math.max(1, Math.max(0, ...days.map(hi)) * 1.1);
   const plotH = H - padT;
   const x = (i: number) => ((i + 0.5) / n) * W;
   const y = (v: number) => padT + plotH * (1 - Math.min(v / maxY, 1));
-  const p90 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p90) }));
-  const p10 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p10) }));
-  const p50 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p50) }));
+  const p90 = days.map((d, i) => ({ x: x(i), y: y(hi(d)) }));
+  const p10 = days.map((d, i) => ({ x: x(i), y: y(lo(d)) }));
+  const p50 = days.map((d, i) => ({ x: x(i), y: y(mid(d)) }));
   // Most of this window runs on 2 models or fewer.
+  // Still keyed on member count, not on the width that came out: a 3-day sum of
+  // two-model days is a wider number but not a better-supported one.
   const degenerateFan = days.length > 0
     && days.filter((d) => (d.n_models ?? 4) <= 2).length > days.length / 2;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-      {/* Filled only where the band came from enough members to be a band.
-          Past about day 9 the payload carries 2 models and sometimes 1, where
-          min/max is the gap between deterministic runs rather than a quantile —
-          measured, that spread sits between 1.54 and 1.59 of the median across
-          the whole range, which is arithmetic. Filling it there would draw
-          confidence out of a fixed multiple. */}
-      {degenerateFan ? (
-        <path d={fanBandPath(p90, p10)} fill="none" stroke={tint} strokeOpacity={0.45}
-              strokeWidth={1} strokeDasharray="3 3" />
-      ) : (
-        <path d={fanBandPath(p90, p10)} fill={tint} fillOpacity={0.16} />
+      {/* The band is always FILLED. An earlier version dropped the fill when
+          members were thin, but D9-16 is band-only by decision and is thin by
+          definition — that combination left an empty outline with nothing
+          inside it. Thin support changes how the band is drawn, not whether it
+          exists: dashed edge and a lighter fill say "wide because we do not
+          know", which is the honest reading. */}
+      <path
+        d={fanBandPath(p90, p10)}
+        fill={tint}
+        fillOpacity={degenerateFan ? 0.10 : 0.18}
+        stroke={degenerateFan ? tint : "none"}
+        strokeOpacity={degenerateFan ? 0.4 : 0}
+        strokeWidth={degenerateFan ? 1 : 0}
+        strokeDasharray={degenerateFan ? "3 3" : undefined}
+      />
+      {/* No centre line in rolling mode. DECISIONS.md #1 makes D9-16 range-only,
+          and a p50 curve is a point estimate drawn as a line — removing the
+          number but keeping the line would have kept the claim and lost only
+          the legibility. */}
+      {!rolling && (
+        <path d={smoothPath(p50)} fill="none" stroke={tint} strokeWidth={2}
+              strokeLinecap="round" strokeLinejoin="round" />
       )}
-      <path d={smoothPath(p50)} fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-      {p50.map((p, i) => (
-        <g key={days[i].date}>
-          <circle cx={p.x} cy={p.y} r={2.5} fill={tint} />
-          <text x={p.x} y={Math.max(9, p.y - 6)} textAnchor="middle" fontSize={9} fill="#e2e8f0">{fanLabel(days[i].snow_cm_p50 * labelScale)}</text>
-        </g>
-      ))}
+      {/* No p50 markers or numbers here. DECISIONS.md #1 makes D9-16 range-only:
+          with ~1.9 models the p10-p90 is a min/max of two runs, and printing a
+          centre value on top of it claims a precision the arithmetic does not
+          support. The band is the whole statement. */}
     </svg>
   );
 }
@@ -1190,9 +1207,9 @@ function BandFanSection({ days }: { days: DailyRow[] }) {
   const u = useUnitFormat();
   return (
     <div className="space-y-2">
-      <SectionHeader title="D8–16 band" subtitle="beyond model agreement · p50 + p10–p90" />
+      <SectionHeader title="D9–16 range" subtitle="3-day windows · range only" />
       <div className="rounded-2xl bg-slate-800/40 p-3">
-        <SnowFanChart days={days} tint="#38BDF8" labelScale={u.snowScale} />
+        <SnowFanChart days={days} tint="#38BDF8" labelScale={u.snowScale} rolling />
         <div className="flex mt-1">
           {days.map((day) => (
             <div key={day.date} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
@@ -1294,8 +1311,10 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
     return daily.filter((r) => r.band === band).sort((a, b) => a.day_index - b.day_index);
   }, [payload, band]);
 
-  const quantRows = useMemo(() => bandRows.filter((r) => r.day_index >= 1 && r.day_index <= 7), [bandRows]);
-  const bandOnlyRows = useMemo(() => bandRows.filter((r) => r.day_index >= 8 && r.day_index <= 16), [bandRows]);
+  // DECISIONS.md #1: two zones, boundary at 8. D1-8 carries a point value,
+  // D9-16 is band-only.
+  const quantRows = useMemo(() => bandRows.filter((r) => r.day_index >= 1 && r.day_index <= 8), [bandRows]);
+  const bandOnlyRows = useMemo(() => bandRows.filter((r) => r.day_index >= 9 && r.day_index <= 16), [bandRows]);
 
   useEffect(() => {
     if (quantRows.length && (!selectedDay || !quantRows.some((r) => r.date === selectedDay))) {
