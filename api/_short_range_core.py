@@ -231,10 +231,19 @@ TIER_D8_LAYER_DAY = 8           # D8+ leaves the hourly multi-model window
 #
 # The rule this encodes: a demotion must distinguish THIS row from a typical
 # row. Measured, a typical ridge-top day here gusts 54 km/h and a typical snow
-# day spreads 1.6x. Those are the climate, not a warning. Moderate sits near the
-# 75th percentile of what we serve and low near the 90th.
-TIER_SPREAD_MODERATE = 2.1      # (p90-p10)/p50 — served p75
-TIER_SPREAD_LOW = 4.1           # served p90
+# day spreads 1.55x. Those are the climate, not a warning. Moderate sits near
+# the 75th percentile of what we serve and low near the 90th.
+#
+# SPREAD anchors recomputed 2026-08-02 from the FORECAST ARCHIVE rather than a
+# live sample: 3,458 rows over 47 resorts with p90 >= 1 cm and p50 >= 0.5 cm,
+# giving p50 1.55 / p75 1.89 / p90 3.32. The first pass used 2.1 / 4.1 from 240
+# live rows over 5 resorts, which was looser than the fleet actually is.
+#
+# WIND anchors could NOT be recomputed the same way: the archive carries no wind
+# gust column, so 75 / 110 still come from that 240-row sample and are the
+# weakest numbers here. They should be redone once gusts are archived.
+TIER_SPREAD_MODERATE = 1.89     # archive p75
+TIER_SPREAD_LOW = 3.32          # archive p90
 TIER_MARGIN_MARGINAL_M = 150.0  # band this close to the snow level is a coin toss
 TIER_WIND_MODERATE_KMH = 75     # served p75 of gusts; 45 was the median day
 TIER_WIND_LOW_KMH = 110         # served p90
