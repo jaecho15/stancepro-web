@@ -33,6 +33,10 @@ REQUEST_TIMEOUT_S = 60
 DEFAULT_MODELS = "ecmwf_ifs025,gfs_seamless,icon_seamless,gem_seamless"
 QUANTILES = {"p10": 0.10, "p50": 0.50, "p90": 0.90}
 SNOW_LEVEL_OFFSET_M = 200.0
+# Region lock: no region has a verification score yet, because no region has
+# truth yet. Flipped per region once a scored verdict exists; until then every
+# row reports region_unverified, which is the honest state and blocks alerts.
+REGION_VERIFIED = False
 TIME_BLOCKS = (
     ("dawn", "새벽", 0, 6),
     ("morning", "오전", 6, 12),
@@ -206,49 +210,68 @@ def _rain_risk(elevation: float | None, freezing: float | None) -> bool:
 
 
 # ---- forecast confidence tier (product policy, 2026-08-02) ----
-# These thresholds are PRODUCT POLICY, not calibrated physics. There is no
-# verification history to calibrate against — that is the whole point of the
-# observation archives now filling — so every number below is a defensible
-# default chosen to fail toward under-promising, and every one is reversible.
-# Nothing here changes a forecast value; it only labels how much weight the
-# display should put on one.
+# PRODUCT POLICY, not calibrated physics. Nothing here changes a forecast value;
+# it labels how much weight a display should put on one, and records why.
 #
-# The failure this exists to reduce is the one users actually notice: a
-# confident-looking "3 cm" that arrives as nothing, or a "20 cm" that falls as
-# rain. Both are visible today because the payload exposes a p50 with no
-# statement of how much it should be trusted.
+# LEAD IS NO LONGER A DEMOTION — IT IS THE STRATUM
+# The first version demoted for lead. That was wrong twice over. It restated
+# `layer`, which the payload already carries and the UI already renders as its
+# own section; and it flattened D5-16 into one undifferentiated bucket, which is
+# the bulk of the product (target horizon D7-D14). Worse, it made `high`
+# structurally impossible past lead 4.
 #
-# Four independent demotions, deliberately not blended into a score. A blended
-# score hides WHY it is low, and the reason is what a user can act on: "models
-# disagree" and "it may rain instead" call for different decisions.
-TIER_LEAD_MODERATE_DAY = 5      # beyond this, ensemble skill is materially lower
-TIER_D8_LAYER_DAY = 8           # D8+ leaves the hourly multi-model window
-# Thresholds set from the SERVED distribution (240 rows, 5 resorts, 2026-08-02),
-# not from intuition. The first cut used 45/70 km/h and 1.5/3.0 spread and put
-# 198 of 240 rows in `low` — including 95 of the 95 days carrying >=1 cm, which
-# is every row a user actually looks at. A label that fires on everything is not
-# a label.
+# Anchors are therefore per lead band, measured from the forecast archive
+# (rows with p90 >= 1 cm and p50 >= 0.5 cm), so "wide" means wide FOR THIS LEAD:
 #
-# The rule this encodes: a demotion must distinguish THIS row from a typical
-# row. Measured, a typical ridge-top day here gusts 54 km/h and a typical snow
-# day spreads 1.55x. Those are the climate, not a warning. Moderate sits near
-# the 75th percentile of what we serve and low near the 90th.
+#     D1-4    n=1530   p50 1.25   p75 1.99   p90 3.12   models 4.0
+#     D5-7    n=647    p50 2.17   p75 3.49   p90 6.46   models 3.8
+#     D8-16   n=1281   p50 1.57   p75 1.61   p90 1.67   models 2.1
 #
-# SPREAD anchors recomputed 2026-08-02 from the FORECAST ARCHIVE rather than a
-# live sample: 3,458 rows over 47 resorts with p90 >= 1 cm and p50 >= 0.5 cm,
-# giving p50 1.55 / p75 1.89 / p90 3.32. The first pass used 2.1 / 4.1 from 240
-# live rows over 5 resorts, which was looser than the fleet actually is.
+# D8-16 IS DEGENERATE AND IS TREATED AS SUCH
+# Its spread barely moves — 1.57 at the median, 1.67 at the 90th. With 2.1
+# models the min/max is the gap between two deterministic runs, not a quantile,
+# so it is nearly a fixed multiple of the median and separates nothing. Applying
+# a spread anchor there would manufacture a distinction out of arithmetic, so
+# spread is NOT used as a discriminator in that band. Fixing it needs more
+# members (a lagged ensemble, or a real ensemble API), not a different threshold.
 #
-# WIND anchors could NOT be recomputed the same way: the archive carries no wind
-# gust column, so 75 / 110 still come from that 240-row sample and are the
-# weakest numbers here. They should be redone once gusts are archived.
-TIER_SPREAD_MODERATE = 1.89     # archive p75
-TIER_SPREAD_LOW = 3.32          # archive p90
-TIER_MARGIN_MARGINAL_M = 150.0  # band this close to the snow level is a coin toss
-TIER_WIND_MODERATE_KMH = 75     # served p75 of gusts; 45 was the median day
-TIER_WIND_LOW_KMH = 110         # served p90
+# WHY THE TIER NO LONGER GATES DISPLAY
+# Stratified by lead, the tier does not predict forecast revision: within lead 2,
+# `moderate` revised LESS than `high` (0.12 vs 0.21); within lead 3 the order was
+# high < low < moderate. The pooled result that looked convincing (0.27 vs 0.50)
+# was Simpson's paradox — `high` is over-represented at lead 2, which revises
+# less for reasons that have nothing to do with the tier. See TIER_METRIC.md.
+# The tier ships as payload metadata and as `reasons` text; the display decision
+# is made from the band itself.
+TIER_MIN_MODELS_FULL = 4
 TIER_SNOW_FLOOR_CM = 0.5        # below this, tiering a rounding artefact is noise
 TIER_PRECIP_FLOOR_MM = 1.0      # below this, phase is moot — nothing is falling
+TIER_MARGIN_MARGINAL_M = 150.0  # band this close to the snow level is a coin toss
+
+# (p90-p10)/p50 anchors per lead band: (moderate, low). None = do not discriminate.
+TIER_SPREAD_ANCHORS = {
+    "D1-4": (1.99, 3.12),
+    "D5-7": (3.49, 6.46),
+    "D8-16": None,              # degenerate; see above
+}
+
+# Wind is NOT a confidence axis. High wind does not make a total wrong, it makes
+# it non-local — the snow arrives, just not necessarily where the point forecast
+# says. That is a slope-condition statement (transport, loading, scoured faces),
+# and mixing it into confidence conflated two different things a rider acts on
+# differently. Thresholds remain PROVISIONAL: every other anchor was recomputed
+# from 3,458 archive rows, but the archive has no gust column, so these still
+# rest on a 240-row live sample.
+WIND_TRANSPORT_KMH = 75         # provisional (240-row sample)
+WIND_STRONG_TRANSPORT_KMH = 110  # provisional (240-row sample)
+
+
+def lead_band(day_index: int) -> str:
+    if day_index <= 4:
+        return "D1-4"
+    if day_index <= 7:
+        return "D5-7"
+    return "D8-16"
 
 
 def forecast_tier(
@@ -261,13 +284,13 @@ def forecast_tier(
     snow_level_margin_m: float | None,
     wind_gust_kmh: int | None,
     precip_mm: float | None = None,
+    region_verified: bool = True,
 ) -> dict[str, Any]:
-    """How much weight the display should put on this row, and why.
+    """Confidence metadata for one day-band row.
 
-    Returns {'tier': high|moderate|low, 'reasons': [...], 'show_point_value':
-    bool}. `reasons` is ordered most-severe first and is meant to be shown, not
-    just logged — "models disagree" and "may fall as rain" are different user
-    decisions and a single blended score cannot express either.
+    Returns tier / reasons / show_point_value, plus the two gate fields
+    (`alert_eligible`, `slope_condition`) that a notification feature will read
+    when one exists. Nothing here is a forecast value.
     """
     reasons: list[str] = []
     level = 0                                  # 0 high, 1 moderate, 2 low
@@ -278,83 +301,66 @@ def forecast_tier(
             level = to
         reasons.append(reason)
 
-    # Two gates, because three of the five demotions are only meaningful when
-    # something is actually forecast to happen. Without them a dry, windy day
-    # reads `low` for "high_wind_transport" — there is no snow to transport, and
-    # the confident answer is that nothing falls. Measured before adding these:
-    # 34 of 48 Cardrona rows came back `low`, almost all on that error, which
-    # would have made the tier worthless by making it near-constant.
-    #
-    # The gates differ on purpose. Wind matters if there is snow to move, so it
-    # keys on the upper end (p90) — a day that MIGHT deliver is still a day wind
-    # can redistribute. Phase matters if there is water falling at all, snow or
-    # not, so it keys on precipitation: that is exactly the case where "it will
-    # rain instead" is the useful thing to say.
+    band = lead_band(day_index)
     upper = snow_p90 if snow_p90 is not None else (snow_p50 or 0.0)
     snow_in_play = upper >= TIER_SNOW_FLOOR_CM
     precip_in_play = (precip_mm or 0.0) >= TIER_PRECIP_FLOOR_MM
 
-    # 1. Lead. Nothing to do with this forecast's own numbers — a D10 answer is
-    #    less trustworthy than a D2 answer of identical spread.
-    # Demotes by ONE even at D8+. The payload already carries layer="D8-16" and
-    # the app renders it as its own section, so demoting to `low` here would
-    # restate the layer rather than say anything about this day.
-    if day_index >= TIER_D8_LAYER_DAY:
-        demote(1, "long_lead")
-    elif day_index >= TIER_LEAD_MODERATE_DAY:
-        demote(1, "medium_lead")
-
-    # 2. Model count. A "consensus" of two is not a consensus.
-    # Judged against what that layer normally has, not an absolute count.
-    # Measured: D1-7 is always 4 models; D8-16 runs a median of 2 (1:15, 2:75,
-    # 3:45 of 135 rows). Demoting D8-16 for "only 2 models" would fire on the
-    # normal case and say nothing.
+    # Model count, judged against what its band normally has. D1-7 runs four;
+    # D8-16 runs about two, so demoting D8-16 for "only two" fires on the normal
+    # case and says nothing.
     if n_models is not None:
-        if day_index < TIER_D8_LAYER_DAY:
-            if n_models <= 2:
-                demote(2, "few_models")
-            elif n_models < 4:
-                demote(1, "reduced_models")
-        elif n_models <= 1:
-            demote(1, "single_model")
+        if band == "D8-16":
+            if n_models <= 1:
+                demote(1, "single_model")
+        elif n_models <= 2:
+            demote(2, "few_models")
+        elif n_models < TIER_MIN_MODELS_FULL:
+            demote(1, "reduced_models")
 
-    # 3. Ensemble spread, relative to the median. Skipped entirely for trivial
-    #    amounts: 0.1 vs 0.4 cm is a 3x relative spread and means nothing.
-    if snow_p50 is not None and snow_p50 >= TIER_SNOW_FLOOR_CM:
+    anchors = TIER_SPREAD_ANCHORS.get(band)
+    if anchors and snow_p50 is not None and snow_p50 >= TIER_SNOW_FLOOR_CM:
         low = snow_p10 if snow_p10 is not None else snow_p50
         high = snow_p90 if snow_p90 is not None else snow_p50
         spread = (high - low) / snow_p50
-        if spread >= TIER_SPREAD_LOW:
-            demote(2, "wide_spread")
-        elif spread >= TIER_SPREAD_MODERATE:
-            demote(1, "moderate_spread")
+        if spread >= anchors[1]:
+            demote(2, "wide_spread_for_lead")
+        elif spread >= anchors[0]:
+            demote(1, "moderate_spread_for_lead")
 
-    # 4. Phase. The rain veto: a band below the snow level is not a low-confidence
-    #    snow forecast, it is a rain forecast, and the display must lead with that
-    #    rather than with a small snow number.
+    # Phase. Only meaningful when water is actually falling.
+    rain_veto = False
     if snow_level_margin_m is not None and precip_in_play:
         if snow_level_margin_m < 0:
             demote(2, "rain_risk")
+            rain_veto = True
         elif snow_level_margin_m < TIER_MARGIN_MARGINAL_M:
             demote(1, "marginal_snow_level")
 
-    # 5. Wind. High wind does not make the total wrong, it makes it non-local:
-    #    the snow arrives somewhere, just not necessarily where the point forecast
-    #    says. A demotion, never a change to the number.
+    # Slope condition, reported separately from confidence.
+    slope_condition = None
     if wind_gust_kmh is not None and snow_in_play:
-        if wind_gust_kmh >= TIER_WIND_LOW_KMH:
-            demote(2, "high_wind_transport")
-        elif wind_gust_kmh >= TIER_WIND_MODERATE_KMH:
-            demote(1, "wind_transport")
+        if wind_gust_kmh >= WIND_STRONG_TRANSPORT_KMH:
+            slope_condition = "strong_wind_transport"
+        elif wind_gust_kmh >= WIND_TRANSPORT_KMH:
+            slope_condition = "wind_transport"
+
+    if not region_verified:
+        reasons.append("region_unverified")
 
     tier = ("high", "moderate", "low")[level]
-    # At `low`, a single number implies precision the forecast does not have —
-    # the display should show the p10-p90 range instead. This is a hint, not an
-    # instruction: clients decide, but they all get the same hint.
     return {
         "tier": tier,
         "reasons": reasons,
-        "show_point_value": tier != "low",
+        # Display hint only. D1-4 shows a point value; beyond that the band is
+        # the honest object and a single number implies precision we do not have.
+        "show_point_value": band == "D1-4",
+        "lead_band": band,
+        # Gate fields for a notification feature that does not exist yet. Stored
+        # now so the day it ships the gate is already populated and auditable,
+        # rather than being invented at that moment.
+        "alert_eligible": (not rain_veto) and region_verified and snow_in_play,
+        "slope_condition": slope_condition,
     }
 
 
@@ -662,6 +668,7 @@ def band_daily_rows(
                     snow_p10=snow_p10, snow_p50=snow_p50, snow_p90=snow_p90,
                     snow_level_margin_m=_snow_level_margin(band_elevation, freezing),
                     wind_gust_kmh=wind_gust_kmh, precip_mm=precip_p50,
+                    region_verified=REGION_VERIFIED,
                 ),
             }
         )
