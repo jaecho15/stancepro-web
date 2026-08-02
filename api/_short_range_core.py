@@ -747,6 +747,20 @@ def fetch_ensemble_daily(
     return out
 
 
+# CONFIG_VERSION IS NOT BUMPED FOR THIS, DELIBERATELY
+# The survey flagged that adopting the ensemble breaks `short_range_forecast_archive`
+# and needs a version bump. It does not, because `attach_ensemble` writes only the
+# parallel `ens_*` keys and never touches `cm_p10/p50/p90` — the archived series keeps
+# one definition end to end, and CONFIG_VERSION stamps the physics, which did not
+# change.
+#
+# What DID change is what a viewer sees at D9-16: a min/max over about two
+# deterministic runs became a quantile over real members, on 2026-08-02. A scorer
+# reading the archive's `cm_*` columns may cross that date freely. A scorer asking
+# "how good was the band we displayed" may not, and nothing in the schema will warn
+# them — hence this comment rather than a silent no-op.
+
+
 def attach_ensemble(rows: list[dict[str, Any]],
                     ensemble: dict[str, tuple[float, float, float, int]]) -> None:
     """Attach ens_* to D9-16 rows, in place. D1-8 is untouched — it already has
