@@ -418,6 +418,13 @@ def _archive_rows(resort_id: str, payload: dict, run_init_time: str) -> tuple[li
             "freezing_level_m": _num(day.get("freezing_level_m")),
             "rain_risk": bool(rain_risk) if isinstance(rain_risk, bool) else None,
             "n_models": int(n_models) if isinstance(n_models, int) and not isinstance(n_models, bool) else None,
+            # Stored as issued, not recomputed later: the tier uses inputs this
+            # table does not otherwise carry, so a recomputation is a different
+            # function on a subset. NULL on rows written before the columns
+            # existed, which must read as "not recorded" and never as a tier.
+            "tier": day.get("tier"),
+            "tier_reasons": day.get("reasons"),
+            "wind_gust_kmh": int(gust) if isinstance((gust := day.get("wind_gust_kmh")), int) and not isinstance(gust, bool) else None,
             # Only a FRESH compute reaches this writer; a cache hit is the same
             # forecast already recorded.
             "served_cached": False,
