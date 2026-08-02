@@ -256,7 +256,7 @@ function CombinedSeasonalHistoryChart({
   const gap = 10;
   const padL = 28;
   const padR = 32;
-  const padT = 18; // top strip reserved for the band title
+  const padT = 20; // top strip reserved for the band title
   const padB = 16;
   const snowTop = 0;
   const lineTop = showSnow ? bandH + gap : 0;
@@ -362,7 +362,7 @@ function CombinedSeasonalHistoryChart({
             {v}
           </text>
         ))}
-        <text x={2} y={snowTop + 11} fontSize="7" fontWeight="600" fill="#38bdf8">
+        <text x={2} y={snowTop + 10} fontSize="7" fontWeight="600" fill="#38bdf8">
           Season snowfall (cm)
         </text>
         {baseline && (
@@ -521,7 +521,7 @@ function CombinedSeasonalHistoryChart({
         ))}
         <text
           x={W - 2}
-          y={lineTop + 11}
+          y={lineTop + 10}
           textAnchor="end"
           fontSize="7"
           fontWeight="600"
