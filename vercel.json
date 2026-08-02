@@ -24,6 +24,10 @@
   },
   "crons": [
     {
+      "path": "/api/archive-served-payloads",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/sweep-short-range",
       "schedule": "10 7 * * *"
     },
