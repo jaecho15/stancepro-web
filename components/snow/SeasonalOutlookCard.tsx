@@ -193,14 +193,17 @@ function RecordMarker({
   label,
   color,
   W,
+  bandTop,
 }: {
   cx: number;
   cy: number;
   label: string;
   color: string;
   W: number;
+  bandTop: number;
 }) {
-  const above = cy > 16;
+  // 28 keeps record-year labels below the reserved band-title strip.
+  const above = cy > bandTop + 28;
   const tx = Math.min(Math.max(cx, 12), W - 12);
   return (
     <>
@@ -228,6 +231,9 @@ const argExtreme = <T,>(arr: T[], val: (t: T) => number, want: "max" | "min"): T
 // (lower band, right m axis) share one year scale and one bottom tick row.
 // Plot bands are vertically split so the series never overlay — mid-elevation
 // snowfall can look flat while the snow line rises. Pure SVG for SSR.
+// Each band draws its own "name (unit)" label in a reserved top strip (padT)
+// so readers can tell the bands apart; the header keeps only the chart-level
+// title. Parity: iOS/Android SeasonalHistoryCharts.
 function CombinedSeasonalHistoryChart({
   history,
   historyBaseline,
@@ -250,7 +256,7 @@ function CombinedSeasonalHistoryChart({
   const gap = 10;
   const padL = 28;
   const padR = 32;
-  const padT = 8;
+  const padT = 18; // top strip reserved for the band title
   const padB = 16;
   const snowTop = 0;
   const lineTop = showSnow ? bandH + gap : 0;
@@ -334,6 +340,7 @@ function CombinedSeasonalHistoryChart({
           label={String(hi.year)}
           color="#38bdf8"
           W={W}
+          bandTop={snowTop}
         />
         <RecordMarker
           cx={x(lo.year)}
@@ -341,6 +348,7 @@ function CombinedSeasonalHistoryChart({
           label={String(lo.year)}
           color="#fbbf24"
           W={W}
+          bandTop={snowTop}
         />
         {yTicks.map((v) => (
           <text
@@ -354,13 +362,13 @@ function CombinedSeasonalHistoryChart({
             {v}
           </text>
         ))}
-        <text x={2} y={snowTop + 10} fontSize="7" fill="#38bdf8">
-          cm
+        <text x={2} y={snowTop + 11} fontSize="7" fontWeight="600" fill="#38bdf8">
+          Season snowfall (cm)
         </text>
         {baseline && (
           <text
             x={W - padR}
-            y={Math.max(ySnow(baseline.median_cm) - 2, snowTop + 8)}
+            y={Math.max(ySnow(baseline.median_cm) - 2, snowTop + padT + 8)}
             textAnchor="end"
             fontSize="7"
             fill="#94a3b8"
@@ -489,6 +497,7 @@ function CombinedSeasonalHistoryChart({
           label={String(hiLine.year)}
           color="#fb923c"
           W={W}
+          bandTop={lineTop}
         />
         <RecordMarker
           cx={x(loLine.year)}
@@ -496,6 +505,7 @@ function CombinedSeasonalHistoryChart({
           label={String(loLine.year)}
           color="#38bdf8"
           W={W}
+          bandTop={lineTop}
         />
         {yTicks.map((v) => (
           <text
@@ -509,13 +519,20 @@ function CombinedSeasonalHistoryChart({
             {v}
           </text>
         ))}
-        <text x={W - 14} y={lineTop + 10} fontSize="7" fill="#cbd5e1">
-          m
+        <text
+          x={W - 2}
+          y={lineTop + 11}
+          textAnchor="end"
+          fontSize="7"
+          fontWeight="600"
+          fill="#cbd5e1"
+        >
+          Winter snow line (m)
         </text>
         {baseline && (
           <text
             x={W - padR - 2}
-            y={Math.max(yLine(baseline.median_m) - 2, lineTop + 8)}
+            y={Math.max(yLine(baseline.median_m) - 2, lineTop + padT + 8)}
             textAnchor="end"
             fontSize="7"
             fill="#94a3b8"
@@ -531,11 +548,7 @@ function CombinedSeasonalHistoryChart({
     <div>
       <div className="flex items-center justify-between mb-1.5 gap-2">
         <p className="text-[11px] uppercase tracking-wide text-slate-500">
-          {showSnow && showLine
-            ? "Year-by-year record · snow line"
-            : showSnow
-              ? "Year-by-year record"
-              : "Winter snow line"}
+          Year-by-year record
         </p>
         {badge}
       </div>
@@ -563,17 +576,18 @@ function CombinedSeasonalHistoryChart({
       </svg>
       {showSnow && (
         <p className="text-[11px] text-slate-600 mt-1">
-          Modeled season-total snowfall · ERA5 reanalysis · shaded band = normal range
-          (10th–90th percentile). Mid-elevation snowfall input, not snowpack or season
-          length.
+          <span className="font-semibold">Season snowfall</span> — Modeled season-total
+          snowfall · ERA5 reanalysis · shaded band = normal range (10th–90th percentile).
+          Mid-elevation snowfall input, not snowpack or season length.
         </p>
       )}
       {showLine && (
         <p className="text-[11px] text-slate-600 mt-1">
-          Where winter days cross the rain/snow threshold · ERA5 reanalysis. The line
-          tracks temperature, so it rises under warming even where snowfall looks flat.
-          Metres are modeled; a 35-year reanalysis trend is indicative, not definitive —
-          decadal swings (and coarse grids over small ranges) can move it.
+          <span className="font-semibold">Winter snow line</span> — Where winter days
+          cross the rain/snow threshold · ERA5 reanalysis. The line tracks temperature,
+          so it rises under warming even where snowfall looks flat. Metres are modeled;
+          a 35-year reanalysis trend is indicative, not definitive — decadal swings (and
+          coarse grids over small ranges) can move it.
         </p>
       )}
     </div>
