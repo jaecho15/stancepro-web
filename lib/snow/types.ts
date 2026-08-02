@@ -57,6 +57,24 @@ export interface DailyRow {
   // Metres of headroom between the band and the rain–snow line; negative =
   // the line sits above this band (mixed precip). Drives the precip icon.
   snow_level_margin_m?: number | null;
+  /**
+   * Confidence metadata. Optional on older caches, which is why every consumer
+   * must tolerate absence — the serving cache is on-demand, so a payload
+   * predating these fields can still be returned.
+   */
+  tier?: "high" | "moderate" | "low";
+  reasons?: string[];
+  /**
+   * Whether a single number is defensible for this row. Decided by lead band,
+   * NOT by the tier: held at a fixed lead the tier does not predict forecast
+   * revision (see scripts/TIER_METRIC.md). True only for D1-4.
+   */
+  show_point_value?: boolean;
+  lead_band?: "D1-4" | "D5-7" | "D8-16";
+  /** Rain veto AND region lock AND something actually forecast. */
+  alert_eligible?: boolean;
+  /** Wind transport — a slope statement, deliberately not a confidence one. */
+  slope_condition?: "wind_transport" | "strong_wind_transport" | null;
   /** WMO weather interpretation code (Open-Meteo). Optional on older caches. */
   weather_code?: number | null;
   time_of_day?: TimeBlock[];

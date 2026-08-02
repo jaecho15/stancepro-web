@@ -48,6 +48,7 @@ const BLOCK_COLORS: Record<string, string> = {
   afternoon: "#3B82F6",
   night: "#A78BFA",
 };
+const BLOCK_TRACK_PX = 44;
 const ACCENT = "#3B82F6";
 const SNOWLINE_COLOR = "#EC4899";
 const FREEZING_COLOR = "#3B82F6";
@@ -110,6 +111,48 @@ function blockKind(b: TimeBlock): PrecipKind {
   if (b.precip_type === "mix") return "mix";
   if (b.precip_type === "snow") return "snow";
   return precipKind(b);
+}
+
+/**
+ * Human text for a demotion reason. Shown, not logged — "models disagree" and
+ * "may fall as rain" are different decisions for a rider, and a single badge
+ * cannot express either.
+ *
+ * `region_unverified` is deliberately absent: it is true of every row today
+ * because no region has a scored verdict yet, so surfacing it would put an
+ * identical caveat on the entire product and teach people to ignore all of them.
+ * It still ships in the payload and still blocks alerts.
+ */
+const REASON_TEXT: Record<string, string> = {
+  rain_risk: "may fall as rain at this elevation",
+  marginal_snow_level: "snow line sits close to this band",
+  wide_spread_for_lead: "models disagree unusually widely for this range",
+  moderate_spread_for_lead: "models disagree more than usual for this range",
+  few_models: "fewer models than usual",
+  reduced_models: "one model missing",
+  single_model: "one model only",
+};
+const SLOPE_TEXT: Record<string, string> = {
+  wind_transport: "wind moving snow between slopes",
+  strong_wind_transport: "strong wind — snow redistributed, totals are not local",
+};
+function rowNotes(row: DailyRow): string[] {
+  const notes = (row.reasons ?? [])
+    .filter((r) => r !== "region_unverified")
+    .map((r) => REASON_TEXT[r])
+    .filter((t): t is string => Boolean(t));
+  const slope = row.slope_condition ? SLOPE_TEXT[row.slope_condition] : null;
+  if (slope) notes.push(slope);
+  return notes;
+}
+/**
+ * Whether to print a single number for this row.
+ *
+ * Defaults to TRUE when the field is absent, so an older cached payload keeps
+ * rendering exactly as it did rather than silently collapsing to ranges.
+ */
+function showsPointValue(row: DailyRow): boolean {
+  return row.show_point_value ?? true;
 }
 /** Headline amount, already display-converted (metric = unchanged). */
 function dayAmount(row: {
@@ -206,7 +249,7 @@ function LegendModal({ onClose }: { onClose: () => void }) {
     [<PrecipIcon key="s" kind="snow" />, "Snow", "Falls as snow · number = expected cm (p50)"],
     [<PrecipIcon key="m" kind="mix" />, "Rain/snow mix", "Rain–snow line sits inside the resort"],
     [<PrecipIcon key="r" kind="rain" />, "Rain", "Mostly rain, little or no snow"],
-    [<span key="w" className="inline-flex items-center gap-1 text-slate-300"><WindArrow deg={315} /> <span className="text-xs">NW 6</span></span>, "Wind", "Arrow points where wind blows to; number = m/s"],
+    [<span key="w" className="inline-flex items-center gap-1 text-slate-300"><WindArrow deg={315} /> <span className="text-xs">NW 20</span></span>, "Wind", "Arrow points where wind blows to; number = km/h"],
     [<span key="f" className="text-xs" style={{ color: FREEZING_COLOR }}>1,900 m</span>, "Freezing level", "Snow above this altitude, rain below"],
     [<span key="l" className="text-xs" style={{ color: SNOWLINE_COLOR }}>snowline</span>, "Snowline", "Forecast rain/snow line; dashed = satellite observed"],
     [<span key="d" className="text-xs text-slate-400">measured</span>, "Snow depth", "measured = nearby station · estimated = model · satellite gates bare bands"],
@@ -265,8 +308,76 @@ function SummaryBanner({ text }: { text: string }) {
 // 2) Seven-day strip (tap to re-center the grid)
 // ============================================================================
 
+
+/**
+ * The day's snow as a bar, with the p10–p90 band drawn BEHIND it on the same
+ * scale.
+ *
+ * Both shapes are centimetres against one axis, so the bar answers "how much"
+ * and the band answers "how sure" without the two competing. An earlier version
+ * drew only the range, and it inverted on large values: a 70 cm day spanning
+ * 53–85 rendered SHORTER than a 17 cm day spanning 8–31, because range length
+ * is not amount. Putting the bar back gives magnitude its own encoding again.
+ *
+ * The band is drawn first and sits behind, so a wide band reads as a halo
+ * around a confident bar rather than as a second object to decode.
+ *
+ * DEGENERATE BANDS ARE NOT DRAWN AS BANDS
+ * Past about day 9 the payload carries 2 models, and sometimes 1 by day 15.
+ * With one model min == max, so the span is exactly zero — and a zero-width
+ * band reads as perfect certainty when it actually means "one model". With two
+ * it is the gap between two deterministic runs, not a quantile: measured across
+ * the archive the spread sits between 1.54 and 1.59 of the median over the
+ * whole range, which is arithmetic rather than information. Those render as a
+ * dashed outline so the shape itself says "do not read width here".
+ */
+function SnowBar({ row, scaleMax }: { row: DailyRow; scaleMax: number }) {
+  const lo = row.snow_cm_p10 ?? 0;
+  const hi = row.snow_cm_p90 ?? 0;
+  const mid = row.snow_cm_p50 ?? 0;
+  const H = 30;
+  // Always occupies the same box, even with nothing to draw: a bar that appears
+  // and disappears shifts the number left and right and breaks the scan line
+  // down the strip.
+  if (scaleMax <= 0 || hi <= 0) return <span className="block w-3 shrink-0" style={{ height: H }} aria-hidden />;
+
+  const y = (v: number) => H * (1 - Math.min(1, Math.max(0, v / scaleMax)));
+  const degenerate = (row.n_models ?? 4) <= 2 || hi - lo < 0.05;
+
+  return (
+    <span
+      className="relative block w-3 shrink-0"
+      style={{ height: H }}
+      role="img"
+      aria-label={
+        degenerate
+          ? `${fmt(mid)}, single-model estimate`
+          : `${fmt(mid)}, likely ${fmt(lo)} to ${fmt(hi)}`
+      }
+    >
+      <span
+        className="absolute inset-x-0 rounded-[2px]"
+        style={{
+          top: y(hi), height: Math.max(2, y(lo) - y(hi)),
+          background: degenerate ? "transparent" : `${ACCENT}33`,
+          border: degenerate ? `1px dashed ${ACCENT}66` : "none",
+        }}
+      />
+      {/* Floor of 2px: at a 62 cm scale a 4.7 cm day is 7% and would render as a
+          hairline, reading as "nothing" on a day that is not nothing. */}
+      <span
+        className="absolute inset-x-0 bottom-0 rounded-t-[2px]"
+        style={{ top: Math.min(y(mid), H - 2), background: ACCENT, opacity: 0.9 }}
+      />
+    </span>
+  );
+}
+
 function SevenDayStrip({ rows, selectedDate, onSelect }: { rows: DailyRow[]; selectedDate: string | null; onSelect: (d: string) => void }) {
   const u = useUnitFormat();
+  // One scale across the visible strip, so bar heights are comparable between
+  // days. Per-day scaling would make a 1 cm day look like a 30 cm day.
+  const scaleMax = Math.max(0, ...rows.map((r) => r.snow_cm_p90 ?? 0));
   return (
     <div className="space-y-1.5">
       <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
@@ -286,9 +397,12 @@ function SevenDayStrip({ rows, selectedDate, onSelect }: { rows: DailyRow[]; sel
               <span className="text-[11px] font-semibold text-slate-200">{dayWeekday(row.date)}</span>
               <span className="text-[9px] text-slate-500">{row.date.slice(5)}</span>
               <DayConditionIcon row={row} className="w-[18px] h-[18px]" />
-              <span className="flex items-baseline gap-0.5">
-                <span className="text-sm font-bold text-white">{fmt(amount.value)}</span>
-                <span className="text-[8px] text-slate-500">{amount.unit}</span>
+              <span className="flex items-end gap-1">
+                <SnowBar row={row} scaleMax={scaleMax} />
+                <span className="flex items-baseline gap-0.5">
+                  <span className="text-sm font-bold text-white">{fmt(amount.value)}</span>
+                  <span className="text-[8px] text-slate-500">{amount.unit}</span>
+                </span>
               </span>
               <span className="text-[9px] font-semibold" style={{ color: ACCENT }}>{chance != null ? `${chance}%` : "\u00a0"}</span>
             </button>
@@ -342,6 +456,9 @@ function ForecastGrid({
   blockScaleMax: number;
   selectedBand: BandKey;
 }) {
+  // One scale across the days shown here, so bar heights compare between them.
+  const detailSnowMax = Math.max(0, ...detailDays.map((d) => d.snow_cm_p90 ?? 0));
+
   const u = useUnitFormat();
   const n = detailDays.length;
   const tpl = gridTemplate(n);
@@ -371,9 +488,12 @@ function ForecastGrid({
               <div key={day.date} className={`${dayCellClass(i)} flex flex-col items-center gap-1 pb-1.5`}>
                 <span className="text-[11px] font-semibold text-slate-200">{dayLabel(day.date)}</span>
                 <DayConditionIcon row={day} className="w-7 h-7" />
-                <span className="flex items-baseline gap-0.5">
-                  <span className="text-lg font-bold text-white">{fmt(amount.value)}</span>
-                  <span className="text-[9px] text-slate-500">{amount.unit}</span>
+                <span className="flex items-end gap-1">
+                  <SnowBar row={day} scaleMax={detailSnowMax} />
+                  <span className="flex items-baseline gap-0.5">
+                    <span className="text-lg font-bold text-white">{fmt(amount.value)}</span>
+                    <span className="text-[9px] text-slate-500">{amount.unit}</span>
+                  </span>
                 </span>
                 {chance != null && <span className="text-[10px] font-semibold" style={{ color: ACCENT }}>{chance}%</span>}
                 <span className="text-[9px] text-slate-500">{u.tempInt(range.max)}° / {u.tempInt(range.min)}°</span>
@@ -416,10 +536,31 @@ function ForecastGrid({
           const days = daysForBand(band);
           const elev = bandElevations[band];
           return (
-            <div key={band} className="grid py-1" style={{ gridTemplateColumns: tpl }}>
+            <div key={band} className="relative grid py-1" style={{ gridTemplateColumns: tpl }}>
               <div className="flex flex-col items-center gap-0.5 self-center">
                 <MountainGlyph index={bi} count={bands.length} />
                 {elev != null && <span className="text-[8px] font-medium text-slate-500">{u.elevationLabel(elev)}</span>}
+              </div>
+              {/* Envelope overlaid on the row WITHOUT wrapping the day cells.
+                  An earlier attempt nested them in a wrapper div to position
+                  against; that broke the grid — the cells shifted a column and
+                  the bars ended up rendering a different band's blocks than the
+                  curve above them. The grid structure stays exactly as it was
+                  and only this absolutely-positioned span is added. */}
+              {/* A div, absolutely positioned over the day columns. Two earlier
+                  attempts failed on width: an inline <span> never established
+                  one, so the SVG fell back to its 1000px viewBox and stretched
+                  ~3.5x; adding `block` then collapsed it to 32px because a
+                  positioned element still needs both edges pinned. left/right
+                  pin it to exactly the day area, and the SVG fills that. */}
+              <div
+                className="pointer-events-none absolute"
+                style={{ left: "3rem", right: 0, top: 0, bottom: "0.25rem" }}
+              >
+                <BandEnvelope
+                  blocks={days.flatMap((d) => d.time_of_day ?? [])}
+                  scaleMax={blockScaleMax}
+                />
               </div>
               {days.map((day, i) => (
                 <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1 items-end`}>
@@ -478,7 +619,12 @@ function ElevBarCell({ block, scaleMax }: { block: TimeBlock; scaleMax: number }
   const u = useUnitFormat();
   const value = block.snow_cm_p50;
   const has = value >= 0.5;
-  const h = Math.max(2, Math.min(value / scaleMax, 1) * 44);
+  // The p10-p90 band is NOT drawn here. Per-block rectangles broke the band into
+  // eight disconnected slabs across a day, which reads as eight separate
+  // statements rather than one uncertainty envelope moving through time. It is
+  // drawn once per elevation row instead, as a continuous curve behind these
+  // bars — see BandEnvelope.
+  const h = Math.max(2, Math.min(value / scaleMax, 1) * BLOCK_TRACK_PX);
   return (
     <div className="flex flex-col items-center justify-end h-[60px] gap-0.5 min-w-0">
       <span className={`text-[8px] font-semibold leading-none ${has ? "text-slate-100" : "text-transparent"}`}>
@@ -492,8 +638,51 @@ function ElevBarCell({ block, scaleMax }: { block: TimeBlock; scaleMax: number }
   );
 }
 
+/**
+ * One continuous p10-p90 envelope behind a whole elevation row.
+ *
+ * Drawn as a single smoothed shape spanning every 6-hour block in view, rather
+ * than a rectangle per block: uncertainty is continuous in time, and slicing it
+ * into per-block slabs made a storm read as a row of unrelated guesses instead
+ * of one widening and narrowing envelope.
+ *
+ * Positioned absolutely over the bar row and pointer-events-none, so it sits
+ * behind the bars without touching their layout or hit targets.
+ */
+function BandEnvelope({ blocks, scaleMax }: { blocks: TimeBlock[]; scaleMax: number }) {
+  // Below three models min/max is the gap between deterministic runs rather
+  // than a quantile, and at one model it is exactly zero — a zero-width band
+  // reads as certainty when it means the opposite. Drop the envelope rather
+  // than draw a misleading one.
+  const usable = blocks.filter((b) => (b.n_models ?? 4) >= 3);
+  if (usable.length < 2 || scaleMax <= 0) return null;
+  if (!blocks.some((b) => (b.snow_cm_p90 ?? 0) - (b.snow_cm_p10 ?? 0) >= 0.05)) return null;
+
+  // Spans the WHOLE row, every day in view, so the envelope stays continuous
+  // across midnight. Drawn per day it broke at each date boundary, which
+  // implied the uncertainty resets overnight — it does not; a storm's spread
+  // carries straight through.
+  const W = 1000, H = BLOCK_TRACK_PX;
+  const x = (i: number) => ((i + 0.5) / blocks.length) * W;
+  const y = (v: number) => H * (1 - Math.min(Math.max(v, 0) / scaleMax, 1));
+  const top = blocks.map((b, i) => ({ x: x(i), y: y(b.snow_cm_p90 ?? 0) }));
+  const bottom = blocks.map((b, i) => ({ x: x(i), y: y(b.snow_cm_p10 ?? 0) }));
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      className="pointer-events-none absolute inset-x-0 bottom-0 w-full"
+      style={{ height: H }}
+      aria-hidden
+    >
+      <path d={fanBandPath(top, bottom)} fill={ACCENT} fillOpacity={0.18} />
+    </svg>
+  );
+}
+
 // ============================================================================
-// 4) Wind table (m/s), same column skeleton as the grid
+// 4) Wind table (km/h), same column skeleton as the grid
 // ============================================================================
 
 function WindTable({ days }: { days: DailyRow[] }) {
@@ -503,7 +692,7 @@ function WindTable({ days }: { days: DailyRow[] }) {
   const dayCellClass = (i: number) => `min-w-0 ${i !== n - 1 ? "border-r border-slate-700/40" : ""}`;
   return (
     <div className="space-y-2">
-      <SectionHeader title="Wind" subtitle={`at 10 m · ${u.windUnit}`} />
+      <SectionHeader title="Wind" subtitle={`at 10 m · ${u.windKmhUnit}`} />
       <div className="rounded-2xl bg-slate-800/40 p-3">
         {/* hours */}
         <div className="grid pb-1" style={{ gridTemplateColumns: tpl }}>
@@ -538,9 +727,11 @@ function WindTable({ days }: { days: DailyRow[] }) {
               <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1`}>
                 {(day.time_of_day ?? []).map((b) => {
                   const kmh = kind === "gust" ? b.wind_gust_kmh : b.wind_kmh;
-                  const v = kmh != null ? u.windFromKmh(kmh) : null;
+                  const v = kmh != null ? u.windKmh(kmh) : null;
                   return (
-                    <span key={b.block} className="text-[11px] font-semibold text-center" style={{ color: kind === "gust" ? "#F59E0B" : "#14B8A6" }}>
+                    // 10px matches the TEMP row in the identical column skeleton — km/h
+                    // gusts reach 3 digits, which 11px overflows the cell on ≤375px screens.
+                    <span key={b.block} className="text-[10px] font-semibold text-center" style={{ color: kind === "gust" ? "#F59E0B" : "#14B8A6" }}>
                       {v ?? "–"}
                     </span>
                   );
@@ -712,10 +903,10 @@ function computeIndicators(
   }));
   if (wind) {
     const w = wind as { day: DailyRow; block: TimeBlock };
-    const speed = w.block.wind_kmh != null ? u.windFromKmh(w.block.wind_kmh) : null;
-    const gust = w.block.wind_gust_kmh != null ? u.windFromKmh(w.block.wind_gust_kmh) : null;
+    const speed = w.block.wind_kmh != null ? u.windKmh(w.block.wind_kmh) : null;
+    const gust = w.block.wind_gust_kmh != null ? u.windKmh(w.block.wind_gust_kmh) : null;
     if (speed != null) {
-      out.push({ icon: <Wind className="w-3.5 h-3.5" style={{ color: "#38BDF8" }} />, title: "Strongest wind", value: gust != null ? `${speed}\u2192${gust} ${u.windUnit}` : `${speed} ${u.windUnit}`, detail: `${dayWeekday(w.day.date)} ${enDash(w.block.hours)}`, description: "Peak gust" });
+      out.push({ icon: <Wind className="w-3.5 h-3.5" style={{ color: "#38BDF8" }} />, title: "Strongest wind", value: gust != null ? `${speed}\u2192${gust} ${u.windKmhUnit}` : `${speed} ${u.windKmhUnit}`, detail: `${dayWeekday(w.day.date)} ${enDash(w.block.hours)}`, description: "Peak gust" });
     }
   }
 
@@ -737,6 +928,9 @@ function computeIndicators(
 
   // visibility
   const allBlocks = selectedDays.flatMap((d) => d.time_of_day ?? []);
+  // Physical thresholds, NOT a display value: maxGust is m/s regardless of the
+  // user's unit preference, so 17/11 stay 17/11 m/s (≈61/40 km/h) now that wind
+  // renders in km/h. Rescale only together with the iOS/Android ports.
   const maxGust = Math.max(0, ...allBlocks.map((b) => msFromKmh(b.wind_gust_kmh) ?? 0));
   const maxSnow = Math.max(0, ...allBlocks.map((b) => b.snow_cm_p50));
   const poor = maxGust >= 17 || maxSnow >= 8;
@@ -964,9 +1158,23 @@ function SnowFanChart({ days, tint, labelScale = 1 }: { days: DailyRow[]; tint: 
   const p90 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p90) }));
   const p10 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p10) }));
   const p50 = days.map((d, i) => ({ x: x(i), y: y(d.snow_cm_p50) }));
+  // Most of this window runs on 2 models or fewer.
+  const degenerateFan = days.length > 0
+    && days.filter((d) => (d.n_models ?? 4) <= 2).length > days.length / 2;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-      <path d={fanBandPath(p90, p10)} fill={tint} fillOpacity={0.16} />
+      {/* Filled only where the band came from enough members to be a band.
+          Past about day 9 the payload carries 2 models and sometimes 1, where
+          min/max is the gap between deterministic runs rather than a quantile —
+          measured, that spread sits between 1.54 and 1.59 of the median across
+          the whole range, which is arithmetic. Filling it there would draw
+          confidence out of a fixed multiple. */}
+      {degenerateFan ? (
+        <path d={fanBandPath(p90, p10)} fill="none" stroke={tint} strokeOpacity={0.45}
+              strokeWidth={1} strokeDasharray="3 3" />
+      ) : (
+        <path d={fanBandPath(p90, p10)} fill={tint} fillOpacity={0.16} />
+      )}
       <path d={smoothPath(p50)} fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
       {p50.map((p, i) => (
         <g key={days[i].date}>
