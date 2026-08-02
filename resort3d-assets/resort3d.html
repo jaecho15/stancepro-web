@@ -738,6 +738,44 @@ window.OffpisteDraw = (function(){
     if(!routeOpen){ routeOpen=true; updOpToolsVis(); }   // surface the Fly button
     if(el.fly && !flying) el.fly.disabled=!canFly();
     renderDock();
+    renderSessionEvents(t.events);
+  }
+  // Session markers (jumps, drop-ins, stops…) drawn over the track. DOM markers
+  // rather than a symbol layer: maplibre anchors them to the same rendered
+  // terrain frame as the rest of the scene, so there is no elevation datum to
+  // get wrong. Colors mirror the native 2D renderers' palette.
+  var EVENT_COLORS = { jump:"#007AFF", spinJump:"#AF52DE", groundSpin:"#5856D6",
+                       fiftyFifty:"#FF9500", boardslide:"#FF2D55", userTaggedRail:"#FFCC00",
+                       maxSpeed:"#FF3B30", unknown:"#8E8E93", stop:"#8E8E93", dropIn:"#05AAC0" };
+  var sessionEventMarkers = [];
+  function clearSessionEvents(){
+    sessionEventMarkers.forEach(function(m){ try{ m.remove(); }catch(e){} });
+    sessionEventMarkers = [];
+  }
+  function renderSessionEvents(list){
+    clearSessionEvents();
+    if(!Array.isArray(list) || !list.length) return;
+    list.forEach(function(ev){
+      if(!ev || !isFinite(ev.lng) || !isFinite(ev.lat)) return;
+      var color = EVENT_COLORS[ev.t] || EVENT_COLORS.unknown;
+      var wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex;align-items:center;gap:4px;pointer-events:none";
+      var dot = document.createElement("div");
+      dot.style.cssText = "width:11px;height:11px;border-radius:50%;background:"+color+
+        ";border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)";
+      wrap.appendChild(dot);
+      if(ev.label){
+        var chip = document.createElement("div");
+        chip.textContent = String(ev.label);
+        chip.style.cssText = "padding:1px 5px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;"+
+          "font:600 10px -apple-system,Roboto,sans-serif;white-space:nowrap";
+        wrap.appendChild(chip);
+      }
+      try {
+        sessionEventMarkers.push(
+          new maplibregl.Marker({element:wrap}).setLngLat([+ev.lng,+ev.lat]).addTo(map));
+      } catch(e){}
+    });
   }
   function updateSavedSel(){
     var s=map.getSource("op-saved-sel"); if(!s) return;
