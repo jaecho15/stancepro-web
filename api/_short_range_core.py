@@ -683,6 +683,88 @@ def band_daily_rows(
     return rows
 
 
+# ---- D9-16 ensemble quantiles (DECISIONS.md #1, step 2) ----
+# The 3-day window below is an approximation: it SUMS daily quantiles, which
+# assumes the days are perfectly correlated and therefore overstates width. The
+# fix is real members, and the ensemble API has them — 51 (ECMWF) + 40 (ICON) +
+# 31 (GFS) + 21 (GEM) = 143 over the full 16 days in one request, measured
+# 2026-08-02 at 25 KB and 1.8 s.
+#
+# Emitted as PARALLEL `ens_*` fields rather than replacing snow_cm_*: the two
+# are different quantities under the same name. snow_cm_p10/p90 is a min/max of
+# four deterministic runs; ens_cm_p10/p90 is a real quantile of 143 members.
+# Overwriting one with the other would put a discontinuity through the archive
+# that no config_version bump could untangle after the fact.
+#
+# Member count falls with lead — 143 to about 21 — because models reach their
+# horizons at different points, so the last days can be a single model's
+# ensemble rather than multi-model agreement. `ens_members` travels on every row
+# so that is visible rather than implied.
+ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
+ENSEMBLE_MODELS = "ecmwf_ifs025,gfs025,icon_global,gem_global"
+ENSEMBLE_MIN_MEMBERS = 10
+
+
+def fetch_ensemble_daily(
+    lat: float, lon: float, elevation_m: float | None,
+) -> dict[str, tuple[float, float, float, int]]:
+    """{date: (p10, p50, p90, members)} of daily snowfall, or {} on any failure.
+
+    Best-effort by construction: the ensemble is an enrichment on top of a
+    forecast that already exists, so a failure here must degrade to the 3-day
+    window rather than fail the compute.
+    """
+    params: dict[str, Any] = {
+        "latitude": lat, "longitude": lon,
+        "daily": "snowfall_sum", "models": ENSEMBLE_MODELS,
+        "forecast_days": 16, "timezone": "UTC", "cell_selection": "nearest",
+    }
+    if elevation_m is not None:
+        params["elevation"] = round(float(elevation_m))
+    try:
+        response = requests.get(ENSEMBLE_URL, params=params, timeout=REQUEST_TIMEOUT_S)
+        response.raise_for_status()
+        daily = response.json().get("daily") or {}
+    except Exception:  # noqa: BLE001 — enrichment must never sink the forecast
+        return {}
+
+    times = daily.get("time") or []
+    members = [k for k in daily if k.startswith("snowfall_sum")]
+    out: dict[str, tuple[float, float, float, int]] = {}
+    for index, date in enumerate(times):
+        values = [daily[k][index] for k in members
+                  if index < len(daily[k]) and daily[k][index] is not None]
+        # Below this a "quantile" is a handful of runs wearing the word, which is
+        # the very problem the ensemble is here to fix.
+        if len(values) < ENSEMBLE_MIN_MEMBERS:
+            continue
+        out[date] = (
+            round(_quantile(values, 0.10), 1),
+            round(_quantile(values, 0.50), 1),
+            round(_quantile(values, 0.90), 1),
+            len(values),
+        )
+    return out
+
+
+def attach_ensemble(rows: list[dict[str, Any]],
+                    ensemble: dict[str, tuple[float, float, float, int]]) -> None:
+    """Attach ens_* to D9-16 rows, in place. D1-8 is untouched — it already has
+    four models hour by hour, which is a better-resolved answer than a daily
+    ensemble sum at that range."""
+    if not ensemble:
+        return
+    for row in rows:
+        if (row.get("day_index") or 0) < ROLLING_FROM_DAY_INDEX:
+            continue
+        found = ensemble.get(row.get("date"))
+        if not found:
+            continue
+        p10, p50, p90, members = found
+        row["ens_cm_p10"], row["ens_cm_p50"] = p10, p50
+        row["ens_cm_p90"], row["ens_members"] = p90, members
+
+
 # ---- D9-16 episode view (DECISIONS.md #1, step 1) ----
 # D9-16 is band-only, and on its own the daily band there is close to empty:
 # measured on a live payload, five of eight days had p10 = p50 = p90 = 0 and one
@@ -1273,7 +1355,18 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         station_future = pool.submit(fetch_nearby_station, resort, bands) if multi_band else None
         # Always try snowline — even single-band cards show the satellite read.
         snowline_future = pool.submit(fetch_snowline, resort)
+        # One ensemble request per band, in the same round-trip as everything
+        # else. Per band and not per resort because it accepts `elevation` and
+        # the answer genuinely differs — measured 2026-08-02 at Chillan, the
+        # 16-day member total moved 12,066 -> 14,992 cm between the grid height
+        # and 2,500 m.
+        ensemble_futures = {
+            band: pool.submit(fetch_ensemble_daily,
+                              float(resort["lat"]), float(resort["lon"]), bands[band])
+            for band in bands
+        }
         band_payloads = {band: future.result() for band, future in band_futures.items()}
+        ensembles = {band: future.result() for band, future in ensemble_futures.items()}
         tendency = tendency_future.result() if tendency_future else []
         season_series, grid_elev = season_future.result()
         station = station_future.result() if station_future else None
@@ -1282,8 +1375,10 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
     for band in sorted(band_payloads, key=lambda name: name != "mid"):
-        daily_rows.extend(band_daily_rows(band_payloads[band], band, bands[band],
-                                          freezing_by_date, freezing_by_block, 7))
+        band_rows = band_daily_rows(band_payloads[band], band, bands[band],
+                                    freezing_by_date, freezing_by_block, 7)
+        attach_ensemble(band_rows, ensembles.get(band) or {})
+        daily_rows.extend(band_rows)
     for row in daily_rows:
         row["resort_id"] = resort["resort_id"]
     # Season-to-date depth model (see season_band_metrics): current snow on the

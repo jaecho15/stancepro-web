@@ -87,6 +87,18 @@ export interface DailyRow {
   roll3_days?: number;
   roll3_date_start?: string;
   roll3_date_end?: string;
+  /**
+   * Real quantiles of ~143 ensemble members, D9-16 only (DECISIONS.md #1,
+   * step 2). Deliberately NOT written into snow_cm_*: those are a min/max of
+   * four deterministic runs, and these are a quantile of many members — the
+   * same name for two different quantities would put a discontinuity through
+   * the archive. Preferred over roll3_* when present.
+   */
+  ens_cm_p10?: number;
+  ens_cm_p50?: number;
+  ens_cm_p90?: number;
+  /** Members behind the row. Falls with lead as models reach their horizons. */
+  ens_members?: number;
   /** WMO weather interpretation code (Open-Meteo). Optional on older caches. */
   weather_code?: number | null;
   time_of_day?: TimeBlock[];

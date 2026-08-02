@@ -1155,9 +1155,16 @@ function SnowFanChart({ days, tint, labelScale = 1, rolling = false }:
   // D9-16 draws the centred 3-day window, not the day (DECISIONS.md #1 step 1).
   // The daily series there is mostly zeros — a storm is placed within a few
   // days, not on one — so a day-by-day band renders as a flat line at the axis.
-  const lo = (d: DailyRow) => (rolling ? d.roll3_cm_p10 ?? d.snow_cm_p10 : d.snow_cm_p10);
-  const mid = (d: DailyRow) => (rolling ? d.roll3_cm_p50 ?? d.snow_cm_p50 : d.snow_cm_p50);
-  const hi = (d: DailyRow) => (rolling ? d.roll3_cm_p90 ?? d.snow_cm_p90 : d.snow_cm_p90);
+  // Preference order in D9-16: ensemble quantiles, then the 3-day window, then
+  // the daily band. Measured on a live payload the first two disagree in BOTH
+  // directions — 8/12 read 1.5-14.0 rolling against 0.0-2.8 from 72 members,
+  // and 8/15 read 0.0-0.4 rolling against 0.0-13.0. Summing daily quantiles
+  // does not merely widen the band, it distorts it: neighbouring days inflate
+  // the quiet ones and a genuinely fat tail gets averaged away.
+  const useEns = rolling && days.some((d) => d.ens_cm_p90 != null);
+  const lo = (d: DailyRow) => (useEns ? d.ens_cm_p10 ?? 0 : rolling ? d.roll3_cm_p10 ?? d.snow_cm_p10 : d.snow_cm_p10);
+  const mid = (d: DailyRow) => (useEns ? d.ens_cm_p50 ?? 0 : rolling ? d.roll3_cm_p50 ?? d.snow_cm_p50 : d.snow_cm_p50);
+  const hi = (d: DailyRow) => (useEns ? d.ens_cm_p90 ?? 0 : rolling ? d.roll3_cm_p90 ?? d.snow_cm_p90 : d.snow_cm_p90);
   const maxY = Math.max(1, Math.max(0, ...days.map(hi)) * 1.1);
   const plotH = H - padT;
   const x = (i: number) => ((i + 0.5) / n) * W;
@@ -1168,8 +1175,11 @@ function SnowFanChart({ days, tint, labelScale = 1, rolling = false }:
   // Most of this window runs on 2 models or fewer.
   // Still keyed on member count, not on the width that came out: a 3-day sum of
   // two-model days is a wider number but not a better-supported one.
-  const degenerateFan = days.length > 0
-    && days.filter((d) => (d.n_models ?? 4) <= 2).length > days.length / 2;
+  // With real members the band is a quantile, so the dashed "do not read width"
+  // treatment no longer applies — unless the member count itself has collapsed.
+  const degenerateFan = useEns
+    ? days.filter((d) => (d.ens_members ?? 0) < 30).length > days.length / 2
+    : days.length > 0 && days.filter((d) => (d.n_models ?? 4) <= 2).length > days.length / 2;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
       {/* The band is always FILLED. An earlier version dropped the fill when
@@ -1207,7 +1217,7 @@ function BandFanSection({ days }: { days: DailyRow[] }) {
   const u = useUnitFormat();
   return (
     <div className="space-y-2">
-      <SectionHeader title="D9–16 range" subtitle="3-day windows · range only" />
+      <SectionHeader title="D9–16 range" subtitle="ensemble range · 3-day windows where members are thin" />
       <div className="rounded-2xl bg-slate-800/40 p-3">
         <SnowFanChart days={days} tint="#38BDF8" labelScale={u.snowScale} rolling />
         <div className="flex mt-1">
