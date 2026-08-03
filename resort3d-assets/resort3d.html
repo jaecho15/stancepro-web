@@ -1194,6 +1194,11 @@ const art = f => BASE + f + "?v=" + VER;
 // 5xx — the iOS loopback answers 503 when Supabase is unreachable) = transport
 // trouble → back off and retry before giving up.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// 4xx that means "this artifact does not exist", as opposed to the transient
+// 4xx the spec reserves for retry (408 timeout, 425 too-early, 429 rate limit).
+// Filing a 429 as absent would silently boot a full-LiDAR resort into DEGRADED
+// mode — no slope/hillshade safety overlay — instead of simply retrying.
+const ART_ABSENT = s => s >= 400 && s < 500 && s !== 408 && s !== 425 && s !== 429;
 const artMissing = e => !!(e && e.artMissing);
 async function fetchArt(url, tries) {
   for (let i = 0; ; i++) {
@@ -1201,7 +1206,7 @@ async function fetchArt(url, tries) {
       const r = await fetch(url);
       if (r.ok) return r;
       const err = new Error("HTTP " + r.status);
-      if (r.status >= 400 && r.status < 500) err.artMissing = true;
+      if (ART_ABSENT(r.status)) err.artMissing = true;
       throw err;
     } catch (e) {
       if (artMissing(e) || i >= tries - 1) throw e;
@@ -1270,11 +1275,27 @@ const loadV2Index = () => {                 // fleet index — idempotent
   if (_v2IndexP) return _v2IndexP;
   _v2IndexP = fetch(V2_INDEX + "?v=" + VER).then(r => r.json())
     .then(ix => v2Seed(ix, "fleet-index"))
-    .catch(e => console.log("v2 index load failed", e));
+    // Clear the memo so a LATER call retries. A boot-time outage used to pin this
+    // promise for the whole session, leaving every tile on 30 m AWS even after the
+    // network came back (the retry banner can recover meta, but not this).
+    .catch(e => { _v2IndexP = null; console.log("v2 index load failed", e); });
   return _v2IndexP;
 };
-// Kick the focus manifest off NOW (parallel with meta); it is awaited before the map.
-const v2FocusP = fetch(art("v2_tiles.json")).then(r => r.ok ? r.json() : null).catch(() => null);
+// Kick the focus manifest off NOW (parallel with meta); it is awaited before the
+// map. Re-armable: a TRANSPORT failure clears the memo so the pre-map await (or a
+// boot retry) fetches it again. A genuine absence (bc-*, pre-rollout publish)
+// resolves null and STAYS memoized — there is nothing there to re-fetch.
+let _v2FocusP = null;
+const loadV2Focus = () => {
+  if (_v2FocusP) return _v2FocusP;
+  _v2FocusP = fetch(art("v2_tiles.json"))
+    .then(r => { if (r.ok) return r.json();
+                 if (ART_ABSENT(r.status)) return null;
+                 throw new Error("HTTP " + r.status); })
+    .catch(() => { _v2FocusP = null; return null; });
+  return _v2FocusP;
+};
+loadV2Focus();
 let v2FocusSeeded = false;
 // slope:// — client-derived avalanche slope overlay from the SAME DEM tiles the
 // mesh uses (no baked webp); LiDAR-gated (aws-dominated → transparent); colours
@@ -1624,7 +1645,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // sharp 5 m from the first request (no 30 m flash, no reload). Awaiting the
   // ~1 KB manifest here costs ~0 — it was fetched in parallel with meta. No
   // manifest (older publish / bc-*) → load the fleet index eagerly (old path).
-  const _focusManifest = await v2FocusP;
+  const _focusManifest = await loadV2Focus();
   if (_focusManifest && (_focusManifest.z15 || _focusManifest.z14)) { v2FocusSeeded = true; v2Seed(_focusManifest, "focus"); }
   else loadV2Index();
 
@@ -1823,8 +1844,10 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   }
   // Fleet index (961 KB) is only needed for NEIGHBOURS now that the focused
   // resort seeded from its own manifest — load it lazily after the first frame.
-  // (Absent-manifest fallback already loaded it eagerly; loadV2Index is idempotent.)
-  if (v2FocusSeeded) firstIdle.then(() => loadV2Index());
+  // Unconditional + idempotent: when the focus manifest seeded this is the lazy
+  // neighbour load; when it did not, the eager fallback above already ran and this
+  // is the ONLY retry if that one failed on a weak link (memo cleared on failure).
+  firstIdle.then(() => loadV2Index());
   // Contours (~230 KB, reference-only) fill the pre-declared empty source once
   // the first frame is up. bc-* (destination_id) has none baked.
   if (!meta.destination_id) firstIdle.then(() => fetch(art("contours.json"))

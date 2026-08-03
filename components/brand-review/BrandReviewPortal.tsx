@@ -306,8 +306,10 @@ export function BrandReviewPortal() {
     ];
 
     if (userIds.length) {
+      // Names of other reviewers — public view only; `profiles` itself is
+      // owner + claimed-coach scoped.
       const { data: profileRows } = await supabase
-        .from("profiles")
+        .from("profiles_public")
         .select("id, name, display_name")
         .in("id", userIds);
 
