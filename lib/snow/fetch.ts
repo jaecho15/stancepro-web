@@ -134,11 +134,25 @@ export function seasonalOutlookForResort(
 export async function fetchForecastClient(resort: SnowResort): Promise<ForecastResponse | null> {
   const resortId = resort.resort_id;
   const params = new URLSearchParams({ resort_id: resortId });
-  if (resortId.startsWith("osm-")) {
+  // The override only travels WITH both elevations. Coordinates alone make the
+  // function build a single-band ({"mid": null}) forecast and its upsert
+  // replaces the whole serving payload — flattening a healthy three-band row
+  // for every client, permanently: the apps decode `bands` as non-null numbers
+  // so the row stops decoding, and the sweep's own 404 fallback reads the band
+  // elevations back out of that payload, recomputing single-band forever.
+  // ~145 of the 3,501 index entries carry no elevations. Without them we send
+  // resort_id alone: a mapped id still computes, an unmapped one 404s, and a
+  // 404 is recoverable where a poisoned row is not. (Both apps guard the same
+  // way; the durable fix is a server-side write guard.)
+  if (
+    resortId.startsWith("osm-") &&
+    typeof resort.base_elevation_m === "number" &&
+    typeof resort.top_elevation_m === "number"
+  ) {
     params.set("lat", String(resort.lat));
     params.set("lon", String(resort.lon));
-    if (resort.base_elevation_m !== null) params.set("base_m", String(resort.base_elevation_m));
-    if (resort.top_elevation_m !== null) params.set("top_m", String(resort.top_elevation_m));
+    params.set("base_m", String(resort.base_elevation_m));
+    params.set("top_m", String(resort.top_elevation_m));
     params.set("country", resort.country_code);
   }
   try {

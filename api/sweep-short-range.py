@@ -147,17 +147,27 @@ def fleet(limit: int) -> list[dict]:
 def _coordinate_params(row: dict) -> dict | None:
     """The serving endpoint's coordinate-override query params, built from what
     the serving row itself recorded — or None when the payload carries no usable
-    coordinates (then a 404 is final, exactly as before)."""
+    coordinates OR no usable band elevations (then a 404 is final, exactly as
+    before)."""
     lat, lon = row.get("lat"), row.get("lon")
     if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)) \
             or isinstance(lat, bool) or isinstance(lon, bool):
         return None
-    params: dict = {"lat": lat, "lon": lon}
+    # The override only travels WITH both elevations. Coordinates alone make the
+    # endpoint build a single-band ({"mid": None}) forecast, and this fallback
+    # reads its elevations back out of the payload — so a row that once lost its
+    # bands would be re-confirmed single-band on every cycle, permanently. If we
+    # can't supply both, give up the override and let the 404 stand (the same
+    # invariant the two apps and the web client now hold).
     bands = row.get("bands") if isinstance(row.get("bands"), dict) else {}
+    elevations: dict = {}
     for source, target in (("base", "base_m"), ("top", "top_m")):
         value = bands.get(source)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            params[target] = value
+            elevations[target] = value
+    if len(elevations) < 2:
+        return None
+    params: dict = {"lat": lat, "lon": lon, **elevations}
     country = row.get("country")
     if isinstance(country, str) and country.strip():
         params["country"] = country.strip()

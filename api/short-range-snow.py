@@ -242,8 +242,37 @@ def _read_cache(resort_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def _single_band(payload: dict) -> bool:
+    """A payload whose bands lack base/top — what elevation_bands() returns
+    ({"mid": None}) when the resort has no usable elevations.
+
+    Refusing to persist these is the one guard that actually closes the class:
+    the upsert below replaces the whole payload, so a single-band write both
+    flattens a healthy three-band row and mints one nothing can repair — the
+    apps decode `bands` as non-null numbers so the row stops decoding, and the
+    sweep's own 404 fallback reads the band elevations back out of that very
+    payload, recomputing single-band forever. Four writers reach this function
+    (two apps, the web client, the sweep); guarding each of them still leaves
+    the next one to get it wrong.
+    """
+    if not isinstance(payload, dict):
+        return True
+    bands = payload.get("bands")
+    if not isinstance(bands, dict):
+        return True
+    base = bands.get("base")
+    top = bands.get("top")
+    return not isinstance(base, (int, float)) or not isinstance(top, (int, float))
+
+
 def _write_cache(resort: dict, payload: dict, summary: dict) -> bool:
     if not WRITE_KEY:
+        return False
+    if _single_band(payload):
+        print(
+            f"[short-range] refusing single-band write for "
+            f"{resort.get('resort_id')}: bands={payload.get('bands')}"
+        )
         return False
     now = datetime.now(tz=timezone.utc)
     row = {
