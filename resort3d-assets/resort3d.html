@@ -93,6 +93,19 @@
               border:2px solid rgba(31,37,48,.85); margin-top:1px; }
   @keyframes peakbob { 0%,100% { transform:translateY(0); }
                        50% { transform:translateY(-6px); } }
+  /* Tap-to-read elevation. Same chip language as the peak label so it reads as
+     part of the map, with the focus marker's orange dot so a probe is never
+     mistaken for a named summit. */
+  .probe-pin { display:flex; flex-direction:column; align-items:center;
+               pointer-events:none; }
+  .probe-chip { font:600 13px -apple-system,Roboto,sans-serif; color:#fff;
+                background:rgba(31,37,48,.86); padding:7px 12px;
+                border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,.3);
+                white-space:nowrap; }
+  .probe-chip .ps { font-weight:500; font-size:11px; opacity:.75; margin-left:6px; }
+  .probe-tail { width:2px; height:16px; background:rgba(31,37,48,.65); }
+  .probe-dot { width:14px; height:14px; border-radius:50%; background:#ff9f0a;
+               border:2.5px solid #fff; box-shadow:0 0 8px rgba(0,0,0,.45); }
   /* One-off host-injected focus marker (e.g. ride-tracker event → 3D). */
   .focus-pin { display:flex; flex-direction:column; align-items:center;
                pointer-events:none; }
@@ -991,6 +1004,27 @@ window.OffpisteDraw = (function(){
     var brg=(Math.atan2(-gE,-gN)*180/Math.PI+360)%360;    // downslope azimuth
     return {bearing:brg,slope:slope};
   }
+  // Point probe behind the map's tap readout. Elevation is the TRUE DEM metre
+  // value from the elev artifact — never queryTerrainElevation, which is
+  // exaggerated and reference-relative — and the slope comes off the SAME grid
+  // via aspectAtPx, so the two numbers can't disagree with each other or with
+  // the slope overlay. null outside the artifact's mask: better to show nothing
+  // than a number we can't stand behind.
+  function probeAt(lng,lat){
+    if(!elevImg) return null;
+    var e=sampleElev(lng,lat);
+    if(e==null) return null;
+    var b=elevImg.b, W=elevImg.W, H=elevImg.H;
+    var px=Math.round((lon2mx(lng)-b[0])/(b[2]-b[0])*(W-1));
+    var py=Math.round((b[3]-lat2my(lat))/(b[3]-b[1])*(H-1));
+    var a=aspectAtPx(px,py);
+    return { elev:e, slope:(a && a.slope!=null) ? a.slope : null };
+  }
+
+  // True while drawing / pin / fly owns the tap, so the elevation readout can
+  // stand down instead of fighting the off-piste tools for the same gesture.
+  function consumesTaps(){ return active || pinMode || flying; }
+
   // FATMAP-style aspect palette (familiar to FATMAP users; encodes sun/shade):
   // N blue (cold/shaded, holds snow) → E white → S orange (sunny) → W black,
   // interpolated around the compass. Anchors: N NE E SE S SW W NW.
@@ -1112,6 +1146,7 @@ window.OffpisteDraw = (function(){
     // defers it to first idle so it never competes with the initial 3D render.
   }
   return { init:init, loadElev:loadElev, loadSaved:loadSaved, loadWaypoints:loadWaypoints, loadSessionTrack:loadSessionTrack, setOfflineState:setOfflineState, setDepth:setDepth,
+    probeAt:probeAt, consumesTaps:consumesTaps,
     _sim:function(a,b,n){ if(!ready) return "not-ready"; if(!active) toggle(); pts=[];
       for(var i=0;i<=n;i++){ addAt(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n); } refresh(); return pts.length; },
     _state:function(){ return {active:active,n:pts.length,ready:ready}; } };
@@ -2930,6 +2965,53 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
     try { OffpisteDraw.init(map, meta, art, degraded); firstIdle.then(() => { try { OffpisteDraw.loadElev(); } catch (e) {} }); } catch (e) { console.log("op init failed", e); }
     if (sessionTrackData) { try { OffpisteDraw.loadSessionTrack(sessionTrackData); } catch (e) { console.log("session track load failed", e); } }
+
+    // Tap-to-read elevation. The contours answer "how steep", never "how high";
+    // the DEM already holds the metre value, so surfacing it costs a marker.
+    // One probe at a time — tapping the same spot again dismisses it — and the
+    // off-piste tools keep priority over the gesture whenever they're active.
+    (function tapProbe() {
+      let marker = null, at = null;
+      const clear = () => { if (marker) { marker.remove(); marker = null; at = null; } };
+      map.on("click", (e) => {
+        try {
+          if (!window.OffpisteDraw || OffpisteDraw.consumesTaps()) return;
+          // A tap on a saved route belongs to that route, not to the readout.
+          let hit = [];
+          try { hit = map.queryRenderedFeatures(
+            [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]],
+            { layers: ["op-saved-line"] }); } catch (x) {}
+          if (hit.length) return;
+          // Second tap on the existing probe dismisses it.
+          if (at) {
+            const p = map.project(at);
+            if (Math.hypot(p.x - e.point.x, p.y - e.point.y) < 22) { clear(); return; }
+          }
+          const probe = OffpisteDraw.probeAt(e.lngLat.lng, e.lngLat.lat);
+          clear();
+          if (!probe) return;   // outside the elev artifact — say nothing
+          const wrap = document.createElement("div");
+          wrap.className = "probe-pin";
+          const chip = document.createElement("div");
+          chip.className = "probe-chip";
+          chip.textContent = Math.round(probe.elev).toLocaleString() + " m";
+          if (probe.slope != null) {
+            const s = document.createElement("span");
+            s.className = "ps";
+            s.textContent = Math.round(probe.slope) + "\u00B0";
+            chip.appendChild(s);
+          }
+          const tail = document.createElement("div");
+          tail.className = "probe-tail";
+          const dot = document.createElement("div");
+          dot.className = "probe-dot";
+          wrap.appendChild(chip); wrap.appendChild(tail); wrap.appendChild(dot);
+          at = [e.lngLat.lng, e.lngLat.lat];
+          marker = new maplibregl.Marker({ element: wrap, anchor: "bottom" })
+            .setLngLat(at).addTo(map);
+        } catch (err) { console.log("tap probe failed", err); }
+      });
+    })();
     // Clip piste/lift geometry to this resort's terrain extent [w..e_, s..n].
     // geometry.json over-includes the whole valley; lines beyond the loaded z15
     // terrain drape at elevation 0 → stretched lines (esp. iOS WKWebView, which
