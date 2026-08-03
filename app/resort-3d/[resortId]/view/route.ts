@@ -122,11 +122,16 @@ export async function GET(
   // byte-identical to iOS): register the tile-caching service worker —
   // Supabase Storage serves artifacts `no-cache`, and unlike WKWebView the
   // browser honours it, refetching tiles on every pan/zoom (see
-  // public/resort3d-sw.js).
+  // public/resort3d-sw.js). Registered at the TOP of <head>, before the
+  // ~1.5 MB of inlined libs parse, so the SW installs/claims during lib parse
+  // instead of after it — on a first visit more of the tile stream lands in
+  // the cache (install→activate→claim is async, so the boot's earliest
+  // fetches are still uncached; that part is inherent, not fixable by
+  // registration order).
   html = sub(
     html,
-    "</body>",
-    `<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/resort3d-sw.js").catch(function(){});</script></body>`
+    "</title>",
+    `</title><script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/resort3d-sw.js").catch(function(){});</script>`
   );
 
   return new Response(html, {

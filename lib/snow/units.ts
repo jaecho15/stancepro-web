@@ -46,18 +46,15 @@ export class UnitFormat {
   /** Chart-internal snow-label multiplier (geometry is ratio-based). */
   get snowScale(): number { return this.imperial ? 1 / 2.54 : 1; }
 
-  /** Grid wind rows: m/s (metric) ↔ mph (imperial), from the km/h payload. */
-  windFromKmh(kmh: number): number {
-    return this.imperial ? Math.round(kmh / 1.609344) : Math.round(kmh / 3.6);
-  }
-  /** Inline day chips: km/h (metric) ↔ mph (imperial). */
-  windKmh(kmh: number): number { return this.imperial ? Math.round(kmh / 1.609344) : kmh; }
+  /** Wind, everywhere: km/h (metric) ↔ mph (imperial), from the km/h payload.
+   *  Single helper on purpose — the grid used to render m/s through a second
+   *  windFromKmh(); two near-identical wind converters only invited drift. */
+  windKmh(kmh: number): number { return Math.round(this.imperial ? kmh / 1.609344 : kmh); }
 
   // Unit labels
   get snowUnit(): string { return this.imperial ? "in" : "cm"; }
   get rainUnit(): string { return this.imperial ? "in" : "mm"; }
   get elevationUnit(): string { return this.imperial ? "ft" : "m"; }
-  get windUnit(): string { return this.imperial ? "mph" : "m/s"; }
   get windKmhUnit(): string { return this.imperial ? "mph" : "km/h"; }
 
   elevationLabel(m: number): string { return `${this.elevation(m)} ${this.elevationUnit}`; }
