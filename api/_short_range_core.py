@@ -17,6 +17,7 @@ Keep this in lockstep with fetch_short_range_snow.py's base path.
 from __future__ import annotations
 
 import math
+import os
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -26,9 +27,66 @@ import requests
 
 DEFAULT_SUPABASE_URL = "https://ryiitcblrrqvjvxkobpf.supabase.co"
 DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_QAigcpa5fpKsYihAaHr-4Q_eW_EwBUk"
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
-ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+# ---- Open-Meteo, commercial plan (2026-08-03) ----
+# The free tier is licensed for NON-COMMERCIAL use only and this is a commercial
+# product; the provider raised it. Every request now goes to the customer hosts
+# with the subscription key.
+#
+# The host is per-endpoint, not one host with a path — `customer-api` serves the
+# forecast, `customer-archive-api` the archive, and so on. Verified live against
+# all five on 2026-08-03: forecast, historical-forecast, archive, ensemble and
+# seasonal each returned 200 with data. Seasonal was the open question (it is
+# absent from the plan's published feature list) and it works.
+#
+# FAILS CLOSED. `open_meteo_key()` raises when OPENMETEO_API_KEY is unset rather
+# than falling back to the free host, because a silent fallback is exactly the
+# licence violation this replaces — and an erroring cron is visible where a
+# quietly non-compliant one is not. Vercel needs the variable set before the
+# next deploy or the snow endpoints will return an error.
+OPEN_METEO_HOSTS = {
+    "forecast": "https://customer-api.open-meteo.com/v1/forecast",
+    "seasonal": "https://customer-seasonal-api.open-meteo.com/v1/seasonal",
+    "archive": "https://customer-archive-api.open-meteo.com/v1/archive",
+    "ensemble": "https://customer-ensemble-api.open-meteo.com/v1/ensemble",
+    "historical_forecast":
+        "https://customer-historical-forecast-api.open-meteo.com/v1/forecast",
+    "elevation": "https://customer-api.open-meteo.com/v1/elevation",
+}
+
+
+def open_meteo_key() -> str:
+    """The subscription key, from the environment or a local .env file."""
+    import os
+    from pathlib import Path as _Path
+    key = os.environ.get("OPENMETEO_API_KEY", "").strip()
+    if key:
+        return key
+    # `.parents[:3]` is a slice, which pathlib rejects on Python 3.9 — the
+    # runtime this actually ships on. Indexed explicitly.
+    _self = _Path(__file__).resolve()
+    roots = [_Path.cwd()] + [_self.parents[i] for i in range(min(3, len(_self.parents)))]
+    for candidate in roots:
+        env_file = candidate / ".env.local"
+        if not env_file.exists():
+            continue
+        for line in env_file.read_text().splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() == "OPENMETEO_API_KEY" and value.strip():
+                return value.strip().strip('"').strip("'")
+    raise RuntimeError(
+        "OPENMETEO_API_KEY is not set. Open-Meteo's free tier is licensed for "
+        "non-commercial use only, so there is deliberately no fallback — set the "
+        "key in the environment (Vercel) or .env.local (local).")
+
+
+def open_meteo_params(params: dict) -> dict:
+    """`params` plus the subscription key. Every call site goes through this."""
+    return {**params, "apikey": open_meteo_key()}
+
+
+FORECAST_URL = OPEN_METEO_HOSTS["forecast"]
+SEASONAL_URL = OPEN_METEO_HOSTS["seasonal"]
+ARCHIVE_URL = OPEN_METEO_HOSTS["archive"]
 REQUEST_TIMEOUT_S = 60
 DEFAULT_MODELS = "ecmwf_ifs025,gfs_seamless,icon_seamless,gem_seamless"
 QUANTILES = {"p10": 0.10, "p50": 0.50, "p90": 0.90}
@@ -101,12 +159,65 @@ def _weather_code_mode(codes: list[int]) -> int | None:
 
 # ---- copied verbatim from fetch_short_range_snow.py (no pandas) ----
 
+# A band is only worth computing when it sits far enough from its neighbour to
+# forecast differently. At the dry-adiabatic-ish lapse rates these mountains
+# see (~0.65 °C/100 m), 100 m is about where the wet-bulb crosses a rain/snow
+# decision — below that a "low" band would just restate the base band at extra
+# compute cost.
+LOW_BAND_MIN_GAP_M = 100.0
+
+
 def elevation_bands(resort: dict[str, Any]) -> dict[str, float | None]:
+    """base/mid/top as before, plus an optional `low` band.
+
+    Two different measurements feed this. `base_elevation_m` is the BASE AREA —
+    the lodge and bottom station, what a resort publishes. `terrain_min_m` /
+    `terrain_max_m` come from the map index polygon: how low and high the
+    skiable ground actually reaches. They usually agree; where they don't, each
+    is right about its own thing.
+
+    - Terrain running BELOW the base area gets its own `low` band. Cardrona's
+      base area is 1670 m but its lifts and pistes reach 1259 m, and a forecast
+      that starts at 1670 m says nothing about the 400 m where the rain/snow
+      line most often sits.
+    - Terrain reaching ABOVE the published top wins, because the published
+      figure is often a stale "highest lifted point". The reverse (index lower
+      than published) does not win — Las Leñas' polygon misses the whole upper
+      Marte sector, 2778 m against an official 3430 m.
+
+    The existing three bands keep their meaning and their values, so nothing
+    already computed moves; `low` is additive and only appears where earned.
+    """
     base = resort.get("base_elevation_m")
     top = resort.get("top_elevation_m")
+    terrain_min = resort.get("terrain_min_m")
+    terrain_max = resort.get("terrain_max_m")
+
+    # An override caller supplies the index values directly as base/top; treat
+    # them as the terrain extent too so a searched resort behaves the same.
+    if not isinstance(terrain_min, (int, float)):
+        terrain_min = None
+    if not isinstance(terrain_max, (int, float)):
+        terrain_max = None
+
+    if isinstance(top, (int, float)) and terrain_max is not None:
+        top = max(float(top), float(terrain_max))
+    elif terrain_max is not None and not isinstance(top, (int, float)):
+        top = float(terrain_max)
+    if not isinstance(base, (int, float)) and terrain_min is not None:
+        base = float(terrain_min)
+
     if not isinstance(base, (int, float)) or not isinstance(top, (int, float)) or top <= base:
         return {"mid": None}
-    return {"base": float(base), "mid": round((float(base) + float(top)) / 2.0), "top": float(top)}
+
+    bands: dict[str, float | None] = {
+        "base": float(base),
+        "mid": round((float(base) + float(top)) / 2.0),
+        "top": float(top),
+    }
+    if terrain_min is not None and float(base) - float(terrain_min) >= LOW_BAND_MIN_GAP_M:
+        bands["low"] = float(terrain_min)
+    return bands
 
 
 def slr_and_snow_fraction(t_mean_c: float) -> tuple[float, float]:
@@ -700,7 +811,7 @@ def band_daily_rows(
 # horizons at different points, so the last days can be a single model's
 # ensemble rather than multi-model agreement. `ens_members` travels on every row
 # so that is visible rather than implied.
-ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
+ENSEMBLE_URL = OPEN_METEO_HOSTS["ensemble"]
 ENSEMBLE_MODELS = "ecmwf_ifs025,gfs025,icon_global,gem_global"
 ENSEMBLE_MIN_MEMBERS = 10
 
@@ -722,7 +833,8 @@ def fetch_ensemble_daily(
     if elevation_m is not None:
         params["elevation"] = round(float(elevation_m))
     try:
-        response = requests.get(ENSEMBLE_URL, params=params, timeout=REQUEST_TIMEOUT_S)
+        response = requests.get(ENSEMBLE_URL, params=open_meteo_params(params),
+                                timeout=REQUEST_TIMEOUT_S)
         response.raise_for_status()
         daily = response.json().get("daily") or {}
     except Exception:  # noqa: BLE001 — enrichment must never sink the forecast
@@ -884,6 +996,10 @@ def polite_get(url: str, params: dict[str, Any]) -> dict[str, Any]:
     """No success-sleep (on-demand serves one resort, not a batch). Short
     backoff on transient errors — this runs in a serverless request, so the
     worst case (0.5+1.0+2.0 = 3.5s) must stay well inside the function timeout."""
+    # Every caller of this is an Open-Meteo endpoint, so the subscription key
+    # is attached here rather than at each site — one place to be wrong instead
+    # of five, and it fails closed if the key is absent.
+    params = open_meteo_params(params)
     for attempt in range(3):
         response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_S)
         if response.status_code == 200:

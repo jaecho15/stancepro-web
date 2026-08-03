@@ -2,7 +2,7 @@
 // Short-range: public.short_range_forecasts payload/summary — same jsonb the
 // iOS app decodes (ShortRangeSnowRepository). Seasonal: public.seasonal_snow_outlooks.
 
-export type BandKey = "base" | "mid" | "top";
+export type BandKey = "base" | "mid" | "top" | "low";
 
 export interface SnowResort {
   resort_id: string;

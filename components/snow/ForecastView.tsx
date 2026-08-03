@@ -32,8 +32,11 @@ const BAND_LABELS: Record<BandKey, string> = {
   top: "Top",
   mid: "Mid",
   base: "Base",
+  low: "Low",
 };
-const BAND_ORDER: BandKey[] = ["top", "mid", "base"];
+// `low` only appears where the terrain runs well below the base area (see the
+// serving function's elevation_bands); most resorts still return three.
+const BAND_ORDER: BandKey[] = ["top", "mid", "base", "low"];
 const BLOCK_LABELS: Record<string, string> = {
   dawn: "Dawn",
   morning: "Morning",
@@ -968,10 +971,17 @@ function KeyIndicators({ items }: { items: Indicator[] }) {
 // 7) Snowpack depth (mountain cross-section + table)
 // ============================================================================
 
+// Depth is estimated for base/mid/top only — the `low` band is a forecast band,
+// not a snowpack one, so it simply has no depth to report.
+type DepthBand = Exclude<BandKey, "low">;
+const hasDepth = (band: BandKey): band is DepthBand => band !== "low";
+
 function depthCm(depth: SnowDepth, band: BandKey): number | null {
+  if (!hasDepth(band)) return null;
   return depth[`${band}_cm` as const] ?? null;
 }
 function seasonCm(depth: SnowDepth, band: BandKey): number | null {
+  if (!hasDepth(band)) return null;
   return depth.season_snowfall?.[`${band}_cm` as const] ?? null;
 }
 

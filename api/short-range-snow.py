@@ -168,17 +168,27 @@ def _parse_float(value: str | None) -> float | None:
 # the caller omits ?country=. Cached across warm invocations. This is the
 # authoritative source (not the 314-row curated seed in snow_outlook_resorts).
 STORAGE_BASE = f"{SUPABASE_URL}/storage/v1/object/public/ride-tracker-static/ski-resorts"
-_RESORT_INDEX_CACHE: tuple[dict[str, str], list[tuple[float, float, str]]] | None = None
+_RESORT_INDEX_CACHE: tuple[dict[str, str], list[tuple[float, float, str]],
+                          dict[str, tuple[float, float]]] | None = None
 
 
-def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]]]:
-    """(by_id, geo) where by_id maps resort_id→country and geo is a list of
-    (lat, lon, country) used as a nearest-neighbour fallback."""
+def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]],
+                                  dict[str, tuple[float, float]]]:
+    """(by_id, geo, elev_by_id): by_id maps resort_id→country, geo is a list of
+    (lat, lon, country) used as a nearest-neighbour fallback, and elev_by_id
+    maps resort_id→(terrain_min_m, terrain_max_m)."""
     global _RESORT_INDEX_CACHE
     if _RESORT_INDEX_CACHE is not None:
         return _RESORT_INDEX_CACHE
     by_id: dict[str, str] = {}
     geo: list[tuple[float, float, str]] = []
+    # Terrain extent per resort, from the SAME index: these are the polygon's
+    # own min/max, i.e. how low and high the skiable ground actually goes —
+    # a different measurement from the curated seed's "base area elevation",
+    # which is where the lodge and the bottom lift station sit. Cardrona is the
+    # clearest case: base area 1670 m, but pistes and a lift reach 1259 m.
+    # See _terrain_extent for what each is used for.
+    elev_by_id: dict[str, tuple[float, float]] = {}
     try:
         manifest = requests.get(f"{STORAGE_BASE}/manifest.json", timeout=15)
         manifest.raise_for_status()
@@ -189,6 +199,11 @@ def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]]
             for entry in (index.json() or {}).get("resorts", []):
                 code = entry.get("country")
                 rid = entry.get("id")
+                if rid:
+                    tmin = _parse_float(entry.get("base_elevation_m"))
+                    tmax = _parse_float(entry.get("top_elevation_m"))
+                    if tmin is not None and tmax is not None and tmax > tmin:
+                        elev_by_id[str(rid)] = (tmin, tmax)
                 if not code:
                     continue
                 if rid:
@@ -198,15 +213,15 @@ def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]]
                 if lat is not None and lon is not None:
                     geo.append((lat, lon, str(code)))
     except requests.RequestException:
-        by_id, geo = {}, []
-    _RESORT_INDEX_CACHE = (by_id, geo)
+        by_id, geo, elev_by_id = {}, [], {}
+    _RESORT_INDEX_CACHE = (by_id, geo, elev_by_id)
     return _RESORT_INDEX_CACHE
 
 
 def _resolve_country(resort_id: str, weather_id: str, lat: float, lon: float) -> str | None:
     """Country for a coordinate-override resort: exact resort_id hit in the map
     index first (authoritative), else the nearest resort in that same index."""
-    by_id, geo = _load_resort_index()
+    by_id, geo, _ = _load_resort_index()
     for key in (resort_id, weather_id):
         code = by_id.get(key)
         if code:
@@ -554,6 +569,28 @@ def _fetch_resort_metadata(requested_id: str, weather_id: str) -> dict | None:
     return core.fetch_resort(slug) if slug else None
 
 
+def _terrain_extent(weather_id: str) -> dict:
+    """How low and high the skiable ground actually goes, from the map index —
+    every one of its 3,466 resorts carries it, so this works for a resort the
+    user just searched as well as for a curated one.
+
+    Kept separate from the curated seed's base/top because they measure
+    different things: the seed's base is the BASE AREA (lodge, bottom station),
+    the index's is the polygon's lowest ground. Where a resort's terrain runs
+    well below its base area — Cardrona: base area 1670 m, lifts and pistes
+    down to 1259 m — a forecast built only from the base area silently drops
+    the band where the rain/snow line most often sits.
+
+    Returns {} when the index has nothing for this id, which leaves the
+    existing three-band behaviour exactly as it was.
+    """
+    _, _, elev_by_id = _load_resort_index()
+    pair = elev_by_id.get(weather_id)
+    if not pair:
+        return {}
+    return {"terrain_min_m": pair[0], "terrain_max_m": pair[1]}
+
+
 def _build(resort_id: str, max_age_s: int, refresh: bool,
            resort_override: dict | None = None) -> tuple[int, dict]:
     now = datetime.now(tz=timezone.utc)
@@ -585,7 +622,7 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
     if not resort:
         return 404, {"error": "resort_not_found", "resort_id": resort_id}
 
-    resort = {**resort, "resort_id": weather_id}
+    resort = {**resort, "resort_id": weather_id, **_terrain_extent(weather_id)}
     payload = core.compute_forecast(resort)
     if isinstance(payload, dict):
         payload = {**payload, "resort_id": weather_id}
