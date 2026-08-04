@@ -39,6 +39,24 @@ from http.server import BaseHTTPRequestHandler
 
 import requests
 
+# Open-Meteo commercial plan (2026-08-03). Hosts and key live in one place —
+# see short_range_core.open_meteo_key for why there is no free-tier fallback.
+# The canonical core sits in StancePro/scripts; the web functions carry a
+# byte-identical vendored copy beside them, so both names are tried.
+import sys as _sys
+from pathlib import Path as _Path
+_here = _Path(__file__).resolve()
+for _candidate in (_here.parent,
+                   *(_here.parents[i] / "scripts" for i in range(min(4, len(_here.parents))))):
+    if (_candidate / "short_range_core.py").exists() and str(_candidate) not in _sys.path:
+        _sys.path.insert(0, str(_candidate))
+        break
+try:
+    from short_range_core import OPEN_METEO_HOSTS, open_meteo_params
+except ImportError:                       # web functions sit beside the vendored copy
+    from _short_range_core import OPEN_METEO_HOSTS, open_meteo_params
+
+
 SUPABASE_URL = (
     os.environ.get("SUPABASE_URL")
     or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
@@ -95,9 +113,10 @@ def _grid_elevations(coords: list[tuple[float, float]]) -> list[float | None]:
         chunk = coords[i:i + 100]
         for attempt in range(4):
             response = requests.get(
-                "https://api.open-meteo.com/v1/elevation",
-                params={"latitude": ",".join(f"{lat:.6f}" for lat, _ in chunk),
-                        "longitude": ",".join(f"{lon:.6f}" for _, lon in chunk)},
+                OPEN_METEO_HOSTS["elevation"],
+                params=open_meteo_params(
+                    {"latitude": ",".join(f"{lat:.6f}" for lat, _ in chunk),
+                     "longitude": ",".join(f"{lon:.6f}" for _, lon in chunk)}),
                 timeout=30,
             )
             if response.status_code == 429:

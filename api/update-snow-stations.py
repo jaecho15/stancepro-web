@@ -78,6 +78,24 @@ import json
 import os
 import re
 import sys
+
+# Open-Meteo commercial plan (2026-08-03). Hosts and key live in one place —
+# see short_range_core.open_meteo_key for why there is no free-tier fallback.
+# The canonical core sits in StancePro/scripts; the web functions carry a
+# byte-identical vendored copy beside them, so both names are tried.
+import sys as _sys
+from pathlib import Path as _Path
+_here = _Path(__file__).resolve()
+for _candidate in (_here.parent,
+                   *(_here.parents[i] / "scripts" for i in range(min(4, len(_here.parents))))):
+    if (_candidate / "short_range_core.py").exists() and str(_candidate) not in _sys.path:
+        _sys.path.insert(0, str(_candidate))
+        break
+try:
+    from short_range_core import OPEN_METEO_HOSTS, open_meteo_params
+except ImportError:                       # web functions sit beside the vendored copy
+    from _short_range_core import OPEN_METEO_HOSTS, open_meteo_params
+
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -158,7 +176,7 @@ JMA_LATEST_TIME_URL = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 JMA_MAP_URL = "https://www.jma.go.jp/bosai/amedas/data/map/{stamp}.json"
 JMA_META_URL = "https://www.jma.go.jp/bosai/amedas/const/amedastable.json"
 AIC_STATIONS_URL = "https://www.aic.gob.ar/estaciones"
-OPEN_METEO_ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
+OPEN_METEO_ELEVATION_URL = OPEN_METEO_HOSTS["elevation"]
 
 IN_TO_CM = 2.54
 IN_TO_MM = 25.4
@@ -623,8 +641,8 @@ def _aic_terrain_elevations(points: list[tuple[float, float]]) -> dict[tuple[flo
     try:
         response = requests.get(
             OPEN_METEO_ELEVATION_URL,
-            params={"latitude": ",".join(f"{lat:.6f}" for lat, _ in points),
-                    "longitude": ",".join(f"{lon:.6f}" for _, lon in points)},
+            params=open_meteo_params({"latitude": ",".join(f"{lat:.6f}" for lat, _ in points),
+                    "longitude": ",".join(f"{lon:.6f}" for _, lon in points)}),
             timeout=TIMEOUT_S,
         )
         response.raise_for_status()

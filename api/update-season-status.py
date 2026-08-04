@@ -36,6 +36,24 @@ from http.server import BaseHTTPRequestHandler
 
 import requests
 
+# Open-Meteo commercial plan (2026-08-03). Hosts and key live in one place —
+# see short_range_core.open_meteo_key for why there is no free-tier fallback.
+# The canonical core sits in StancePro/scripts; the web functions carry a
+# byte-identical vendored copy beside them, so both names are tried.
+import sys as _sys
+from pathlib import Path as _Path
+_here = _Path(__file__).resolve()
+for _candidate in (_here.parent,
+                   *(_here.parents[i] / "scripts" for i in range(min(4, len(_here.parents))))):
+    if (_candidate / "short_range_core.py").exists() and str(_candidate) not in _sys.path:
+        _sys.path.insert(0, str(_candidate))
+        break
+try:
+    from short_range_core import OPEN_METEO_HOSTS, open_meteo_params
+except ImportError:                       # web functions sit beside the vendored copy
+    from _short_range_core import OPEN_METEO_HOSTS, open_meteo_params
+
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     import _snow_outlook_slug_map as slug_map
@@ -54,8 +72,8 @@ READ_KEY = (
 )
 WRITE_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 
-ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ARCHIVE_URL = OPEN_METEO_HOSTS["archive"]
+FORECAST_URL = OPEN_METEO_HOSTS["forecast"]
 TIMEOUT_S = 50
 
 # SH winter regions (subregion-geojson region_ids) → display labels.

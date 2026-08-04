@@ -29,7 +29,19 @@
     },
     {
       "path": "/api/sweep-short-range",
-      "schedule": "10 7 * * *"
+      "schedule": "10 0 * * *"
+    },
+    {
+      "path": "/api/sweep-short-range",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/sweep-short-range",
+      "schedule": "10 12 * * *"
+    },
+    {
+      "path": "/api/sweep-short-range",
+      "schedule": "10 18 * * *"
     },
     {
       "path": "/api/update-annual-history",
