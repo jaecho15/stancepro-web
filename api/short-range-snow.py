@@ -563,10 +563,31 @@ def _fetch_resort_metadata(requested_id: str, weather_id: str) -> dict | None:
     """Resolve elev/country metadata from snow_outlook_resorts (still slug-keyed)."""
     if not (requested_id.startswith("osm-") or requested_id.startswith("manual-")):
         return core.fetch_resort(requested_id)
-    # OSM/manual request: reverse map to curated slug when available.
-    reverse = {osm: slug for slug, osm in slug_map.load_slug_to_osm().items()}
-    slug = reverse.get(weather_id)
-    return core.fetch_resort(slug) if slug else None
+    # OSM/manual request: reverse map to curated slug(s). Several slugs can
+    # point at the same OSM id (cardrona AND cardrona_alpine_resort →
+    # osm-way-482928467); the old `{osm: slug}` comprehension silently kept
+    # whichever slug iterated last, so which curated row answered depended on
+    # JSON file order. Resolve the collision on data, deterministically: fetch
+    # every candidate and keep the row with the HIGHEST base_elevation_m.
+    # Duplicate rows disagree precisely because one of them recorded the
+    # terrain minimum as its "base" (cardrona: 1260 ≈ polygon min, against the
+    # 1670 m base area) — and a base AREA is never below the terrain minimum.
+    # Ties keep the alphabetically first slug. Collisions are rare, so the
+    # extra fetch happens on almost no resort.
+    candidates = sorted(
+        slug for slug, osm in slug_map.load_slug_to_osm().items() if osm == weather_id
+    )
+    best: dict | None = None
+    best_base = float("-inf")
+    for slug in candidates:
+        row = core.fetch_resort(slug)
+        if not row:
+            continue
+        base = row.get("base_elevation_m")
+        base_val = float(base) if isinstance(base, (int, float)) else float("-inf")
+        if best is None or base_val > best_base:
+            best, best_base = row, base_val
+    return best
 
 
 def _terrain_extent(weather_id: str) -> dict:
@@ -621,6 +642,29 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
     resort = resort_override or _fetch_resort_metadata(resort_id, weather_id)
     if not resort:
         return 404, {"error": "resort_not_found", "resort_id": resort_id}
+
+    if resort_override:
+        # The override's base_m is the map index's figure, which for some
+        # resorts IS the terrain minimum (Cardrona: 1259 m, the lowest piste,
+        # against a 1670 m base area) — and with base == terrain_min the `low`
+        # band can never trigger, no matter how far the terrain runs below the
+        # real base area. When a curated row exists for this weather id and
+        # publishes a HIGHER base, adopt it as the base area; coordinates and
+        # top stay the caller's. Max, not replace: some curated rows carry the
+        # polygon minimum as their base (treble_cone: 1260 against the index's
+        # 1400), and lowering the base would cost that resort its low band.
+        curated = _fetch_resort_metadata(weather_id, weather_id)
+        curated_base = (curated or {}).get("base_elevation_m")
+        override_base = resort.get("base_elevation_m")
+        override_top = resort.get("top_elevation_m")
+        if (
+            isinstance(curated_base, (int, float))
+            and isinstance(override_base, (int, float))
+            and float(curated_base) > float(override_base)
+            and (not isinstance(override_top, (int, float))
+                 or float(curated_base) < float(override_top))
+        ):
+            resort = {**resort, "base_elevation_m": float(curated_base)}
 
     resort = {**resort, "resort_id": weather_id, **_terrain_extent(weather_id)}
     payload = core.compute_forecast(resort)

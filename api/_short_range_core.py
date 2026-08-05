@@ -614,12 +614,45 @@ def hourly_band_day(
     if not day_snow:
         return [], None
 
+    day_present = sorted(day_snow)
+    day_p10, day_p50, day_p90 = _quantiles([day_snow[m] for m in day_present])
+
+    # ---- block p50 reconciliation (2026-08-05) ----
+    # Cross-model quantiles are not additive: the day p50 is a quantile of
+    # per-model DAY totals while each block p50 is a quantile of per-model
+    # BLOCK totals, so a day can honestly read 1 cm while every block median
+    # is 0 (two of four models snowing, in different blocks — observed at
+    # Cardrona 2026-08-08: the header said 1 cm, the bars drew nothing). The
+    # header and the bars must tell one story, so the block snow_cm_p50
+    # EMITTED is the day p50 allocated across blocks by the cross-model MEAN
+    # share (means, unlike quantiles, are additive; the shares sum to 1),
+    # with largest-remainder rounding so the blocks sum to the day p50
+    # exactly. Block p10/p90 stay true per-block quantiles (only clamped to
+    # bracket the allocated p50), and nothing day-level or weekly moves, so
+    # the quantile-of-sums rule for totals is untouched.
+    total_snow = sum(day_snow[m] for m in day_present)
+    alloc_p50: list[float] | None = None
+    if total_snow > 0:
+        units = int(round(day_p50 * 10))               # day_p50 is 0.1-rounded
+        raw = [units * sum(block_snow[i].values()) / total_snow for i in range(n_blocks)]
+        floors = [int(math.floor(r)) for r in raw]
+        spare = max(0, units - sum(floors))
+        # Ascending (floor - raw) = biggest remainder first; the sort is
+        # stable, so remainder ties resolve toward the earlier block.
+        for i in sorted(range(n_blocks), key=lambda b: floors[b] - raw[b])[:spare]:
+            floors[i] += 1
+        alloc_p50 = [f / 10.0 for f in floors]
+
     blocks: list[dict[str, Any]] = []
     for block_index, (block_key, block_ko, hour_lo, hour_hi) in enumerate(TIME_BLOCKS):
         present = sorted(block_snow[block_index])
         if not present:
             continue
         p10, p50, p90 = _quantiles([block_snow[block_index][m] for m in present])
+        if alloc_p50 is not None:
+            p50 = alloc_p50[block_index]
+            p10 = min(p10, p50)
+            p90 = max(p90, p50)
         precip_p50 = round(_median([block_precip[block_index][m] for m in present]), 1)
         temp_means = [sum(block_temps[block_index][m]) / len(block_temps[block_index][m]) for m in present]
         temp_p50 = _median(temp_means)
@@ -660,16 +693,14 @@ def hourly_band_day(
             }
         )
 
-    present = sorted(day_snow)
-    p10, p50, p90 = _quantiles([day_snow[m] for m in present])
-    temp_means = [sum(day_temps[m]) / len(day_temps[m]) for m in present]
+    temp_means = [sum(day_temps[m]) / len(day_temps[m]) for m in day_present]
     day_wind_kmh, day_wind_dir_deg, day_wind_gust_kmh = _wind_aggregate(day_wind)
     day_agg = {
-        "n_models": len(present),
-        "snow_cm_p10": p10,
-        "snow_cm_p50": p50,
-        "snow_cm_p90": p90,
-        "precip_mm_p50": round(_median([day_precip[m] for m in present]), 1),
+        "n_models": len(day_present),
+        "snow_cm_p10": day_p10,
+        "snow_cm_p50": day_p50,
+        "snow_cm_p90": day_p90,
+        "precip_mm_p50": round(_median([day_precip[m] for m in day_present]), 1),
         "tmean_c_p50": round(_median(temp_means), 1),
         "wind_kmh": day_wind_kmh,
         "wind_dir_deg": day_wind_dir_deg,
