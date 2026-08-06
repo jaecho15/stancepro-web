@@ -147,6 +147,107 @@ def _quantiles(values: list[float]) -> tuple[float, float, float]:
     )
 
 
+# ---- feels-like (2026-08-06) -----------------------------------------------
+# Shipped after a measured 8-11.5 C morning miss at the Queenstown resorts.
+# On clear, calm winter mornings the cold pool sits in the VALLEY while the
+# slopes above it stay near zero; lapse-rate downscaling exports the valley's
+# cold uphill, and Open-Meteo's apparent_temperature (Steadman) then subtracts
+# its -4.00 constant on top because the dry, calm air zeroes its other terms.
+# Served -13.9 C feels at Cardrona mid while sensors at that elevation read
+# about 0 C.
+
+def wind_chill_c(temp_c: float, wind_kmh: float | None) -> float:
+    """JAG/TI wind chill, the cold-weather feels-like.
+
+    Replaces the Steadman apparent-temperature passthrough, whose -4.00
+    constant dominates in cold dry calm air (measured offset -3.6 to -4.6
+    across all four models, in full sun included). JAG/TI is the formula built
+    for sub-10 C conditions: outside its domain (T > 10 C or wind under
+    4.8 km/h) the honest answer is the air temperature itself.
+    """
+    if wind_kmh is None or wind_kmh < 4.8 or temp_c > 10.0:
+        return temp_c
+    v = wind_kmh ** 0.16
+    return 13.12 + 0.6215 * temp_c - 11.37 * v + 0.3965 * temp_c * v
+
+
+# ---- band temperature from the pressure-level profile (2026-08-06) ----------
+# The displayed band temperature comes from the FREE-AIR profile (temperature
+# at pressure levels, interpolated to band elevation by geopotential height),
+# not from grid-2m + lapse downscaling. Why: on clear calm winter mornings the
+# cold pool sits in the VALLEY while the slopes above it stay near zero;
+# downscaling exports the valley's 2m cold uphill. Measured 2026-08-06 across
+# all four Queenstown resorts: served morning blocks -8.7 to -11.4 C against
+# on-slope sensors at -0.7 to +0.1 C. The freezing-level cold-cap alternative
+# was rejected because freezing_level_m is contaminated by the same inversion
+# (multiple 0 C crossings — the model said 932 m while sensors held ~0 C at
+# 1,620 m), leaving a -5 C residual; profile interpolation re-run over the same
+# morning landed within +-0.5 C at the 1,620 m and 1,720 m stations.
+#
+# Scope: DISPLAY temperature and feels-like only. Snow amounts and phase
+# (hybrid Tw) keep reading the 2m series — changing their input is a separate
+# validation, not this fix. Scored daily against the Holfuy stations.
+#
+# Fallback is the 2m value, per hour per model, whenever the profile cannot
+# answer: fetch failed, a model lacks the level, or the band sits below the
+# lowest level (~750 m at 925 hPa) or above the highest. That floor also means
+# valley-floor bands keep their 2m reading — inside the cold pool the cold IS
+# the truth. No extrapolation, ever: outside the bracketing levels the profile
+# has nothing to say. 600 hPa (~4,200 m) exists for the high Andes bands.
+PRESSURE_PROFILE_LEVELS = (925, 900, 850, 800, 700, 600)
+
+
+def profile_temp_by_stamp(
+    profile_hourly: dict[str, Any] | None,
+    band_elevation: float | None,
+) -> dict[str, dict[str, float]] | None:
+    """{time stamp: {model: interpolated temp C at band elevation}}.
+
+    Missing (stamp, model) entries mean "profile has no answer here" — callers
+    fall back to the 2m series for exactly that hour, so degradation is
+    per-sample,
+    never per-resort.
+    """
+    if not profile_hourly or band_elevation is None:
+        return None
+    times = profile_hourly.get("time") or []
+    if not times:
+        return None
+    elev = float(band_elevation)
+    models: set[str] = set()
+    for level in PRESSURE_PROFILE_LEVELS:
+        prefix = f"temperature_{level}hPa_"
+        for key in profile_hourly:
+            if key.startswith(prefix):
+                models.add(key[len(prefix):])
+    out: dict[str, dict[str, float]] = {}
+    for model in models:
+        level_pairs = []
+        for level in PRESSURE_PROFILE_LEVELS:
+            temps = profile_hourly.get(f"temperature_{level}hPa_{model}")
+            heights = profile_hourly.get(f"geopotential_height_{level}hPa_{model}")
+            if temps and heights:
+                level_pairs.append((temps, heights))
+        if len(level_pairs) < 2:
+            continue
+        for index, stamp in enumerate(times):
+            points = []
+            for temps, heights in level_pairs:
+                t = temps[index] if index < len(temps) else None
+                h = heights[index] if index < len(heights) else None
+                if t is not None and h is not None:
+                    points.append((float(h), float(t)))
+            points.sort()
+            if len(points) < 2 or elev < points[0][0] or elev > points[-1][0]:
+                continue
+            for (h_lo, t_lo), (h_hi, t_hi) in zip(points, points[1:]):
+                if h_lo <= elev <= h_hi:
+                    frac = 0.0 if h_hi == h_lo else (elev - h_lo) / (h_hi - h_lo)
+                    out.setdefault(stamp, {})[model] = t_lo + frac * (t_hi - t_lo)
+                    break
+    return out or None
+
+
 def _weather_code_mode(codes: list[int]) -> int | None:
     """Most common WMO weather_code; ties break toward the higher (usually more
     severe) code so a mixed clear/overcast block does not read as clear."""
@@ -544,6 +645,7 @@ def hourly_band_day(
     band_elevation: float | None,
     date: str,
     freezing_block: dict[tuple[str, int], float],
+    profile_temps: dict[str, dict[str, float]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     times = hourly.get("time") or []
     models = hourly_model_names(hourly)
@@ -553,8 +655,10 @@ def hourly_band_day(
     day_temps: dict[str, list[float]] = defaultdict(list)
     block_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
+    # DISPLAY temperature at band elevation: the profile-interpolated value
+    # when available, the 2m series otherwise (see PRESSURE_PROFILE_LEVELS).
+    # Snow/phase physics reads `temp` directly and never these arrays.
     block_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
-    block_feels: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
     day_wind: list[tuple[float, float, float]] = []
     block_wind: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
@@ -564,7 +668,6 @@ def hourly_band_day(
         precip_series = hourly.get(f"precipitation_{model}") or []
         temp_series = hourly.get(f"temperature_2m_{model}") or []
         rh_series = hourly.get(f"relative_humidity_2m_{model}") or []
-        feels_series = hourly.get(f"apparent_temperature_{model}") or []
         wspd_series = hourly.get(f"wind_speed_10m_{model}") or []
         wdir_series = hourly.get(f"wind_direction_10m_{model}") or []
         wgst_series = hourly.get(f"wind_gusts_10m_{model}") or []
@@ -593,13 +696,15 @@ def hourly_band_day(
                 )
             day_snow[model] += snow_cm
             day_precip[model] += float(precip)
-            day_temps[model].append(float(temp))
             block_snow[block_index][model] += snow_cm
             block_precip[block_index][model] += float(precip)
-            block_temps[block_index][model].append(float(temp))
-            feels = feels_series[index] if index < len(feels_series) else None
-            if feels is not None:
-                block_feels[block_index][model].append(float(feels))
+            disp_temp = None
+            if profile_temps is not None:
+                disp_temp = profile_temps.get(stamp, {}).get(model)
+            if disp_temp is None:
+                disp_temp = float(temp)
+            day_temps[model].append(disp_temp)
+            block_temps[block_index][model].append(disp_temp)
             wspd = wspd_series[index] if index < len(wspd_series) else None
             wdir = wdir_series[index] if index < len(wdir_series) else None
             if wspd is not None and wdir is not None:
@@ -656,9 +761,8 @@ def hourly_band_day(
         precip_p50 = round(_median([block_precip[block_index][m] for m in present]), 1)
         temp_means = [sum(block_temps[block_index][m]) / len(block_temps[block_index][m]) for m in present]
         temp_p50 = _median(temp_means)
-        feels_models = [m for m in present if block_feels[block_index][m]]
-        feels_means = [sum(block_feels[block_index][m]) / len(block_feels[block_index][m]) for m in feels_models]
-        feels_p50 = _median(feels_means) if feels_means else None
+        wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(block_wind[block_index])
+        feels_p50 = wind_chill_c(temp_p50, wind_kmh)
         # precip_type follows the EMITTED hybrid numbers (snow cm ÷ 0.7 → SWE mm
         # share of the block precip) so a block can never show fresh cm labeled
         # "rain"; dry blocks keep the dry-bulb ladder label.
@@ -669,7 +773,6 @@ def hourly_band_day(
         else:
             _, snow_fraction = slr_and_snow_fraction(temp_p50)
         freezing = freezing_block.get((date, block_index))
-        wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(block_wind[block_index])
         blocks.append(
             {
                 "block": block_key,
@@ -681,7 +784,7 @@ def hourly_band_day(
                 "snow_cm_p90": p90,
                 "precip_mm_p50": precip_p50,
                 "temp_c_p50": round(temp_p50, 1),
-                "feels_c_p50": round(feels_p50, 1) if feels_p50 is not None else None,
+                "feels_c_p50": round(feels_p50, 1),
                 "precip_type": "snow" if snow_fraction >= 0.8 else ("mix" if snow_fraction > 0.0 else "rain"),
                 "freezing_level_m": round(freezing) if freezing is not None else None,
                 "snow_level_margin_m": _snow_level_margin(band_elevation, freezing),
@@ -716,6 +819,7 @@ def band_daily_rows(
     freezing_by_date: dict[str, float],
     freezing_by_block: dict[tuple[str, int], float],
     time_of_day_days: int,
+    profile_hourly: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     daily = payload.get("daily") or {}
     times = daily.get("time") or []
@@ -723,6 +827,7 @@ def band_daily_rows(
     models = daily_model_names(daily)
     used_elevation = payload.get("elevation")
     band_elevation = elevation_m if elevation_m is not None else used_elevation
+    profile_temps = profile_temp_by_stamp(profile_hourly, band_elevation)
     rows: list[dict[str, Any]] = []
     for index, date in enumerate(times):
         native_values = [
@@ -736,7 +841,8 @@ def band_daily_rows(
         blocks: list[dict[str, Any]] = []
         day_agg: dict[str, Any] | None = None
         if index < time_of_day_days:
-            blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block)
+            blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
+                                              profile_temps)
 
         if day_agg:
             snow_p10 = day_agg["snow_cm_p10"]
@@ -1069,8 +1175,10 @@ def fetch_band_forecast(
     }
     if elevation_m is not None and math.isfinite(elevation_m):
         params["elevation"] = f"{elevation_m:.0f}"
+    # No apparent_temperature: feels-like is computed (wind_chill_c) from the
+    # band temperature, not read from Open-Meteo's Steadman formula.
     hourly_vars = (
-        "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,"
+        "temperature_2m,relative_humidity_2m,precipitation,"
         "snowfall,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
     )
     if include_freezing_level:
@@ -1079,6 +1187,31 @@ def fetch_band_forecast(
     # Current snowpack depth (metres) → the "current depth" layer served in the
     # same payload (FATMAP-style live depth). Single value across models.
     params["current"] = "snow_depth"
+    return polite_get(FORECAST_URL, params)
+
+
+def fetch_pressure_profile(resort: dict[str, Any], models: str) -> dict[str, Any]:
+    """Free-air temperature/height at the pressure levels, one call per RESORT.
+
+    Per resort and not per band: pressure-level values describe the air column
+    above the grid cell, so every band interpolates from the same payload
+    (profile_temp_by_stamp). 7 days matches the hourly/blocks window — D8-16
+    rows are daily-var only and keep their 2m tmean.
+    """
+    params: dict[str, Any] = {
+        "latitude": f"{float(resort['lat']):.5f}",
+        "longitude": f"{float(resort['lon']):.5f}",
+        "hourly": ",".join(
+            f"temperature_{level}hPa,geopotential_height_{level}hPa"
+            for level in PRESSURE_PROFILE_LEVELS
+        ),
+        "models": models,
+        "forecast_days": 7,
+        "timezone": "auto",
+        # Same pin as fetch_band_forecast so profile and band describe the
+        # same grid column (no elevation param — the column has no elevation).
+        "cell_selection": "nearest",
+    }
     return polite_get(FORECAST_URL, params)
 
 
@@ -1510,6 +1643,9 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             for band in bands
         }
         tendency_future = pool.submit(fetch_tendency, resort, bands.get("mid")) if with_tendency else None
+        # Free-air profile for the displayed band temperature (one per resort,
+        # every band interpolates from it). Failure degrades to the 2m path.
+        profile_future = pool.submit(fetch_pressure_profile, resort, models)
         # Depth model: one grid fetch (archive season history + forecast tail)
         # drives every band via a temperature lapse — see season_band_metrics.
         season_future = pool.submit(fetch_season_series, resort)
@@ -1532,12 +1668,17 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         season_series, grid_elev = season_future.result()
         station = station_future.result() if station_future else None
         snowline = snowline_future.result() if snowline_future else None
+        try:
+            profile_hourly = (profile_future.result() or {}).get("hourly")
+        except Exception:
+            profile_hourly = None  # display temps fall back to the 2m path
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
     for band in sorted(band_payloads, key=lambda name: name != "mid"):
         band_rows = band_daily_rows(band_payloads[band], band, bands[band],
-                                    freezing_by_date, freezing_by_block, 7)
+                                    freezing_by_date, freezing_by_block, 7,
+                                    profile_hourly)
         attach_ensemble(band_rows, ensembles.get(band) or {})
         daily_rows.extend(band_rows)
     for row in daily_rows:

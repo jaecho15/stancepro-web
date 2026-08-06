@@ -39,7 +39,12 @@ import _snow_outlook_slug_map as slug_map  # noqa: E402
 TABLE = "short_range_forecasts"
 ARCHIVE_TABLE = "short_range_forecast_archive"
 DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
-CONFIG_VERSION = "hybrid-tw-v2"  # base + wet-bulb phase override at band elevation
+# v3 (2026-08-06): displayed band temp from the pressure-level profile (2m
+# lapse downscaling exported valley-inversion cold uphill — measured -8.7 to
+# -11.4 C served vs -0.7 to +0.1 C on-slope across the Queenstown resorts) and
+# feels-like from JAG/TI wind chill instead of Steadman's flat -4. Snow/phase
+# physics unchanged from v2.
+CONFIG_VERSION = "hybrid-tw-v3-profile-temp"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
