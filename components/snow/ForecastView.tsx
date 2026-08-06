@@ -221,9 +221,41 @@ function SkyIcon({ code, className }: { code: number | null | undefined; classNa
   return <Cloud className={`${size} text-slate-500 shrink-0`} />;
 }
 
+/** The sky facet of the day icon, read from the DAYTIME blocks
+ *  (morning + afternoon) — night/dawn cloud must not pollute the day glyph.
+ *  Daytime precip means the daytime sky IS a precipitating deck → cloud; a
+ *  clear↔cloudy split shows the partly glyph; no blocks (D8-16) falls back
+ *  to the day-level code. Parity with the apps. */
+function DaytimeSkyIcon({ row, className }: { row: DailyRow; className?: string }) {
+  const daytime = (row.time_of_day ?? []).filter(
+    (b) => b.block === "morning" || b.block === "afternoon",
+  );
+  if (daytime.some((b) => b.snow_cm_p50 > 0 || (b.precip_mm_p50 ?? 0) > 0.5)) {
+    return <Cloud className={`${className ?? "w-4 h-4"} text-slate-500 shrink-0`} />;
+  }
+  const codes = daytime.map((b) => b.weather_code).filter((c): c is number => c != null);
+  if (!codes.length) return <SkyIcon code={row.weather_code} className={className} />;
+  const hasClear = codes.some((c) => c <= 1);
+  const hasCloud = codes.some((c) => c >= 2);
+  if (hasClear && hasCloud) return <SkyIcon code={2} className={className} />;
+  return <SkyIcon code={Math.max(...codes)} className={className} />;
+}
+
+/** Day glyph. A precip day never collapses to one facet: the glyph is
+ *  "[what falls] / [daytime sky]" — dawn snow before a clear day reads ❄/☀,
+ *  trace snow under overcast reads ❄/☁. Mix keeps its own two-sided ❄/☂
+ *  glyph. Dry days show the daytime sky alone. */
 function DayConditionIcon({ row, className }: { row: DailyRow; className?: string }) {
-  if (hasMeasurablePrecip(row)) return <PrecipIcon kind={precipKind(row)} className={className} />;
-  return <SkyIcon code={row.weather_code} className={className} />;
+  if (!hasMeasurablePrecip(row)) return <DaytimeSkyIcon row={row} className={className} />;
+  const kind = precipKind(row);
+  if (kind === "mix") return <PrecipIcon kind="mix" className={className} />;
+  return (
+    <span className="inline-flex items-center shrink-0">
+      <PrecipIcon kind={kind} className="w-3 h-3" />
+      <span className="text-[10px] font-medium mx-px leading-none text-slate-400">/</span>
+      <DaytimeSkyIcon row={row} className="w-3 h-3" />
+    </span>
+  );
 }
 
 function BlockSkyIcon({ block, className }: { block: TimeBlock; className?: string }) {
