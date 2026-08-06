@@ -889,11 +889,25 @@ def band_daily_rows(
                     )
             wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(wind_samples)
 
-        weather_codes: list[int] = []
-        for model in models:
-            series = daily.get(f"weather_code_{model}") or []
-            if index < len(series) and series[index] is not None:
-                weather_codes.append(int(series[index]))
+        # Day-level sky code (2026-08-06): within the hourly window the day's
+        # code is the MODE OF ITS OWN BLOCK CODES, not Open-Meteo's daily
+        # weather_code. The daily variable is each model's WORST HOUR of the
+        # day, and the cross-model tie-break leans severe — measured at
+        # Cardrona 2026-08-06: models read [3,3,1,1] off ~2 overcast hours in
+        # an ~80%-clear day, serving an overcast header over four clear blocks.
+        # Deriving the header from the blocks makes that contradiction
+        # impossible by construction (same principle as the block p50
+        # reconciliation). D8-16 has no blocks, so the daily variable stands.
+        block_wx = [b["weather_code"] for b in blocks if b.get("weather_code") is not None]
+        if block_wx:
+            day_weather_code = _weather_code_mode(block_wx)
+        else:
+            weather_codes: list[int] = []
+            for model in models:
+                series = daily.get(f"weather_code_{model}") or []
+                if index < len(series) and series[index] is not None:
+                    weather_codes.append(int(series[index]))
+            day_weather_code = _weather_code_mode(weather_codes)
 
         rows.append(
             {
@@ -915,7 +929,7 @@ def band_daily_rows(
                 "wind_kmh": wind_kmh,
                 "wind_dir_deg": wind_dir_deg,
                 "wind_gust_kmh": wind_gust_kmh,
-                "weather_code": _weather_code_mode(weather_codes),
+                "weather_code": day_weather_code,
                 "time_of_day": blocks,
                 **forecast_tier(
                     day_index=index + 1,

@@ -44,7 +44,10 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # -11.4 C served vs -0.7 to +0.1 C on-slope across the Queenstown resorts) and
 # feels-like from JAG/TI wind chill instead of Steadman's flat -4. Snow/phase
 # physics unchanged from v2.
-CONFIG_VERSION = "hybrid-tw-v3-profile-temp"
+# v3.1: D1-7 day weather_code = mode of its own block codes (the daily
+# variable is each model's worst hour — served an overcast header over four
+# clear blocks, Cardrona 2026-08-06). Numeric fields untouched from v3.
+CONFIG_VERSION = "hybrid-tw-v3.1-day-wx"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
