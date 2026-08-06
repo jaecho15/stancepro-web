@@ -252,7 +252,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_lockup_tagline_diecut_light",
-    label: "Lockup + tagline die-cut — light mode ink (navy)",
+    label: "Lockup + tagline die-cut — light (white face, navy ink)",
     category: "stickers",
     imagePath:
       "/brand-review/merch/sticker_lockup_tagline_diecut_light_5.5x2in_preview.png",
@@ -271,7 +271,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_lockup_tagline_diecut_dark",
-    label: "Lockup + tagline die-cut — dark mode ink (white)",
+    label: "Lockup + tagline die-cut — dark (navy face, white ink)",
     category: "stickers",
     imagePath:
       "/brand-review/merch/sticker_lockup_tagline_diecut_dark_5.5x2in_preview.png",
@@ -290,7 +290,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut",
-    label: "Die-cut 6×1.5 — light mode ink (navy, light boards)",
+    label: "Die-cut 6×1.5 — light (white face, navy ink)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_6x1.5in_preview.png",
     whiteMat: false,
@@ -308,7 +308,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_dark_board",
-    label: "Die-cut 6×1.5 — dark mode ink (white, dark boards)",
+    label: "Die-cut 6×1.5 — dark (navy face, white ink)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_dark_board_6x1.5in_preview.png",
     whiteMat: false,
@@ -326,7 +326,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_large",
-    label: "Die-cut 10×2.5 — light mode ink (navy, light boards)",
+    label: "Die-cut 10×2.5 — light (white face, navy ink)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_10x2.5in_preview.png",
     whiteMat: false,
@@ -344,7 +344,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_dark_board_large",
-    label: "Die-cut 10×2.5 — dark mode ink (white, dark boards)",
+    label: "Die-cut 10×2.5 — dark (navy face, white ink)",
     category: "stickers",
     imagePath:
       "/brand-review/merch/sticker_snowboard_diecut_dark_board_10x2.5in_preview.png",

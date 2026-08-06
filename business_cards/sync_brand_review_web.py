@@ -32,21 +32,21 @@ OFFICIAL_STICKER_PREVIEWS: tuple[tuple[str, str], ...] = (
     ("sticker_lockup_tagline_white_5.5x2in_preview.png", "Lockup + tagline — white"),
     (
         "sticker_lockup_tagline_diecut_light_5.5x2in_preview.png",
-        "Lockup + tagline die-cut — light mode ink",
+        "Lockup + tagline die-cut — light (white face)",
     ),
     (
         "sticker_lockup_tagline_diecut_dark_5.5x2in_preview.png",
-        "Lockup + tagline die-cut — dark mode ink",
+        "Lockup + tagline die-cut — dark (navy face)",
     ),
-    ("sticker_snowboard_diecut_6x1.5in_preview.png", "Die-cut 6×1.5 — light mode ink"),
+    ("sticker_snowboard_diecut_6x1.5in_preview.png", "Die-cut 6×1.5 — light (white face)"),
     (
         "sticker_snowboard_diecut_dark_board_6x1.5in_preview.png",
-        "Die-cut 6×1.5 — dark mode ink",
+        "Die-cut 6×1.5 — dark (navy face)",
     ),
-    ("sticker_snowboard_diecut_10x2.5in_preview.png", "Die-cut 10×2.5 — light mode ink"),
+    ("sticker_snowboard_diecut_10x2.5in_preview.png", "Die-cut 10×2.5 — light (white face)"),
     (
         "sticker_snowboard_diecut_dark_board_10x2.5in_preview.png",
-        "Die-cut 10×2.5 — dark mode ink",
+        "Die-cut 10×2.5 — dark (navy face)",
     ),
     ("sticker_helmet_hex_2.5in_preview.png", "Helmet — full-color hex"),
     ("sticker_helmet_white_2.5in_preview.png", "Helmet — white mono"),

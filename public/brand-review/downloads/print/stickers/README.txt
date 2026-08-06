@@ -1,11 +1,9 @@
 StancePro sticker print files
 
-- PNG artwork is 300 dpi (transparent for die-cuts).
-- Light-ink / dark-board die-cuts use white + blue ink — open them on a dark
-  surface (or use the SVG, which sets a navy browser background) or the white
-  logo will look blank on a white page.
-- Die-cut SVG files embed the artwork PNG plus a magenta CutContour path
-  (id="CutContour"). CSS background-color on the root <svg> is for on-screen
-  preview only; it is not a printable fill.
+- PNG artwork is 300 dpi. Die-cuts keep a transparent exterior around the face.
+- Dark-mode die-cuts bake a navy board face + white/light ink into the PNG.
+- Light-mode die-cuts bake a white board face + navy ink into the PNG.
+- Die-cut SVG files embed the matching artwork PNG plus a magenta CutContour
+  path (id="CutContour").
 - Contour clearance is 0.125 in around the artwork.
 - Ask the printer to convert the SVG stroke to its required CutContour spot color.

@@ -289,6 +289,10 @@ def render_lockup_tagline_sticker(
     Layout (text-block height == logo height):
       [hex] STANCEPRO
             Portal to your winter
+
+    Die-cut variants keep a transparent exterior but bake the sticker face
+    (navy + white ink for dark / white + navy ink for light) into the PNG so
+    downloads are readable without relying on viewer background color.
     """
     spec = SPECS["lockup_tagline"]
     w, h = px(spec.width_in), px(spec.height_in)
@@ -301,18 +305,18 @@ def render_lockup_tagline_sticker(
         canvas = Image.new("RGBA", (w, h), WHITE + (255,))
     draw = ImageDraw.Draw(canvas)
 
-    if not diecut:
-        margin = px(0.12)
-        fill = (NAVY_DEEP + (255,)) if on_dark else (WHITE + (255,))
-        outline = (BLUE_ACCENT + (120,)) if on_dark else (NAVY + (80,))
-        draw_rounded_rect(
-            draw,
-            (margin, margin, w - margin, h - margin),
-            radius=px(0.12),
-            fill=fill,
-            outline=outline,
-            width=2,
-        )
+    # Filled face for both print-sheet and die-cut (die-cut: transparent outside).
+    margin = px(0.12)
+    fill = (NAVY_DEEP + (255,)) if on_dark else (WHITE + (255,))
+    outline = (BLUE_ACCENT + (120,)) if on_dark else (NAVY + (80,))
+    draw_rounded_rect(
+        draw,
+        (margin, margin, w - margin, h - margin),
+        radius=px(0.12),
+        fill=fill,
+        outline=outline,
+        width=2,
+    )
 
     logo_path = LOGO_DARK if on_dark else LOGO_LIGHT
     logo = Image.open(logo_path).convert("RGBA")
@@ -529,11 +533,30 @@ def render_snowboard_sticker_diecut(
     spec_key: str = "snowboard",
     include_cut_contour: bool = False,
 ) -> Image.Image:
-    """Transparent background for vinyl on boards; light ink variant reads on dark boards."""
+    """Die-cut snowboard sticker with baked face color + lockup.
+
+    dark_board=True  → navy face (#1A2E61 family) + white/light ink
+    dark_board=False → white face + navy ink
+
+    Exterior stays transparent for die-cut; the board face is opaque pixels in
+    the PNG (not a CSS-only preview trick).
+    """
     spec = SPECS[spec_key]
     w, h = px(spec.width_in), px(spec.height_in)
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
+
+    margin = px(0.12)
+    fill = (NAVY_DEEP + (255,)) if dark_board else (WHITE + (255,))
+    outline = (BLUE_ACCENT + (120,)) if dark_board else (NAVY + (80,))
+    draw_rounded_rect(
+        draw,
+        (margin, margin, w - margin, h - margin),
+        radius=px(0.12),
+        fill=fill,
+        outline=outline,
+        width=2,
+    )
 
     paste_sticker_lockup(
         canvas,
