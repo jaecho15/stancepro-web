@@ -239,7 +239,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_6x1.5in_300dpi.png",
       },
       {
-        label: "Cutline SVG",
+        label: "SVG (artwork + cutline)",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_6x1.5in.svg",
       },
     ],
@@ -257,8 +257,8 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
       },
       {
-        label: "Cutline SVG",
-        path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_6x1.5in.svg",
+        label: "SVG (artwork + cutline)",
+        path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_dark_board_6x1.5in.svg",
       },
     ],
   },
@@ -275,7 +275,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_10x2.5in_300dpi.png",
       },
       {
-        label: "Cutline SVG",
+        label: "SVG (artwork + cutline)",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_10x2.5in.svg",
       },
     ],
@@ -294,8 +294,8 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png",
       },
       {
-        label: "Cutline SVG",
-        path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_10x2.5in.svg",
+        label: "SVG (artwork + cutline)",
+        path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_dark_board_10x2.5in.svg",
       },
     ],
   },

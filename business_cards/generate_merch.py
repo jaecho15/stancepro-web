@@ -158,10 +158,15 @@ SPECS = {
     "snowboard_large": MerchSpec(
         "sticker_snowboard_large", 10.0, 2.5, "Large snowboard sticker"
     ),
+    "lockup_tagline": MerchSpec(
+        "sticker_lockup_tagline", 5.5, 2.0, "Lockup + tagline sticker"
+    ),
     "helmet": MerchSpec("sticker_helmet", 2.5, 2.5, "Helmet sticker"),
     "shop_qr": MerchSpec("sticker_shop_qr", 3.0, 3.0, "Shop counter QR"),
     "tee": MerchSpec("tee_chest", 11.0, 14.0, "T-shirt chest print"),
 }
+
+TAGLINE = "PORTAL TO YOUR WINTER"
 
 
 def px(inches: float) -> int:
@@ -207,12 +212,16 @@ def paste_sticker_lockup(
     gap_in: float = 0.12,
     lockup_scale: float = 1.0,
     safe_margin_in: float = 0.16,
-) -> None:
-    """Centered hex + STANCEPRO lockup for snowboard stickers."""
+    center_y: int | None = None,
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+    """Centered hex + STANCEPRO lockup for snowboard stickers.
+
+    Returns (hex_bbox, wordmark_bbox).
+    """
     logo_path = LOGO_DARK if on_dark else LOGO_LIGHT
     logo = Image.open(logo_path).convert("RGBA")
     h, w = canvas.height, canvas.width
-    cy = h // 2
+    cy = h // 2 if center_y is None else center_y
     base_hex_h = int(h * hex_h_ratio)
     content = _logo_content(logo)
     hex_h = int(round(base_hex_h * HORIZONTAL_STICKER_LOGO_SCALE * lockup_scale))
@@ -243,7 +252,146 @@ def paste_sticker_lockup(
 
     hex_x = (w - total_w) // 2
     hex_bbox = paste_logo_content_centered_v(canvas, logo, hex_x, hex_h, cy)
-    wm_v5.paste_wordmark(canvas, wordmark, hex_bbox[2] + gap, cy)
+    wm_bbox = wm_v5.paste_wordmark(canvas, wordmark, hex_bbox[2] + gap, cy)
+    return hex_bbox, wm_bbox
+
+
+def draw_tagline(
+    draw: ImageDraw.ImageDraw,
+    *,
+    center_x: int,
+    y: int,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    fill,
+    tracking_px: int = 1,
+) -> tuple[int, int, int, int]:
+    """Centered tagline with light letter-spacing. Returns text bbox."""
+    widths = [int(font.getlength(ch)) for ch in text]
+    total_w = sum(widths) + tracking_px * max(0, len(text) - 1)
+    x = center_x - total_w // 2
+    cursor = x
+    for ch, cw in zip(text, widths):
+        draw.text((cursor, y), ch, font=font, fill=fill)
+        cursor += cw + tracking_px
+    bbox = draw.textbbox((x, y), text, font=font)
+    # Approximate with tracking: widen right edge
+    return (x, bbox[1], x + total_w, bbox[3])
+
+
+def render_lockup_tagline_sticker(
+    *,
+    on_dark: bool = True,
+    diecut: bool = False,
+) -> Image.Image:
+    """Horizontal lockup with tagline stacked under the wordmark.
+
+    Layout (text-block height == logo height):
+      [hex] STANCEPRO
+            Portal to your winter
+    """
+    spec = SPECS["lockup_tagline"]
+    w, h = px(spec.width_in), px(spec.height_in)
+
+    if diecut:
+        canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    elif on_dark:
+        canvas = Image.new("RGBA", (w, h), NAVY + (255,))
+    else:
+        canvas = Image.new("RGBA", (w, h), WHITE + (255,))
+    draw = ImageDraw.Draw(canvas)
+
+    if not diecut:
+        margin = px(0.12)
+        fill = (NAVY_DEEP + (255,)) if on_dark else (WHITE + (255,))
+        outline = (BLUE_ACCENT + (120,)) if on_dark else (NAVY + (80,))
+        draw_rounded_rect(
+            draw,
+            (margin, margin, w - margin, h - margin),
+            radius=px(0.12),
+            fill=fill,
+            outline=outline,
+            width=2,
+        )
+
+    logo_path = LOGO_DARK if on_dark else LOGO_LIGHT
+    logo = Image.open(logo_path).convert("RGBA")
+    content = _logo_content(logo)
+
+    safe = px(0.28)
+    gap = px(0.10)
+    available_w = w - 2 * safe
+    hex_h = int(round(h * 0.55 * HORIZONTAL_STICKER_LOGO_SCALE))
+
+    # Stack: wordmark + gap + tagline must equal hex_h.
+    stack_gap = max(4, int(hex_h * 0.08))
+    wm_share = 0.62  # wordmark takes ~62% of logo height; tagline the rest
+    wm_h = max(12, int(hex_h * wm_share))
+    tagline_h = max(10, hex_h - wm_h - stack_gap)
+
+    wordmark = load_wordmark(on_dark, wm_h)
+    hex_w = max(1, int(round(content.width * (hex_h / content.height))))
+    total_w = hex_w + gap + wordmark.width
+    if total_w > available_w:
+        scale = (available_w - gap) / (hex_w + wordmark.width)
+        hex_h = max(1, int(hex_h * scale))
+        stack_gap = max(4, int(hex_h * 0.08))
+        wm_h = max(12, int(hex_h * wm_share))
+        tagline_h = max(10, hex_h - wm_h - stack_gap)
+        wordmark = load_wordmark(on_dark, wm_h)
+        hex_w = max(1, int(round(content.width * (hex_h / content.height))))
+        total_w = hex_w + gap + wordmark.width
+        while total_w > available_w and hex_h > 1:
+            hex_h -= 1
+            stack_gap = max(4, int(hex_h * 0.08))
+            wm_h = max(12, int(hex_h * wm_share))
+            tagline_h = max(10, hex_h - wm_h - stack_gap)
+            wordmark = load_wordmark(on_dark, wm_h)
+            hex_w = max(1, int(round(content.width * (hex_h / content.height))))
+            total_w = hex_w + gap + wordmark.width
+
+    # Fit tagline font into remaining tagline_h band
+    tagline_font_size = max(10, tagline_h)
+    tagline_font = fnt(FONT_AVENIR, tagline_font_size, AV_MED)
+    while tagline_font_size > 10:
+        bb = draw.textbbox((0, 0), TAGLINE, font=tagline_font)
+        if (bb[3] - bb[1]) <= tagline_h:
+            break
+        tagline_font_size -= 1
+        tagline_font = fnt(FONT_AVENIR, tagline_font_size, AV_MED)
+
+    # Re-measure actual text ink heights and redistribute to keep stack == hex_h
+    wm_ink_h = wordmark.height
+    tag_bb = draw.textbbox((0, 0), TAGLINE, font=tagline_font)
+    tag_ink_h = tag_bb[3] - tag_bb[1]
+    stack_h = wm_ink_h + stack_gap + tag_ink_h
+    if stack_h != hex_h and stack_h > 0:
+        # Prefer adjusting stack_gap so top/bottom still pin to logo edges
+        stack_gap = max(2, hex_h - wm_ink_h - tag_ink_h)
+        stack_h = wm_ink_h + stack_gap + tag_ink_h
+
+    cy = h // 2
+    hex_top = cy - hex_h // 2
+    hex_x = (w - total_w) // 2
+    hex_bbox = paste_logo_content(canvas, logo, hex_x, hex_top, hex_h)
+
+    text_left = hex_bbox[2] + gap
+    wm_y = hex_top
+    canvas.paste(wordmark, (text_left, wm_y), wordmark)
+
+    tagline_fill = MUTED_WHITE if on_dark else (NAVY + (180,))
+    tracking = max(1, int(hex_h * 0.012))
+    widths = [int(tagline_font.getlength(ch)) for ch in TAGLINE]
+    tag_w = sum(widths) + tracking * max(0, len(TAGLINE) - 1)
+    # Left-align tagline to wordmark "S"
+    tag_x = text_left
+    tag_y = hex_top + wm_ink_h + stack_gap - tag_bb[1]
+    cursor = tag_x
+    for ch, cw in zip(TAGLINE, widths):
+        draw.text((cursor, tag_y), ch, font=tagline_font, fill=tagline_fill)
+        cursor += cw + tracking
+
+    return canvas
 
 
 def render_shop_qr_sticker() -> Image.Image:
@@ -587,6 +735,22 @@ def build_sticker_preview_sheet() -> Image.Image:
         ("Snowboard — navy 6×1.5 in", render_snowboard_sticker_navy()),
         ("Snowboard — white 6×1.5 in", render_snowboard_sticker_white()),
         (
+            "Lockup + tagline — navy 5.5×2 in",
+            render_lockup_tagline_sticker(on_dark=True),
+        ),
+        (
+            "Lockup + tagline — white 5.5×2 in",
+            render_lockup_tagline_sticker(on_dark=False),
+        ),
+        (
+            "Lockup + tagline — die-cut light",
+            render_lockup_tagline_sticker(on_dark=False, diecut=True),
+        ),
+        (
+            "Lockup + tagline — die-cut dark",
+            render_lockup_tagline_sticker(on_dark=True, diecut=True),
+        ),
+        (
             "Die-cut 6×1.5 — light board",
             render_snowboard_sticker_diecut(include_cut_contour=True),
         ),
@@ -649,6 +813,10 @@ def main() -> None:
     outputs = [
         ("sticker_snowboard_navy_6x1.5in_300dpi.png", render_snowboard_sticker_navy()),
         ("sticker_snowboard_white_6x1.5in_300dpi.png", render_snowboard_sticker_white()),
+        ("sticker_lockup_tagline_navy_5.5x2in_300dpi.png", render_lockup_tagline_sticker(on_dark=True)),
+        ("sticker_lockup_tagline_white_5.5x2in_300dpi.png", render_lockup_tagline_sticker(on_dark=False)),
+        ("sticker_lockup_tagline_diecut_light_5.5x2in_300dpi.png", render_lockup_tagline_sticker(on_dark=False, diecut=True)),
+        ("sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png", render_lockup_tagline_sticker(on_dark=True, diecut=True)),
         ("sticker_snowboard_diecut_6x1.5in_300dpi.png", render_snowboard_sticker_diecut()),
         ("sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png", render_snowboard_sticker_diecut(dark_board=True)),
         ("sticker_snowboard_diecut_10x2.5in_300dpi.png", render_snowboard_sticker_diecut(spec_key="snowboard_large")),

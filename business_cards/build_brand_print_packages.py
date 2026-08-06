@@ -2,6 +2,7 @@
 """Build downloadable print packages for the internal brand review portal."""
 from __future__ import annotations
 
+import base64
 import shutil
 import zipfile
 from pathlib import Path
@@ -66,9 +67,10 @@ CATEGORY_READMES = {
     "stickers": """StancePro sticker print files
 
 - PNG artwork is 300 dpi.
-- Transparent die-cut PNGs do not contain the magenta contour.
-- Match each die-cut PNG with the SVG for its physical size.
-- SVG contour clearance is 0.125 in around the artwork.
+- Die-cut SVG files embed the artwork PNG plus a magenta CutContour path
+  (id=\"CutContour\"). Opening the SVG in a browser should show the lockup,
+  not a blank white page.
+- Contour clearance is 0.125 in around the artwork.
 - Ask the printer to convert the SVG stroke to its required CutContour spot color.
 """,
 }
@@ -84,6 +86,7 @@ def copy_files(source: Path, names: tuple[str, ...], destination: Path) -> None:
 
 
 def write_cutline_svg(artwork_path: Path, destination: Path) -> None:
+    """Write SVG with embedded artwork + magenta CutContour (printer + preview)."""
     with Image.open(artwork_path).convert("RGBA") as artwork:
         bbox = artwork.getbbox()
         if not bbox:
@@ -96,11 +99,19 @@ def write_cutline_svg(artwork_path: Path, destination: Path) -> None:
     contour_width = bbox[2] - bbox[0] + pad * 2
     contour_height = bbox[3] - bbox[1] + pad * 2
     radius = DPI * 0.1
-    stroke_width = DPI / 72 * 0.25
+    # Thicker on-screen stroke so the contour is visible in browser preview;
+    # printers rematch CutContour to their spot color / plot stroke.
+    stroke_width = max(2.0, DPI / 72 * 0.75)
+    png_b64 = base64.b64encode(artwork_path.read_bytes()).decode("ascii")
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
   width="{width / DPI:g}in" height="{height / DPI:g}in"
   viewBox="0 0 {width} {height}">
+  <!-- Artwork preview (transparent PNG). CutContour is for die-cut only. -->
+  <image id="Artwork" x="0" y="0" width="{width}" height="{height}"
+    preserveAspectRatio="none"
+    xlink:href="data:image/png;base64,{png_b64}" />
   <rect id="CutContour" x="{x:g}" y="{y:g}"
     width="{contour_width:g}" height="{contour_height:g}"
     rx="{radius:g}" ry="{radius:g}" fill="none"
@@ -139,8 +150,16 @@ def main() -> None:
         sticker_dir / "sticker_snowboard_diecut_cutline_6x1.5in.svg",
     )
     write_cutline_svg(
+        sticker_dir / "sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
+        sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_6x1.5in.svg",
+    )
+    write_cutline_svg(
         sticker_dir / "sticker_snowboard_diecut_10x2.5in_300dpi.png",
         sticker_dir / "sticker_snowboard_diecut_cutline_10x2.5in.svg",
+    )
+    write_cutline_svg(
+        sticker_dir / "sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png",
+        sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_10x2.5in.svg",
     )
 
     for category, text in CATEGORY_READMES.items():
