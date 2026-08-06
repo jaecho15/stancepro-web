@@ -2,12 +2,9 @@
 """Build downloadable print packages for the internal brand review portal."""
 from __future__ import annotations
 
-import base64
 import shutil
 import zipfile
 from pathlib import Path
-
-from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 PUBLIC_ROOT = HERE.parent / "public/brand-review/downloads/print"
@@ -70,17 +67,18 @@ CATEGORY_READMES = {
 """,
     "stickers": """StancePro sticker print files
 
-- PNG artwork is 300 dpi (transparent for die-cuts).
-- Light die-cuts: navy (#1A2E61) ink on transparency — for light surfaces.
-- Dark die-cuts: white ink on transparency — for dark surfaces (view against a
-  dark board or checkerboard preview; SVG has no forced background fill).
-- Rectangular navy/white snowboard and lockup stickers keep filled faces; those
-  are separate products from die-cuts.
-- Die-cut SVG files embed the matching artwork PNG plus a magenta CutContour
-  path (id=\"CutContour\"). No CSS background-color is set on the root <svg>
-  (print stays transparent; browser default is white).
-- Contour clearance is 0.125 in around the artwork.
-- Ask the printer to convert the SVG stroke to its required CutContour spot color.
+PNG (web / proof):
+- 300 dpi artwork. Die-cuts are transparent (navy or white ink only).
+- Rectangular navy/white snowboard and lockup stickers keep filled faces.
+
+Die-cut SVG (send these to the print shop):
+- True vector paths for logo mark + wordmark (+ tagline where applicable).
+- No embedded PNG / <image> raster artwork.
+- Light = navy + blue ink; dark = white + cyan ink. Transparent — no background fill.
+- Magenta path id=\"CutContour\" is the die line (rounded rect, 0.125 in clearance).
+- Ask the printer to convert that stroke to their required CutContour spot color.
+- \"Snowboard\" names the placement product; the die shape is a rounded rectangle
+  around the lockup (not a snowboard silhouette).
 """,
 }
 
@@ -92,49 +90,6 @@ def copy_files(source: Path, names: tuple[str, ...], destination: Path) -> None:
         if not src.is_file():
             raise FileNotFoundError(f"Missing print asset: {src}")
         shutil.copy2(src, destination / name)
-
-
-def write_cutline_svg(
-    artwork_path: Path,
-    destination: Path,
-) -> None:
-    """Write SVG with embedded artwork + magenta CutContour (printer + preview).
-
-    No CSS background-color on the root <svg> — print stays transparent ink only;
-    browsers show the default (white) page behind the artwork.
-    """
-    with Image.open(artwork_path).convert("RGBA") as artwork:
-        bbox = artwork.getbbox()
-        if not bbox:
-            raise ValueError(f"Artwork has no visible pixels: {artwork_path}")
-        width, height = artwork.size
-
-    pad = DPI * 0.125
-    x = bbox[0] - pad
-    y = bbox[1] - pad
-    contour_width = bbox[2] - bbox[0] + pad * 2
-    contour_height = bbox[3] - bbox[1] + pad * 2
-    radius = DPI * 0.1
-    # Thicker on-screen stroke so the contour is visible in browser preview;
-    # printers rematch CutContour to their spot color / plot stroke.
-    stroke_width = max(2.0, DPI / 72 * 0.75)
-    png_b64 = base64.b64encode(artwork_path.read_bytes()).decode("ascii")
-    svg = f"""<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
-  xmlns:xlink="http://www.w3.org/1999/xlink"
-  width="{width / DPI:g}in" height="{height / DPI:g}in"
-  viewBox="0 0 {width} {height}">
-  <!-- Artwork is a transparent PNG; no forced SVG background fill. -->
-  <image id="Artwork" x="0" y="0" width="{width}" height="{height}"
-    preserveAspectRatio="none"
-    xlink:href="data:image/png;base64,{png_b64}" />
-  <rect id="CutContour" x="{x:g}" y="{y:g}"
-    width="{contour_width:g}" height="{contour_height:g}"
-    rx="{radius:g}" ry="{radius:g}" fill="none"
-    stroke="#FF00FF" stroke-width="{stroke_width:g}" />
-</svg>
-"""
-    destination.write_text(svg, encoding="utf-8")
 
 
 def write_zip(zip_path: Path, root: Path, members: tuple[str, ...]) -> None:
@@ -150,6 +105,8 @@ def write_zip(zip_path: Path, root: Path, members: tuple[str, ...]) -> None:
 
 
 def main() -> None:
+    from vector_diecut import write_all_diecut_svgs
+
     if PUBLIC_ROOT.exists():
         shutil.rmtree(PUBLIC_ROOT)
     PUBLIC_ROOT.mkdir(parents=True)
@@ -161,31 +118,8 @@ def main() -> None:
     copy_files(CARD_SRC, BUSINESS_CARDS, card_dir)
     copy_files(STICKER_SRC, STICKERS, sticker_dir)
 
-    # Die-cuts: transparent ink only (navy or white). No SVG background-color.
-    write_cutline_svg(
-        sticker_dir / "sticker_snowboard_diecut_6x1.5in_300dpi.png",
-        sticker_dir / "sticker_snowboard_diecut_cutline_6x1.5in.svg",
-    )
-    write_cutline_svg(
-        sticker_dir / "sticker_snowboard_diecut_10x2.5in_300dpi.png",
-        sticker_dir / "sticker_snowboard_diecut_cutline_10x2.5in.svg",
-    )
-    write_cutline_svg(
-        sticker_dir / "sticker_lockup_tagline_diecut_light_5.5x2in_300dpi.png",
-        sticker_dir / "sticker_lockup_tagline_diecut_cutline_light_5.5x2in.svg",
-    )
-    write_cutline_svg(
-        sticker_dir / "sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
-        sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_6x1.5in.svg",
-    )
-    write_cutline_svg(
-        sticker_dir / "sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png",
-        sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_10x2.5in.svg",
-    )
-    write_cutline_svg(
-        sticker_dir / "sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png",
-        sticker_dir / "sticker_lockup_tagline_diecut_cutline_dark_5.5x2in.svg",
-    )
+    # True-vector die-cut SVGs (paths only — no raster embeds)
+    write_all_diecut_svgs(sticker_dir)
 
     for category, text in CATEGORY_READMES.items():
         (PUBLIC_ROOT / category / "README.txt").write_text(text, encoding="utf-8")
@@ -195,9 +129,10 @@ def main() -> None:
 Folders:
 - posters: A1 poster PNGs
 - business-cards: named fronts and shared backs
-- stickers: 300 dpi PNG artwork and separate SVG die-cut contours
+- stickers: 300 dpi PNG proofs + true-vector die-cut SVGs (CutContour included)
 
-Always confirm bleed, trim, color profile, and CutContour naming with the selected printer.
+For die-cut stickers, send the *.svg files to the printer (not the PNG proofs).
+Always confirm bleed, trim, color profile, and CutContour naming with the printer.
 """
     (PUBLIC_ROOT / "README.txt").write_text(root_readme, encoding="utf-8")
 

@@ -260,11 +260,11 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     checkerMat: true,
     printFiles: [
       {
-        label: "Artwork PNG",
+        label: "Preview PNG",
         path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_light_5.5x2in_300dpi.png",
       },
       {
-        label: "SVG (artwork + cutline)",
+        label: "SVG vector + cutline",
         path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_cutline_light_5.5x2in.svg",
       },
     ],
@@ -279,11 +279,11 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     checkerMat: true,
     printFiles: [
       {
-        label: "Artwork PNG",
+        label: "Preview PNG",
         path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png",
       },
       {
-        label: "SVG (artwork + cutline)",
+        label: "SVG vector + cutline",
         path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_cutline_dark_5.5x2in.svg",
       },
     ],
@@ -297,11 +297,11 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     checkerMat: true,
     printFiles: [
       {
-        label: "Artwork PNG",
+        label: "Preview PNG",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_6x1.5in_300dpi.png",
       },
       {
-        label: "SVG (artwork + cutline)",
+        label: "SVG vector + cutline",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_6x1.5in.svg",
       },
     ],
@@ -315,11 +315,11 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     checkerMat: true,
     printFiles: [
       {
-        label: "Artwork PNG",
+        label: "Preview PNG",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
       },
       {
-        label: "SVG (artwork + cutline)",
+        label: "SVG vector + cutline",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_dark_board_6x1.5in.svg",
       },
     ],
@@ -333,11 +333,11 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     checkerMat: true,
     printFiles: [
       {
-        label: "Artwork PNG",
+        label: "Preview PNG",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_10x2.5in_300dpi.png",
       },
       {
-        label: "SVG (artwork + cutline)",
+        label: "SVG vector + cutline",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_10x2.5in.svg",
       },
     ],
@@ -352,11 +352,11 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     checkerMat: true,
     printFiles: [
       {
-        label: "Artwork PNG",
+        label: "Preview PNG",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png",
       },
       {
-        label: "SVG (artwork + cutline)",
+        label: "SVG vector + cutline",
         path: "/brand-review/downloads/print/stickers/sticker_snowboard_diecut_cutline_dark_board_10x2.5in.svg",
       },
     ],
