@@ -39,6 +39,10 @@ BUSINESS_CARDS = (
 STICKERS = (
     "sticker_snowboard_navy_6x1.5in_300dpi.png",
     "sticker_snowboard_white_6x1.5in_300dpi.png",
+    "sticker_lockup_tagline_navy_5.5x2in_300dpi.png",
+    "sticker_lockup_tagline_white_5.5x2in_300dpi.png",
+    "sticker_lockup_tagline_diecut_light_5.5x2in_300dpi.png",
+    "sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png",
     "sticker_snowboard_diecut_6x1.5in_300dpi.png",
     "sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
     "sticker_snowboard_diecut_10x2.5in_300dpi.png",
@@ -66,10 +70,13 @@ CATEGORY_READMES = {
 """,
     "stickers": """StancePro sticker print files
 
-- PNG artwork is 300 dpi.
+- PNG artwork is 300 dpi (transparent for die-cuts).
+- Light-ink / dark-board die-cuts use white + blue ink — open them on a dark
+  surface (or use the SVG, which sets a navy browser background) or the white
+  logo will look blank on a white page.
 - Die-cut SVG files embed the artwork PNG plus a magenta CutContour path
-  (id=\"CutContour\"). Opening the SVG in a browser should show the lockup,
-  not a blank white page.
+  (id=\"CutContour\"). CSS background-color on the root <svg> is for on-screen
+  preview only; it is not a printable fill.
 - Contour clearance is 0.125 in around the artwork.
 - Ask the printer to convert the SVG stroke to its required CutContour spot color.
 """,
@@ -85,8 +92,18 @@ def copy_files(source: Path, names: tuple[str, ...], destination: Path) -> None:
         shutil.copy2(src, destination / name)
 
 
-def write_cutline_svg(artwork_path: Path, destination: Path) -> None:
-    """Write SVG with embedded artwork + magenta CutContour (printer + preview)."""
+def write_cutline_svg(
+    artwork_path: Path,
+    destination: Path,
+    *,
+    preview_bg: str | None = None,
+) -> None:
+    """Write SVG with embedded artwork + magenta CutContour (printer + preview).
+
+    preview_bg: CSS color for root <svg> background (browser/desktop preview only).
+    Use navy for light-ink / dark-board artwork so white logos stay visible on
+    open; omit for dark-ink / light-board artwork (readable on default white).
+    """
     with Image.open(artwork_path).convert("RGBA") as artwork:
         bbox = artwork.getbbox()
         if not bbox:
@@ -103,12 +120,13 @@ def write_cutline_svg(artwork_path: Path, destination: Path) -> None:
     # printers rematch CutContour to their spot color / plot stroke.
     stroke_width = max(2.0, DPI / 72 * 0.75)
     png_b64 = base64.b64encode(artwork_path.read_bytes()).decode("ascii")
+    bg_attr = f'\n  style="background-color:{preview_bg}"' if preview_bg else ""
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg"
   xmlns:xlink="http://www.w3.org/1999/xlink"
   width="{width / DPI:g}in" height="{height / DPI:g}in"
-  viewBox="0 0 {width} {height}">
-  <!-- Artwork preview (transparent PNG). CutContour is for die-cut only. -->
+  viewBox="0 0 {width} {height}"{bg_attr}>
+  <!-- Artwork is a transparent PNG. CSS background-color (if set) is preview-only. -->
   <image id="Artwork" x="0" y="0" width="{width}" height="{height}"
     preserveAspectRatio="none"
     xlink:href="data:image/png;base64,{png_b64}" />
@@ -145,21 +163,35 @@ def main() -> None:
     copy_files(CARD_SRC, BUSINESS_CARDS, card_dir)
     copy_files(STICKER_SRC, STICKERS, sticker_dir)
 
+    # Dark-ink (light board / light mode): readable on default white page.
     write_cutline_svg(
         sticker_dir / "sticker_snowboard_diecut_6x1.5in_300dpi.png",
         sticker_dir / "sticker_snowboard_diecut_cutline_6x1.5in.svg",
-    )
-    write_cutline_svg(
-        sticker_dir / "sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
-        sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_6x1.5in.svg",
     )
     write_cutline_svg(
         sticker_dir / "sticker_snowboard_diecut_10x2.5in_300dpi.png",
         sticker_dir / "sticker_snowboard_diecut_cutline_10x2.5in.svg",
     )
     write_cutline_svg(
+        sticker_dir / "sticker_lockup_tagline_diecut_light_5.5x2in_300dpi.png",
+        sticker_dir / "sticker_lockup_tagline_diecut_cutline_light_5.5x2in.svg",
+    )
+    # Light-ink (dark board / dark mode): navy CSS bg so white logos aren't blank.
+    navy_preview = "#1A2E61"
+    write_cutline_svg(
+        sticker_dir / "sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
+        sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_6x1.5in.svg",
+        preview_bg=navy_preview,
+    )
+    write_cutline_svg(
         sticker_dir / "sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png",
         sticker_dir / "sticker_snowboard_diecut_cutline_dark_board_10x2.5in.svg",
+        preview_bg=navy_preview,
+    )
+    write_cutline_svg(
+        sticker_dir / "sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png",
+        sticker_dir / "sticker_lockup_tagline_diecut_cutline_dark_5.5x2in.svg",
+        preview_bg=navy_preview,
     )
 
     for category, text in CATEGORY_READMES.items():

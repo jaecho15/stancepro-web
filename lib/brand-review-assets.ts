@@ -227,8 +227,70 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     ],
   },
   {
+    slug: "sticker_lockup_tagline_navy",
+    label: "Lockup + tagline — navy 5.5×2 in",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_lockup_tagline_navy_5.5x2in_preview.png",
+    printFiles: [
+      {
+        label: "300dpi PNG",
+        path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_navy_5.5x2in_300dpi.png",
+      },
+    ],
+  },
+  {
+    slug: "sticker_lockup_tagline_white",
+    label: "Lockup + tagline — white 5.5×2 in",
+    category: "stickers",
+    imagePath: "/brand-review/merch/sticker_lockup_tagline_white_5.5x2in_preview.png",
+    printFiles: [
+      {
+        label: "300dpi PNG",
+        path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_white_5.5x2in_300dpi.png",
+      },
+    ],
+  },
+  {
+    slug: "sticker_lockup_tagline_diecut_light",
+    label: "Lockup + tagline die-cut — light mode ink (navy)",
+    category: "stickers",
+    imagePath:
+      "/brand-review/merch/sticker_lockup_tagline_diecut_light_5.5x2in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+    printFiles: [
+      {
+        label: "Artwork PNG",
+        path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_light_5.5x2in_300dpi.png",
+      },
+      {
+        label: "SVG (artwork + cutline)",
+        path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_cutline_light_5.5x2in.svg",
+      },
+    ],
+  },
+  {
+    slug: "sticker_lockup_tagline_diecut_dark",
+    label: "Lockup + tagline die-cut — dark mode ink (white)",
+    category: "stickers",
+    imagePath:
+      "/brand-review/merch/sticker_lockup_tagline_diecut_dark_5.5x2in_preview.png",
+    whiteMat: false,
+    checkerMat: true,
+    printFiles: [
+      {
+        label: "Artwork PNG",
+        path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png",
+      },
+      {
+        label: "SVG (artwork + cutline)",
+        path: "/brand-review/downloads/print/stickers/sticker_lockup_tagline_diecut_cutline_dark_5.5x2in.svg",
+      },
+    ],
+  },
+  {
     slug: "sticker_snowboard_diecut",
-    label: "Die-cut 6×1.5 — light board",
+    label: "Die-cut 6×1.5 — light mode ink (navy, light boards)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_6x1.5in_preview.png",
     whiteMat: false,
@@ -246,7 +308,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_dark_board",
-    label: "Die-cut 6×1.5 — dark board",
+    label: "Die-cut 6×1.5 — dark mode ink (white, dark boards)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_dark_board_6x1.5in_preview.png",
     whiteMat: false,
@@ -264,7 +326,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_large",
-    label: "Die-cut 10×2.5 — light board",
+    label: "Die-cut 10×2.5 — light mode ink (navy, light boards)",
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_10x2.5in_preview.png",
     whiteMat: false,
@@ -282,7 +344,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
   },
   {
     slug: "sticker_snowboard_diecut_dark_board_large",
-    label: "Die-cut 10×2.5 — dark board",
+    label: "Die-cut 10×2.5 — dark mode ink (white, dark boards)",
     category: "stickers",
     imagePath:
       "/brand-review/merch/sticker_snowboard_diecut_dark_board_10x2.5in_preview.png",
