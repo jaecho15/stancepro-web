@@ -932,6 +932,105 @@ def _safe_detail(exc: BaseException, limit: int = 200) -> str:
     return f"{name}: {text[:limit]}"
 
 
+# ---- Holfuy alpine weather stations (temperature) --------------------------
+# Found 2026-08-06 while chasing an 8-11 degree morning cold bias at the
+# Queenstown resorts: the Holfuy paragliding/ski network publishes genuine
+# on-mountain sensors with a public ~15-minute series. These are the only
+# public temperature sensors AT ski-field elevation in the region — MetService
+# and NIWA publish nothing above the valley floor, and the resorts' own site
+# temperature is an OpenSnow forecast, not a sensor.
+#
+# The series file (dynamic/graphs/tdarr{id}.js) carries about FIVE DAYS of
+# history per fetch, so this collector is self-healing: a missed cron run
+# recovers on the next one. Timestamps in the file are NZ local time.
+#
+# Rows land in station_weather_observations keyed (station_id, observed_at)
+# with ignore-duplicates, so re-ingesting the overlapping window is a no-op.
+HOLFUY_SERIES_URL = "https://holfuy.com/dynamic/graphs/tdarr{sid}.js"
+HOLFUY_STATIONS = {
+    # sid: (name, lat, lon, elevation_m)
+    # Tandems reads several degrees warm in afternoon sun (measured +6.7 at
+    # 14:45 against +1.9 at Rocky Gully 420 m below); stored as-is — siting
+    # caveats belong to the scorer, not the collector.
+    152: ("Coronet Peak Tandems", -44.92925, 168.73377, 1620.0),
+    267: ("Coronet Peak Rocky Gully", -44.92621, 168.74768, 1200.0),
+    953: ("Treble Cone", -44.63214, 168.88234, 1720.0),
+    170: ("Queenstown Skyline", -45.03108, 168.65200, 1000.0),
+    409: ("Coronet Flightpark (valley)", -44.95470, 168.74000, 450.0),
+}
+
+
+def _holfuy_series(sid: int) -> list[dict]:
+    """Parse one station's JS series into observation rows (UTC)."""
+    import ast
+    import re as _re
+    from zoneinfo import ZoneInfo
+
+    response = requests.get(HOLFUY_SERIES_URL.format(sid=sid),
+                            headers={"User-Agent": "StancePro-collector"},
+                            timeout=TIMEOUT_S)
+    response.raise_for_status()
+    body = response.text
+
+    def array(name: str) -> list:
+        match = _re.search(rf"var {name} = (\[.*?\]);", body, _re.S)
+        return ast.literal_eval(match.group(1)) if match else []
+
+    times = array("unt")
+    fields = {"temp_c": array("gd_temp"), "wind_kmh": array("gd_speed"),
+              "gust_kmh": array("gd_gust"), "wind_dir_deg": array("gd_direction"),
+              "humidity_pct": array("gd_humidity"), "pressure_hpa": array("gd_pressure")}
+    if not times or not fields["temp_c"]:
+        raise ValueError(f"holfuy {sid}: series arrays missing")
+
+    name, lat, lon, elevation = HOLFUY_STATIONS[sid]
+    nz = ZoneInfo("Pacific/Auckland")
+    rows: list[dict] = []
+    for index, stamp in enumerate(times):
+        temp = fields["temp_c"][index] if index < len(fields["temp_c"]) else None
+        if temp is None:
+            continue
+        local = datetime.strptime(stamp, "%Y/%m/%d %H:%M:%S").replace(tzinfo=nz)
+        row = {"station_id": f"holfuy-{sid}", "observed_at": local.astimezone(timezone.utc).isoformat(),
+               "source": "holfuy", "name": name, "lat": lat, "lon": lon,
+               "elevation_m": elevation, "temp_c": float(temp)}
+        # Every row carries every key. PostgREST bulk insert requires uniform
+        # object keys across the array; conditional keys made heterogeneous rows
+        # and the whole chunk came back 400 — measured on the first seed run.
+        for key in ("wind_kmh", "gust_kmh", "wind_dir_deg", "humidity_pct", "pressure_hpa"):
+            values = fields[key]
+            value = values[index] if index < len(values) else None
+            row[key] = float(value) if value is not None else None
+        rows.append(row)
+    return rows
+
+
+def collect_holfuy() -> tuple[int, dict[str, str]]:
+    """All stations; per-station failures recorded, never fatal."""
+    rows: list[dict] = []
+    errors: dict[str, str] = {}
+    for sid in HOLFUY_STATIONS:
+        try:
+            rows.extend(_holfuy_series(sid))
+        except Exception as exc:  # noqa: BLE001 — one station must not sink the rest
+            errors[f"holfuy-{sid}"] = _safe_detail(exc)
+    if not rows or not WRITE_KEY:
+        return 0, errors
+    written = 0
+    for offset in range(0, len(rows), 500):
+        chunk = rows[offset:offset + 500]
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/station_weather_observations"
+            "?on_conflict=station_id,observed_at",
+            headers={"apikey": WRITE_KEY, "Authorization": f"Bearer {WRITE_KEY}",
+                     "Content-Type": "application/json",
+                     "Prefer": "resolution=ignore-duplicates"},
+            json=chunk, timeout=TIMEOUT_S)
+        response.raise_for_status()
+        written += len(chunk)
+    return written, errors
+
+
 def collect() -> tuple[list[dict], dict[str, list[dict]], dict[str, ArchiveStats], dict[str, str]]:
     """Run every adapter; a failure records the error and skips that network."""
     rows: list[dict] = []
@@ -1107,6 +1206,12 @@ class handler(BaseHTTPRequestHandler):
         # Only after the snapshot is safely written. Belt and braces: the function
         # is written not to raise, and this guard makes that an enforced property
         # rather than a claim in a comment.
+        holfuy_written, holfuy_errors = 0, {}
+        try:
+            holfuy_written, holfuy_errors = collect_holfuy()
+        except Exception as exc:  # noqa: BLE001 — weather obs never break the run
+            holfuy_errors = {"holfuy": _safe_detail(exc)}
+
         try:
             append_observations(archive, stats, deadline=started + ARCHIVE_DEADLINE_S)
         except Exception as exc:  # noqa: BLE001 — archive never breaks the run
