@@ -276,7 +276,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     imagePath:
       "/brand-review/merch/sticker_lockup_tagline_diecut_dark_5.5x2in_preview.png",
     whiteMat: false,
-    checkerMat: false,
+    checkerMat: true,
     printFiles: [
       {
         label: "Artwork PNG",
@@ -312,7 +312,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     category: "stickers",
     imagePath: "/brand-review/merch/sticker_snowboard_diecut_dark_board_6x1.5in_preview.png",
     whiteMat: false,
-    checkerMat: false,
+    checkerMat: true,
     printFiles: [
       {
         label: "Artwork PNG",
@@ -349,7 +349,7 @@ export const BRAND_REVIEW_ASSETS: BrandReviewAsset[] = [
     imagePath:
       "/brand-review/merch/sticker_snowboard_diecut_dark_board_10x2.5in_preview.png",
     whiteMat: false,
-    checkerMat: false,
+    checkerMat: true,
     printFiles: [
       {
         label: "Artwork PNG",

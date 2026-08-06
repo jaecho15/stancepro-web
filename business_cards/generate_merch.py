@@ -718,23 +718,12 @@ def render_checkerboard_preview(img: Image.Image, max_w: int = 1200) -> Image.Im
     return mat
 
 
-def render_navy_mat_preview(img: Image.Image, max_w: int = 1200) -> Image.Image:
-    """Preview-only navy mat so white die-cut ink is visible (not print artwork)."""
-    scaled = render_preview(img, max_w)
-    pad = max(24, int(scaled.width * 0.05))
-    mat = Image.new("RGB", (scaled.width + pad * 2, scaled.height + pad * 2), NAVY)
-    mat.paste(scaled, (pad, pad), scaled)
-    return mat
-
-
 def _preview_on_mat(
     img: Image.Image,
     target_w: int,
     label: str,
-    *,
-    dark_ink: bool = False,
 ) -> Image.Image:
-    """Scale sticker onto cream/navy mat with title for review sheet."""
+    """Scale sticker onto cream or checkerboard mat with title for review sheet."""
     scale = min(target_w / img.width, 1.0)
     sw, sh = int(img.width * scale), int(img.height * scale)
     sticker = img.resize((sw, sh), Image.LANCZOS)
@@ -742,63 +731,55 @@ def _preview_on_mat(
     pad = 24
     mat_h = sh + label_h + pad * 2
     cream = (249, 247, 240, 255)
-    mat = Image.new("RGBA", (target_w, mat_h), NAVY + (255,) if dark_ink else cream)
+    mat = Image.new("RGBA", (target_w, mat_h), cream)
     draw = ImageDraw.Draw(mat)
     x = (target_w - sw) // 2
-    if _has_transparency(img) and not dark_ink:
+    if _has_transparency(img):
         checker = _draw_checkerboard(sw, sh)
         mat.paste(checker, (x, pad))
     mat.paste(sticker, (x, pad), sticker)
     title_font = fnt(FONT_AVENIR, 18, AV_DEMI)
     tw = draw.textlength(label, font=title_font)
-    title_fill = WHITE if dark_ink else NAVY
-    draw.text(((target_w - tw) // 2, pad + sh + 8), label, font=title_font, fill=title_fill)
+    draw.text(((target_w - tw) // 2, pad + sh + 8), label, font=title_font, fill=NAVY)
     return mat
 
 
 def build_sticker_preview_sheet() -> Image.Image:
     """Composite all sticker variants for brand review (2-column layout)."""
-    items: list[tuple[str, Image.Image, bool]] = [
-        ("Snowboard — navy 6×1.5 in", render_snowboard_sticker_navy(), False),
-        ("Snowboard — white 6×1.5 in", render_snowboard_sticker_white(), False),
+    items: list[tuple[str, Image.Image]] = [
+        ("Snowboard — navy 6×1.5 in", render_snowboard_sticker_navy()),
+        ("Snowboard — white 6×1.5 in", render_snowboard_sticker_white()),
         (
             "Lockup + tagline — navy 5.5×2 in",
             render_lockup_tagline_sticker(on_dark=True),
-            False,
         ),
         (
             "Lockup + tagline — white 5.5×2 in",
             render_lockup_tagline_sticker(on_dark=False),
-            False,
         ),
         (
             "Die-cut light — navy ink",
             render_lockup_tagline_sticker(on_dark=False, diecut=True),
-            False,
         ),
         (
             "Die-cut dark — white ink",
             render_lockup_tagline_sticker(on_dark=True, diecut=True),
-            True,
         ),
         (
             "Die-cut 6×1.5 — navy ink",
             render_snowboard_sticker_diecut(include_cut_contour=True),
-            False,
         ),
         (
             "Die-cut 6×1.5 — white ink",
             render_snowboard_sticker_diecut(
                 dark_board=True, include_cut_contour=True
             ),
-            True,
         ),
         (
             "Die-cut 10×2.5 — navy ink",
             render_snowboard_sticker_diecut(
                 spec_key="snowboard_large", include_cut_contour=True
             ),
-            False,
         ),
         (
             "Die-cut 10×2.5 — white ink",
@@ -807,19 +788,15 @@ def build_sticker_preview_sheet() -> Image.Image:
                 spec_key="snowboard_large",
                 include_cut_contour=True,
             ),
-            True,
         ),
-        ("Helmet — full-color hex", render_helmet_sticker_hex(), False),
-        ("Helmet — white mono", render_helmet_sticker_white(), True),
-        ("Helmet — badge ring", render_helmet_sticker_badge(), False),
-        ("Shop counter QR 3×3 in", render_shop_qr_sticker(), False),
+        ("Helmet — full-color hex", render_helmet_sticker_hex()),
+        ("Helmet — white mono", render_helmet_sticker_white()),
+        ("Helmet — badge ring", render_helmet_sticker_badge()),
+        ("Shop counter QR 3×3 in", render_shop_qr_sticker()),
     ]
     col_w = 520
     cols = 2
-    mats = [
-        _preview_on_mat(img, col_w, label, dark_ink=dark_ink)
-        for label, img, dark_ink in items
-    ]
+    mats = [_preview_on_mat(img, col_w, label) for label, img in items]
     gap = 16
     header_h = 80
     rows = (len(mats) + cols - 1) // cols
@@ -867,18 +844,9 @@ def main() -> None:
         ("tee_chest_light_ink_11x14in_300dpi.png", render_tee(dark_ink=False)),
     ]
 
-    dark_ink_diecuts = {
-        "sticker_lockup_tagline_diecut_dark_5.5x2in_300dpi.png",
-        "sticker_snowboard_diecut_dark_board_6x1.5in_300dpi.png",
-        "sticker_snowboard_diecut_dark_board_10x2.5in_300dpi.png",
-        "sticker_helmet_white_2.5in_300dpi.png",
-    }
-
     for name, img in outputs:
         save(img, name)
-        if name in dark_ink_diecuts and _has_transparency(img):
-            prev = render_navy_mat_preview(img)
-        elif _has_transparency(img):
+        if _has_transparency(img):
             prev = render_checkerboard_preview(img)
         else:
             prev = render_preview(img)
