@@ -179,6 +179,10 @@
   <button id="op-aspect" disabled aria-label="Aspect"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><polygon points="12,3 16,12 8,12" fill="currentColor"/><polygon points="12,21 16,12 8,12"/></svg></button>
   <button id="bSlope" class="off" aria-label="Slope angle"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18H20"/><path d="M4 18L19 6.5"/><path d="M10 18A6 6 0 0 0 8.3 13.7"/></svg></button>
   <button id="bForest" class="on" aria-label="Forest"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L16.5 11H14L18.5 18H5.5L10 11H7.5Z"/><path d="M12 18V22"/></svg></button>
+  <!-- Satellite winter texture toggle. Hidden until the satellite manifest
+       confirms coverage for this resort (see SatLayer module) — manifest-driven
+       so per-resort/seasonal rollout needs no app release. -->
+  <button id="bSat" class="off" style="display:none" aria-label="Satellite imagery"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.6 2.3 2.6 14.7 0 17"/><path d="M12 3.5c-2.6 2.3-2.6 14.7 0 17"/></svg></button>
 </div>
 <div id="slope-legend">
   <div class="sl-h">Slope angle</div>
@@ -197,6 +201,7 @@ window.OffpisteDraw = (function(){
   var map, meta, art, elevImg=null, ready=false, southern=false;
   var active=false, drawing=false, pts=[], savedRoutes=[], aspectOn=false, aspectBuilt=false;
   var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null, selRoute=null, sessionRoute=null;
+  var selPiste=null, pisteSelToken=0;   // tapped piste run (whole course, merged from geometry.json)
   var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
   var SRC="op-route", LYR="op-route-line";
   var WMx=20037508.342789244;
@@ -227,11 +232,13 @@ window.OffpisteDraw = (function(){
     + "#op-summary{color:#eaf;display:flex;gap:12px;flex-wrap:wrap;align-items:baseline;margin-bottom:3px}"
     + "#op-summary .big{font-size:15px;font-weight:700}#op-summary .g30{color:#ff9f0a}#op-summary .g45{color:#ff453a}"
     + "#op-prof{width:100%;height:74px;display:block}"
-    + "#op-prof-wrap{position:relative}"
+    + "#op-prof-wrap{position:relative;touch-action:none}"
     + "#op-fly-cursor{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;border-radius:1px;background:#fff;display:none;pointer-events:none}"
     + "#op-fly-cursor.show{display:block}"
     + "#op-fly-mode{display:none;flex-direction:row;gap:6px}"
     + "#op-fly-mode.show{display:flex}"
+    + "#op-fly-pause{display:none}"
+    + "#op-fly-pause.show{display:inline-flex}"
     + ".op-fly-opt{background:rgba(20,24,34,.86);color:#eaf;border:0;border-radius:16px;padding:8px 12px;font:600 12px -apple-system,Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)}"
     + "#op-disc{color:#9fb0c2;font-size:11px;margin-top:3px}"
     + "#op-saved-chip{position:absolute;top:calc(var(--safe-top,0px) + 98px);left:8px;z-index:10;display:none;background:rgba(20,24,34,.8);color:#7fd8ff;font:11px -apple-system,Roboto,sans-serif;padding:5px 9px;border-radius:8px}"
@@ -269,6 +276,7 @@ window.OffpisteDraw = (function(){
       +   '<button id="op-save" class="op-btn op-save" disabled aria-label="Save"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M6 4h10l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/><path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0-4 0m4-10v4H8V4"/></svg></button>'
       +   '<button id="op-fly" class="op-btn" disabled aria-label="Fly"><svg width="24" height="24" viewBox="-1 -1 17 17" fill="none"><path fill="currentColor" transform="rotate(45 7.5 7.5)" d="M6.82.68H4.77c-.68 0-.68-.68 0-.68h5.45c.68 0 .68.68 0 .68H8.18S9 1.27 9 2.63V4h6v2L9 8l-.5 5l2.5 1.32V15H4v-.68L6.5 13L6 8L0 6V4h6V2.64c0-1.37.82-1.96.82-1.96"/></svg></button>'
       +   '<div id="op-fly-mode"><button class="op-fly-opt" data-mode="chase">Bird’s eye</button><button class="op-fly-opt" data-mode="fpv">POV</button></div>'
+      +   '<button id="op-fly-pause" class="op-btn" aria-label="Pause fly"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>'
       +   '<button id="op-offline" class="op-btn" disabled aria-label="Download for offline">⬇</button>'
       + '</div>'
       + '<div id="op-aspect-legend"></div>'
@@ -292,6 +300,7 @@ window.OffpisteDraw = (function(){
       elevImg={data:cx.getImageData(0,0,bmp.width,bmp.height).data,W:bmp.width,H:bmp.height,b:meta.bounds_3857};
       ready=true; el.draw.disabled=false; if(el.aspect) el.aspect.disabled=false; if(el.pin) el.pin.disabled=false; if(el.routeBtn) el.routeBtn.disabled=false;
       if(sessionRoute){ applySessionElev(); renderDock(); }   // profile now has real elevations
+      if(selPiste){ orientPisteDownhill(); applyPisteElev(); renderDock(); }   // re-orient + fill profile with LiDAR elevations
       // Offline serving currently works only on Android (shouldInterceptRequest);
       // iOS WKWebView can't intercept https+fetch, so hide the button there.
       if(el.offline){ if(window.AndroidOffpiste && window.AndroidOffpiste.onCacheResort){ el.offline.disabled=false; } else { el.offline.style.display="none"; } }
@@ -331,7 +340,7 @@ window.OffpisteDraw = (function(){
     if(active && pinMode) togglePin();   // draw and pin modes are mutually exclusive
     el.draw.classList.toggle("on",active);
     if(el.hint) el.hint.classList.toggle("show",active);
-    if(active){ map.dragPan.disable(); if(selRoute) selectSaved(null); }   // drawing takes the dock over
+    if(active){ map.dragPan.disable(); if(selRoute) selectSaved(null); if(selPiste) selectPiste(null); }   // drawing takes the dock over
     else{ map.dragPan.enable(); map.dragRotate.enable(); }
     updOpToolsVis();
   }
@@ -370,13 +379,36 @@ window.OffpisteDraw = (function(){
   }
   function wire(){
     el.draw.onclick=toggle;
-    if(el.routeBtn) el.routeBtn.onclick=function(){ routeOpen=!routeOpen; if(!routeOpen){ if(active) toggle(); if(pinMode) togglePin(); if(selRoute) selectSaved(null); } updOpToolsVis(); };
+    if(el.routeBtn) el.routeBtn.onclick=function(){ routeOpen=!routeOpen; if(!routeOpen){ if(active) toggle(); if(pinMode) togglePin(); if(selRoute) selectSaved(null); if(selPiste) selectPiste(null); } updOpToolsVis(); };
     if(el.aspect) el.aspect.onclick=toggleAspect;
     if(el.fly) el.fly.onclick=onFlyClick;
     if(el.flyModeSel){ Array.prototype.forEach.call(el.flyModeSel.querySelectorAll(".op-fly-opt"), function(b){
       b.onclick=function(){ el.flyModeSel.classList.remove("show"); startFly(b.getAttribute("data-mode")); }; }); }
     if(el.pin) el.pin.onclick=togglePin;
     if(el.offline) el.offline.onclick=requestOfflineCache;
+    if(el.flyPause) el.flyPause.onclick=function(){ if(flyPauseToggle) flyPauseToggle(); };
+    // While a fly/replay runs, the dock profile doubles as a seek bar: tap or
+    // drag to move the flight to that route position. Map gestures are disabled
+    // during a fly (FLY_GESTURES), so this is the flight's position control.
+    if(el.profWrap){
+      var scrubbing=false;
+      function scrubTo(ev){
+        if(!flySeek) return;
+        var r=el.profWrap.getBoundingClientRect(), p=ev.touches?ev.touches[0]:ev;
+        // invert the cursor mapping in updateFlyCursor: leftPct=(6+f*788)/800
+        var f=(((p.clientX-r.left)/Math.max(1,r.width))*800-6)/788;
+        flySeek(Math.max(0,Math.min(1,f)));
+      }
+      el.profWrap.addEventListener("pointerdown",function(ev){
+        if(!flying || !flySeek) return;
+        scrubbing=true;
+        try{ el.profWrap.setPointerCapture(ev.pointerId); }catch(x){}
+        scrubTo(ev); ev.preventDefault();
+      });
+      el.profWrap.addEventListener("pointermove",function(ev){ if(scrubbing) scrubTo(ev); });
+      el.profWrap.addEventListener("pointerup",function(){ scrubbing=false; });
+      el.profWrap.addEventListener("pointercancel",function(){ scrubbing=false; });
+    }
     map.on("click", function(e){
       if(pinMode){
         var lng=e.lngLat.lng, lat=e.lngLat.lat, elev=sampleElev(lng,lat);
@@ -384,13 +416,23 @@ window.OffpisteDraw = (function(){
         waypoints.push(wp); addWpMarker(wp); openWpNameDialog(wp);
         return;
       }
-      // Tap a saved (dashed) route → select it for preview; tap empty map →
-      // deselect. A route being drawn keeps priority over saved-route taps.
+      // Tap a saved (dashed) route → select it for preview; tap a piste →
+      // select the whole run; tap empty map → deselect. A route being drawn
+      // keeps priority, then saved routes, then pistes (mirrors z-order).
       if(active || flying || pts.length>=2) return;
-      var fs=[]; try{ fs=map.queryRenderedFeatures(
-        [[e.point.x-8,e.point.y-8],[e.point.x+8,e.point.y+8]],{layers:["op-saved-line"]}); }catch(x){}
-      if(fs.length && fs[0].properties && fs[0].properties.idx!=null) selectSaved(fs[0].properties.idx);
-      else if(selRoute) selectSaved(null);
+      var box=[[e.point.x-8,e.point.y-8],[e.point.x+8,e.point.y+8]];
+      var fs=[]; try{ fs=map.queryRenderedFeatures(box,{layers:["op-saved-line"]}); }catch(x){}
+      if(fs.length && fs[0].properties && fs[0].properties.idx!=null){ selectSaved(fs[0].properties.idx); return; }
+      // Rendered piste features are tile-clipped fragments — selectPiste
+      // re-reads the full LineString(s) from geometry.json. Polygon pistes
+      // (area geometry rendered as an outline) are not flyable — skip them.
+      var ps=[]; try{ if(map.getLayer("pistes")) ps=map.queryRenderedFeatures(box,{layers:["pistes"]}); }catch(x){}
+      var pl=null;
+      for(var i=0;i<ps.length;i++){ var gt=ps[i].geometry && ps[i].geometry.type;
+        if(gt==="LineString"||gt==="MultiLineString"){ pl=ps[i]; break; } }
+      if(pl){ selectPiste(pl,[e.lngLat.lng,e.lngLat.lat]); return; }
+      if(selRoute) selectSaved(null);
+      if(selPiste) selectPiste(null);
     });
     el.undo.onclick=function(){ if(pinMode) undoWaypoint(); else { pts.pop(); refresh(); } };
     el.clear.onclick=function(){ if(pinMode) clearWaypoints(); else { pts=[]; refresh(); } };
@@ -451,6 +493,17 @@ window.OffpisteDraw = (function(){
   }
   function fc(features){ return {type:"FeatureCollection",features:features}; }
   function addLayer(){
+    // Selected piste run: a soft cyan glow (the selection colour the saved
+    // routes already use) under a core line that keeps the run's OSM
+    // difficulty colour (same match expression as the style's "pistes" layer).
+    map.addSource("op-piste-sel",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-piste-glow",type:"line",source:"op-piste-sel",layout:{"line-cap":"round","line-join":"round"},
+      paint:{"line-color":"#7fd8ff","line-width":10,"line-opacity":0.4,"line-blur":3}});
+    map.addLayer({id:"op-piste-sel-line",type:"line",source:"op-piste-sel",layout:{"line-cap":"round","line-join":"round"},
+      paint:{"line-color":["match",["string",["get","piste:difficulty"],""],
+        "novice","#2BAA52","easy","#2870C9","intermediate","#D72D27",
+        "advanced","#1F2530","expert","#05070A","#8A94A0"],
+        "line-width":4,"line-opacity":0.95}});
     // Saved routes (read-only) render UNDER the active draw line, dashed cyan.
     map.addSource("op-saved",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-saved-line",type:"line",source:"op-saved",layout:{"line-cap":"round","line-join":"round"},
@@ -459,15 +512,16 @@ window.OffpisteDraw = (function(){
     map.addSource("op-saved-sel",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-saved-sel-line",type:"line",source:"op-saved-sel",layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-color":"#7fd8ff","line-width":5,"line-opacity":0.95}});
-    // Ride-session track (host-injected deep link): solid yellow, own layer.
+    // Ride-session track (host-injected deep link): the 2D maps' cyan accent
+    // (#1BC7FF = iOS systemCyan / Android TrackLineOverlay), own layer.
     map.addSource("op-session",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-session-line",type:"line",source:"op-session",layout:{"line-cap":"round","line-join":"round"},
-      paint:{"line-color":"#ffd60a","line-width":4,"line-opacity":0.9}});
+      paint:{"line-color":"#1BC7FF","line-width":4,"line-opacity":0.9}});
     // Session-replay position cue: a puck that travels the track while the
     // camera stays put (see startPlayback).
     map.addSource("op-play-cue",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-play-cue-dot",type:"circle",source:"op-play-cue",
-      paint:{"circle-radius":8,"circle-color":"#ff375f","circle-stroke-color":"#ffffff","circle-stroke-width":2.5}});
+      paint:{"circle-radius":8,"circle-color":"#1BC7FF","circle-stroke-color":"#ffffff","circle-stroke-width":2.5}});
     map.addSource(SRC,{type:"geojson",data:fc([])});
     map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
@@ -493,6 +547,12 @@ window.OffpisteDraw = (function(){
     if(selRoute && selRoute.coords.length>=2){
       var as=analyse(selRoute.coords);
       el.dock.classList.add("show"); renderSummary(as.stats, selRoute.coords, selRoute.name); renderProfile(as.profile); return;
+    }
+    // Selected piste: same gate as the session track — without real elevations
+    // the profile would show a misleading "drop 0 m / max 0°" card.
+    if(selPiste && selPiste.hasElev && selPiste.coords.length>=2){
+      var ap=analyse(selPiste.coords);
+      el.dock.classList.add("show"); renderSummary(ap.stats, selPiste.coords, selPiste.name||"Piste"); renderProfile(ap.profile); return;
     }
     // Session track: only once real elevations landed — an all-zero profile
     // would show a misleading "drop 0 m / max 0°" card.
@@ -564,7 +624,7 @@ window.OffpisteDraw = (function(){
     el.clear=byId("op-clear"); el.save=byId("op-save"); el.oob=byId("op-oob");
     el.dock=byId("op-dock"); el.summary=byId("op-summary"); el.prof=byId("op-prof"); el.hint=byId("op-hint");
     el.savedChip=byId("op-saved-chip"); el.aspect=byId("op-aspect"); el.legend=byId("op-aspect-legend"); el.fly=byId("op-fly");
-    el.flyCursor=byId("op-fly-cursor"); el.flyModeSel=byId("op-fly-mode");
+    el.flyCursor=byId("op-fly-cursor"); el.flyModeSel=byId("op-fly-mode"); el.profWrap=byId("op-prof-wrap"); el.flyPause=byId("op-fly-pause");
     el.pin=byId("op-pin"); el.wpInput=byId("op-wp-input"); el.offline=byId("op-offline"); el.routeBtn=byId("op-route-btn"); updOpToolsVis();
   }
   // ---- Waypoints (pin + note), personal, saved to Supabase ----
@@ -697,15 +757,47 @@ window.OffpisteDraw = (function(){
     }
     return coords[coords.length-1];
   }
+  // Gestures during a fly-through can never take effect — the flight rewrites
+  // the camera with jumpTo every frame — but a gesture landing mid-flight trips
+  // a maplibre 4.7 terrain fault (recalculateZoom → "failed to invert matrix")
+  // that NaN-poisons the transform and kills the rAF loop. So the handlers are
+  // disabled for the flight. Session replay (startPlayback) keeps them live by
+  // design (manual pan is part of the spec); re-enabling in endFly is a no-op there.
+  var FLY_GESTURES=["scrollZoom","dragPan","dragRotate","touchZoomRotate","doubleClickZoom","keyboard"];
+  function setFlyGestures(on){ FLY_GESTURES.forEach(function(h){
+    try{ if(map[h]){ on ? map[h].enable() : map[h].disable(); } }catch(e){} }); }
+  // Set by startFly/startPlayback while running: flySeek(f) seeks the flight/
+  // replay to fraction f (0..1) of the route (the dock profile is the scrub
+  // surface); flyPauseToggle() pauses/resumes. While a fly is paused the map
+  // gestures are re-enabled so the user can look around freely; resuming (or
+  // scrubbing) snaps the camera back onto the route.
+  var flySeek=null, flyPauseToggle=null;
+  var PAUSE_SVG='<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+  var PLAY_SVG='<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>';
+  function setFlyPauseBtn(vis,paused){
+    var b=el.flyPause; if(!b) return;
+    b.classList.toggle("show",!!vis);
+    b.classList.toggle("on",!!paused);
+    b.innerHTML = paused ? PLAY_SVG : PAUSE_SVG;
+  }
   function endFly(){
-    flying=false;
+    flying=false; flySeek=null; flyPauseToggle=null;
+    setFlyPauseBtn(false,false);
     if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
+    setFlyGestures(true);
     if(el.flyCursor) el.flyCursor.classList.remove("show");
     if(el.fly){ el.fly.classList.remove("on"); el.fly.disabled=!canFly(); }
     var cs=map.getSource("op-play-cue"); if(cs) cs.setData(fc([]));
     // savedCam is only set by the fly modes — a session replay never touches
     // it, so ending a replay leaves the camera exactly where the user has it.
-    if(savedCam){ map.easeTo({center:savedCam.center,zoom:savedCam.zoom,bearing:savedCam.bearing,pitch:savedCam.pitch,duration:1200}); savedCam=null; }
+    // easeTo reads the current transform before animating, so on a NaN-poisoned
+    // one it throws and the restore silently never happens; jumpTo writes the
+    // pose directly and is the only call that recovers such a transform.
+    if(savedCam){
+      var cam=savedCam; savedCam=null;
+      try{ map.easeTo({center:cam.center,zoom:cam.zoom,bearing:cam.bearing,pitch:cam.pitch,duration:1200}); }
+      catch(e){ try{ map.jumpTo({center:cam.center,zoom:cam.zoom,bearing:cam.bearing,pitch:cam.pitch}); }catch(e2){} }
+    }
   }
   // Move a [lng,lat] by `m` metres along compass bearing `brg`.
   function offsetLL(ll,brg,m){
@@ -721,9 +813,10 @@ window.OffpisteDraw = (function(){
     var f=Math.max(0,Math.min(1,d/profScale.maxC));
     el.flyCursor.style.left=((6+f*(800-12))/800*100)+"%";
   }
-  // A route is flyable when one is being drawn, a saved route is selected, or
-  // the host injected a ride-session track.
+  // A route is flyable when one is being drawn, a saved route or piste is
+  // selected, or the host injected a ride-session track.
   function canFly(){ return pts.length>=2 || !!(selRoute && selRoute.coords.length>=2)
+    || !!(selPiste && selPiste.coords.length>=2)
     || !!(sessionRoute && sessionRoute.coords.length>=2); }
   // Elevations for the session track come from the LiDAR raster — the host's
   // barometer-relative altitudes are a different datum. Null samples (outside
@@ -759,7 +852,69 @@ window.OffpisteDraw = (function(){
   // get wrong. Colors mirror the native 2D renderers' palette.
   var EVENT_COLORS = { jump:"#007AFF", spinJump:"#AF52DE", groundSpin:"#5856D6",
                        fiftyFifty:"#FF9500", boardslide:"#FF2D55", userTaggedRail:"#FFCC00",
-                       maxSpeed:"#FF3B30", unknown:"#8E8E93", stop:"#8E8E93", dropIn:"#05AAC0" };
+                       maxSpeed:"#FF3B30", unknown:"#8E8E93", stop:"#8E8E93", dropIn:"#05AAC0",
+                       start:"#34C759", end:"#FF3B30" };
+  // The 2D maps don't draw coloured dots — they draw pin illustrations on a
+  // white disc. Same art here, lifted verbatim from the native assets (iOS
+  // Assets.xcassets/RideTrackerIcons and Android res/drawable-xxxhdpi/
+  // ride_tracker_icon_*, which are byte-identical), downscaled to 64px and
+  // inlined as WebP. Inlined rather than referenced because this page has no
+  // relative-asset loading of any kind — even maplibre and three are injected
+  // by the host — so a sibling <img src> would resolve on none of the three.
+  // Keys are the wire `t` values (RideTrackerGeo.eventTypeKey / iOS
+  // SessionEventPin.type). "stop" is deliberately absent: neither 2D map has
+  // an asset for it either, both draw the pause glyph (see makeBadge).
+  var EVENT_ICONS = {
+    jump:"data:image/webp;base64,UklGRmAKAABXRUJQVlA4WAoAAAAQAAAAPwAAPQAAQUxQSCADAAABoC3JtmnbanvPdWzbtm3btm3btm1e28e2bZsLd3vv2R/WnH30Mb4gIiYA0qGJkzfcHOUc6N64cGKYnb3az4+eEzvwcEH1VMZ4am702iRo3/2hg2VC0ubbSOO2PPrS/hdLWh/28OjxDLxPuu2LdXUU+Z1M/FpHrsFDMtO/IZ9Qzw9k7KMiapYHhcLI4GsJlZInzv+QTA6vq4TcD8hsbzWV+LvJ9POpFFqT+TN4Fb/oiHl6ePbsHWfUYvpZLqGJrd9I454yFeqWK1e1YddV9xXIn9EFKB4j9/2Ivku/UPDZ1vlOKcT1Zkwj6a99W/5DzOPVb/LoTnKXzO+kfIMmE/9K5wCPBrgMIuGDFdaT6sQeCvudEh8X+qvxElL21v6J9zyjQ2VbJrbht6RuL27NowEO/UnU3+k7kgxr84F3wAPAOiDirzvNFqHOZ3hfCwHoFiMytScJv78Wy6IGAIpHSXyb7onUgQo2ryaAbBECr0p8Q9K/FfLxFgEYbKtFDxxG4v6CF3m/AJhM6hcy35AK9K6GXB0vcn4AMFEtcvQ5kv6/LICkV7X93Jfk7yQraK0nbXV+0UCrUfirtoXVYnV8bfeIdIWV/5kM/h7AFJU5hT6Z1iWWF1PoGJn8DYCsEbyLbd4oxXrjNLQEkCucN3QPKUbuq9IgVkN9APEOsB6VfqNwoj5QiOS9RYBQ9GP1b0/s/1okAVBUwyoE1+GENX3Pudo7JYI12H0dsl9mbFhG7t55yeCsISJXUAhGMe48dTtSHe4azqUMAqoy3I80SgATasM53z8qL8YnBFvuRS6XhOnest5MyQLF4mL9wZzOuVUDyplfhIWFS1zNwMny1uVLjxRQtrKlypyp8mO1iDpgt452Cvvlz7+VD3748/ffb0arjQM/3kong/9LroD01wy7mwHK6U4Y9aIYBAvcN+hxeYgWeGPMnaIQrvvAkL+yQbzwbyaEzUoEjUkG39d2uloI9KZdF67l0fDE0F957WexG6PTwcw8g8+ECbz+plUymJske8+t1z5GufifHZjfJIMFwz0Js5dvNGDihLHtaxZOaYVAHlZQOCAaBwAAkCIAnQEqQAA+AD4xFIhDIiELhJMcEAGCWwAnTKqeE/F/jp7EVPfm/3B/IblYTSdRP6b8s/8B2gPMA/UX/X9Q/zAfsH+x3sgfrN7ofQA/lH906wn0AP2V9Mj9zvgz/an9o/gJ/X3/65pL2nfzP8jf2c6hD2M3SK+L+5flzyA7xH+K/4T8sstH+a/5/jI+nv+A9Cn/aeUB4A1AD+Kf1P/h+mP/m/bN7Tfy7+4/7P3BP47/Ov89/a/3q/x/zM+ur0E/1sSvlLMABLAamtCF91RjRSHVFSxbSYAUpNzTjTnMlRlu+mAFLgEkdWOeMnS1m6jEJrkGB1jpaTvzkzV7d4AckyMM+NYWTiMLgjFLs7/7NIWwwAtcEHAT5BEYfnoAAP7/6DtPgGay4a9GkxEwNlfzt8mELV3/tCX//oBX7S1ZpxopkuEIaQX6inVcYJTzK+fFeiG85+fvZ2m8u0ihMk08aGEuXiUV2bl2n0fAppo43zxVrx1QaJx4eWe933WJNwiUIjfGGGG+Nxxnjue8zKrzSdo00T8LmaSHMZcm+aRD/fpMzeNf9YYJsvpzhT3a0pG6YnKVcfq8NiTt2E35TFomszR7m/xi0+O56njs3zePos4cJ3yHzwN2ErG87bz8Tg+biLhI91jbol4xiAzujBsA8sp5nlq+Ez/m06ZzqTkUzkUwfSZj/YX7+kcZkB1J+YtZaAg+/Osjn2RIYvR6JrhHUqWEAFw5NtyXjq+ZzVf0Ia+vgPi3/7V0MOv76lnWtLfcyrftP/9q5bKrf6PpwULsBLIwBxUaiXWkVtJft4au6AKDDWb4ac2qnlUoIoRC4xB8ZOErood1gMOu1EUfuPo97djfhuu3m25cBUb/h7izotcFgUiXxwZ1q+U+//ZMaA3adOvp9+fAuBmNEkTyip5/Jrk91r9tHlFkk4+HNb2KL6hFB//4aCH5/LUj1B44u3wavR7c+dCAvUarmNvGTo5vS8qX+w4zIBJcO3hlvyHGtUmcqNo1Y+wjM1n5rl+zUwXx9iPaWuVrfgvNMD0lRduvUQkMQyk1ZhTHChUu4LtJh9V75OBPqZh238H+q2edUlAJzd6aTkctSMufRyiXDE6BqyX5HvMqWVgF4rGNptOBa2M6CSHHHkDI3hq6wXWGDcplYGFhObME7zhzycy+Bxzq5cT0vi7FQPna/QTcxqbH5KuqMUDuA/ZCE62nvcymHo3MvsLZIPm4/XfX3PlDIjlqnaDPwo23xp8YetnFUJxcLZ//9DNH74wZUyO6GDNiBIqcyzfvcaljCCV0dm71IGj8SzbmYtPJSXihM22L9iksNuvPZfMkF1/4LhpnoB5P/bv+FlIkBuuVZ3jFUTqvkuN3bgzNy4rs99aQgVwZbmfKRpz2aMM8XxRyCCmoNgRSfKljTNX0JPVNo0xoBYLeGtdvSiIXXXhjPqwnZ8qsS/4Wes5I/hXW3b/415nZ70rE8Q7j7IgAiGa99qeXv+BvMK0thkWs0NX06V92WaEFBFWtzK8XWloKw9rmVQqJ5HxC7YEv+zuUetIb3cOjsCPaJyK8tluPRDTHxDzSoI43OFi6Ve6upmAosoBqJ9pMNwYY7bRcPn14ImYCTeq1ynQ0qJPL/NMsYVagiJKUDJPu/2xpp2W4XFdQrIsSEUqoCFBZZ9qaJvoSQHpUvu+DxfjB8QEp0GQx/DpoYsesxU25EO8XNQ/syncxbZDeTHUGgKXBINXanplsPZc0xXcMc87/5JfNy/icqUiZnfPssITYHsCDm5I4WBFn1P/4I+VHhgeA6PC3Nr5G9jSglGC2/0TIyTbn1Ybm4xaShwTPuXw4kgBaEaTUj4nIDCaWwka53+K+bXAuihrsTwquc15Mitd09BzAoDrqc9VFOVCwdTyQCBsUPKDQ2V0BSn4GTRjbbqDrCbEgAp8fkpTg27rTeB1qq7ycIYae//b8G2wl41NND0eJW2PrSMR1lo6eupFwxhSXo1GtImrCwsRNSB6LLc6L9vjFpYOSVOaGuUKOv/610HPp2n5zckzY+fkEP+DiZY7xMm8gy455OUyIXKkF0egzgPyB0X7mhBGwADH6U4vVQ+rdh+WUEzzh3dN/6oY+dOcLBUHGE9i50RM/UJ0zd8PFrv/OzKqTXbPVKAZT9Auinf+NpuBAoiMn0KnDGayl7KH37v7sU/1eu2pQjui3x6spjYStNtFeC+5z7O0f6UW23jZPfwOs5zfz8GO3UzKRUgOoS9xpxAMf/d8npL96EYM3hqGMRNOS2g5XI+GlnGWQQqlDOwL/A1HkobfFY0vt4MJIKZ3ZTzK5X3bWbf5vUiXeQoOOSK9zUopt9MkwLltPT6Px81CFjhtztXGtTgqt3NtyKHw5w39kOFY+dWBz0Y1ZNks6m0LTrKUNWDW6zGUA6r4VwoQgwWnn+kKA4AAA",
+    spinJump:"data:image/webp;base64,UklGRhQLAABXRUJQVlA4WAoAAAAQAAAAPgAAPwAAQUxQSEkEAAABoHBrmyFJXtL3RVYWsoxp2zaH1Wvbtm3b3rFt27ZtN8aqHhdjUZkZGR0REwDMicHe8bZn5tF5z9zW0WYiwDeJuaHHriY/je5v2j/5znQ9PybvgL0hqjbkG3m3gwtMeGzcBcp48uMuAJNBG8xaFaTsQ5NS0GNHLUwP76fa7n/YCBqKHeYHqdbBYQUCM9HbRHls9IqMxGtbKJ8t14pMxOtbKK8t14sMxBuOUn6P3p4pqEpdTXlem4Fq3OMo3+PcigSd+HyAs8DzogKMic85THk/nINyAKYRlP8RUjSMcZGaC23gQg2JAqJoGkHb4ghTNCNpf0XZxV0n+bjSnvzP+pB1NFW+4/rCz7bwQEfb/yc5k86pOPU1YNxrG/zUt6BPnz59+g4cNGhWS2uIwblkBADQ3XZFUeT4tBsAgJQvo4feyc3Ozk00AOg9jrKnfl/WGlF25TYdgD7FOp8qDKz7LNakRzB4lwZo9LMbFy1aOH/IIy6LMfP52VeV0Pk2AGK3bFVw/it30o+rxtuTvz5H1Z9qmXN3jqvLLL+CrTYAwLTDcqeedw8/RsNrHl9MWYcnlrh+uSDX2p4ACDdT2Yu/e/6ilNJggGp4/AbPTL8MvUmA942/yR0traMcnr3+9wtyvxnJTGminO997xkOhmb3viQ3UerVXhorF96cl9MnrNHJv1M6H4rIjZU6gRIaXHeTs6TvscvszvRPM928P0KVgDJK/QvvtHjK3xi3+qC6XUt/+6DadtdCP1XKgNLApr5VZqfkKKp5umvXbj179+7ZtevTNcWFsTHWit6bAlQ5E0pp8Ezz3N8eKSrML8x1AHjyCgqLO3w5u/lMkKoeK4HEQql//4qVjWHKfqzk7CeN00LziVLHEdLINvSzsbNL90AbukkAIDU+jQ7/2NvPyldHwGKwbtXkeJ9aw+uXWW21lpg9duscDY73qtEDeYPZLPNj7YT21puvsDrZp0oE0CD8nO0xI8lJTjzHqPE+G/yfnS8joZCQ/GLLcCZHv09H0Gi4OcOJgDFCA4OT3cp1IMvOa7IAgP7Voph1ak73KBFAIbP17uIEBADHm8YXfIqC6+4QQDF56wqTyENJnXQAAPpnk4sGKgjv+igFVDq+PHPe51e3zFadgP/D+PdMFZdkTr7qAPVSTGzO4FY1l0vj8glEFeq9+g9lfHPmzlc/b86c9SdCagYYJRFkDde5kmdG43ZmEjGCPHpqdF1auGrpYhBBKcbfaGho5qi5QRRQEQjtrzU9cYyb00+ZEEGlruQ+U+dGThqflgBBtb6yTtfxIBcHOuoAgSE6s3Q1szjYdb0eWIsiuLu1atTaNTVRxwwQwHDj7KAWm241gLaCAZxPr2G28/MMRI0AEdB5y6DTAXWXV7+YJQKC9ogAYsLNY3Y0KmjcMfq5XDMCAqeIAMTgaXjsz3Hjxv35aIPLQAAAgWNEBMWICPwjIiGEICBoCQBWUDggpAYAAJAjAJ0BKj8AQAA+MRSHQqIhC4dvjBABglsAKdG+0efx3mx17+0/d78XujxP32A/nftV+AHqK8Uz/D9TnzAfsB+xnuydIB+yvWnegn5b3scfuD+0vwAfsB//9KR6c/RX5Nf1v8dOhwPyP0nhAeCPwK/lPJB/kP5h+0m3SUAfi/8s/0v5gf2Tz8pD//e+Sf/jvFF8S9gD+Q/1n/OelN/ieUr8o/vX/F/xvwC/yD+df6T+//3r/wf4L///UR66v2W9jD9UVQtBiOqO3sNjXkC6pk4xIAl2T3vLYrGc9KfXqn0wvF1hLAvV5+KH+sxoEwrQ1W8T74DJgLFoerMp2v+z/+uEP/bvSz5B/vXCUvE9zKvBjrJs5OVFHlnaUZs1kaf7GMrIeNNAAP79X+EG0jOzN1t+7jVR97+RXC+2nP+mra1rj7YgqMkNcpxzd0iQ2Ctn3Ok6kkwT9Z/A0zCgIDhNx1nEDl2vkO9On13jnYAPR7CkAggbBjD8dl7+GqYPTi9CkfCmTDYIxyiDD/zfioGh/+K12VHyHMxx0iWdxikoRO4FKiU7tzw9icB+v8NDh/nyJuzte+89GiUMFBovQJR7i5npZotnWMEdcS6Vdd0cojm9J/cciSf1Avehp4kaPwZsZ5xNvV8QvfqVzSEQ4XVZxfoBzpjlEf4cj5cb7zBmUzfe5gsvsj1VGZJzq0T/q/hoVjdgs6TPwbiC0SK2br7ZT98M/3VkNikY3VC7/uKcLGVPju/DNpYOHlvlRf6yns6xzNNiWfLEEHwhf0wu34cgCfh0rR5uh56eL7j5mV4MnyzN1v+MG0y1FgjTc7Jo/70GLyHjsI4+bp12KQ1NBYQj6AO8Z+on2vth4Z90AFZ5/spAv+QO4OeeB0sh51+jr3s697x3a9aLFB/QzTJ+2iIG8NAouK+9iIWhOr/sOXbFv2cqYdm1fvpBWZXGaHm8knBWFAfsFoJUKPeHD7qxpPyvCfAI2hg+oWvHNKB6X+LxLTgWLWyIuw0FJowxxxbbhIcs86hkEd8PL+3+9/5If+IUu/SeKd2E6exxhqcohWtOOxQstcnU322tC3fCtwJTW5It9Ufztch6ExOMf/eqSqBrreo9jg0f/fSjHEEwRNKQDK3dbESJEpK/A/O5ge5nb8p1EvGpijCjq7B3jeo/PgsaJV/0wz3IHqLrP7//m0TvC6sj/uDD9TUG2M8g5BCOg+VBkuQ7rTYpOl7yojpClZ7IuNGcsVuMgkcyN0a1QdrRiK9eVjgO4UIy0dsGzXHYCuL8l+IpUnmyS3gZB/jycWOybD9zd+qvukl5Scp4zP2pilDhe9muwddCSLWPT++/5+ejeVp6puPS/F6ecPfJ6IG1IKbU80mem35TqSlEPOK1ia4IdrQZb/5gG25l0FANI7Gy7UzZ9/Y2mIv9wP4YRKZby0f4qwmRRGLdeyIR6jGN1ObBcVrOsWp0ersSQ81BuBp8VVZJbxidAslNcKjASBpBkm1AdqNRaY0JyvBq79WcX1t/wjPMUaQSFqEptL3mKuFPhNJxE2ih3lE4bxHLYzMfG0Wen4vL2XlhpdWt3NcPIAvdUVs/ugcw/5dQb5v4fEq/ZQBFc6UWWf/o8+nQFpc10K7/HaXCcAfem9DgwVG2swxzMq15rpEYb6PlsfyQ0OCtKjkfj3tAf/5QH96xxLUZckfnFxpicDScnbOu8/+ezbbN3+WSI6YVlCS0J9vQs2wI1z9+bYf+y9EltMZU5WGwCbHlbXlQFGfyK6kQ3dXN5G5+NWAfQAQ+fyET4/649YvQbvTKfxxC5Dhe8JBZSnyhtkWrNLyVkejgb8dCfSbqdZiOp2uZmw48EPBReziHc8rXoj8uwpb6gxEEd/+im/9eQN5ffLg13TCKGHHpUil5pAeAITw+so8443pgFfYfAh9Gms1A2WZT/vyBk6vzEGPNrO+YWitg3anCLambj9AipGn1GPv0Gnc9fP20UvgICfOU009n/xrzseq/Jm16jvarmOCYlfcW2WLJMV6ay+Uc9ntUnuoe35JmkU/mGLBpryTOg5L4Phubv9kcsV5vBcBt00It7rgMgGrMP9PjE8ZUEmMW0RpUf/y7K+DPPoLxjhaFthPA4jG7ERnRAWukf6Cy7exE8uRWDmbWCDY1/rsL4lx+S49W0lr2aEkMtobKtmvmH50RWkn6oTsOZchyfyGRqh/3G2ykj4p/1NvmWP+Lndei/xLCd9kc/y1FdJijSmE/+pqI5LRNmkJ7OtGNewM/cUMNgAAA",
+    groundSpin:"data:image/webp;base64,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",
+    fiftyFifty:"data:image/webp;base64,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",
+    boardslide:"data:image/webp;base64,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",
+    userTaggedRail:"data:image/webp;base64,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",
+    unknown:"data:image/webp;base64,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",
+    maxSpeed:"data:image/webp;base64,UklGRi4MAABXRUJQVlA4WAoAAAAQAAAAPwAAPgAAQUxQSPgEAAABoL9t/+HGXtRnlNTtSW13bddu17bNuodr27Zt27bNbNd1ezbaJJ8fMvOdyWxETABIzNi5hoX3yahEy3UDm4WEu7A0yNfGrf6I3eoCJCxVq5cm1LDjZMACsC51ss4Wo4S/3ozu5cMAAGUVFTgnZF0xodRlcxM9AFhrUJ5BGa/QquopNR0V1rCtv96IVjZe7h9AS8Ry4NjtIsqwbFVdRhpHN9cBxSjPczEKSRjf0SUo1+eNJXH8G2W8008Cpm+hnHC6gyim/ieUdWEfhZhqp1FCve6H+sMHdYFWLwEWRopQrEbRlcUvjh6Znzt2wui8PYeel+hE4TEPIiapWITp2+PVKzKb987NmrdieteUWv2XHH9vEGPMZUh8niC57srolvVzdr0tQiw04M93m+b27jni+EszGRZUFaCU0B2Jze+PNIvOP2dEy5Xv0VL/pV/1treKyXCFko/ztjlPpL03qvPEV2bkz73Kg1jUuHb6/HdkJUF8tCKqjES/O33AI8PO9wJPiwVOxV6eEzlMbSIxd6F4gN6LhIYjwd31WN5+igBhzmnEiyOzH5LgJju+sKcklwP6FCPiq/niDmoQ0dC5/UcSY3W+f5Dwe4uuhWjV+82HFRKYhtEW3G6C191yylF6ox4RnyQMrxDCx7YWds8J/lJcRek1+14iIh7y20vwSWURXix0zbfquBsGqbS7Rr9D/HitOKOHSaiigUVzo4CxV53tGYPPSaTbNP26Gc0zhpeqUx8KYQ+Ltij40mslvlh9WRLz/Tn9HyGicc0mjSljkE5orkU3oc2RXxDRLMnLdrX3mxDR9BMRD/o9FzpiMVfAlLPOgBI/GOIxX4/C3xMXCx0GiIQjAmVNr6G02jPt/f/7H0lHDjCT5MFhgWuqmxLtiYYen5B4cVMDSTM4IrA14IckFXsaQ63LSH7cV0tAA8wRWN8cxVecXDOpFhW/0yDiSnilwAEIBugmkN3y8Ys7IkwbI/1cQHXCiKSlVx+u8bkvMAkCAdoKpIRO2nJMxM8mAACJOiRWj53YxfGcQAfOHqC5mS+26r5b30VUVAcAbgaSlx/btzT0DZ8xTenM/hH2li+jqQnFGkdSQDd9JgIRn9Qu4ysJDbV3jGc28p1PM4rCWymRHQ+g+DPBGr4birb2Tj2YPL7viWpxePXkA5ME67y0POZpdCTLtVNGa3g0QWckkDgjxcCDMSp/gIgaDk94DB0vyCVvF/I+UKV4ASgymTk8WFApl886vn5cIgtAta+W9ItH9mXNFUEAAK4x9od/j11eoQoLqoV7ky+/w9eGTWsAb1BzxejfwJzt0sGej21RO+yC/O67168Ggq4DHPrp5aZp7h2tEIJacb5jNDKb4xLiCoRccnu3DfI6HdLamyIB5zZhEWfl9LguW5UDclWjevXPyudsIsdxINYpLqzBOZmYH8V5ONAg3qWGff2TRjnoNzVWurIgpUNw1aoTvlnv1+JQBcWCtLaBNXyGHLHWkX4RzgqQXOHn7V1tbKE1isZWC1TZUNIBa+ft49ZqzBGNNJpHi9t5OLqwFFhVae+kcqvWZ3GBuILFfRr72XBKBqxNsUonlaNvSvaqVdc+fTJ+/fTp06d361fNTvFVsRRFgRwpVmlj6+AaENA0MWZIfGRUTHxsUIC3klVQIF+KojnasYaT0s3Dw4mjaCXNUCB/iqNozs5OSVEUWBNWUDggEAcAAJAiAJ0BKkAAPwA+MRaIQyIhIRUMziwgAwS2AE6ZdoCH1X8gPYTrD80+9f7kf5DoWpg8url3/e/lH2CvMA/Sn/P9QDzAfsb+zPvAf3D/HewD0AP5x/hOsQ9Ar9sPTO/b34Pf20/Zz2cccA+G3hd9d/E7sRPP/rp6OLOv+A+07lT2of8Xv+XMP6npIf6B/xeNo8V9gD9C/6r2Uf5v/rf5P8a/az+af4j/oe4J/LP6p/wfzX+I71+/sl7E/6uH7YFh5MjwKznqztXJ4a0HLtO0McGR9t1EpasAdgtV7TTnUyTlCh+VbZ2KFiphBHOSjjjRckn5VJJZd4/G/zHhbfR+u8DO5x+5Bymyi245ZcrGjtrVfeBmg1ilvo3373zkAAD+/+g5D+dxjBV+OrOzRvX/82eIc5/u46OZ6pdy+GfkkfoDNLyHsLlTFnsCZD0MsVmHNVj5pAwPlsMwhrQmnZ+xqDdf+Kl9yszV+KsPCtC5/ZTEx8xxXVkGGHc5vO4BdYKXmc6P4nTmEG9Y4rbz//pzd/6U1sxU7ryZ4VyohNfelI2gSAwqfzKYCJq7XHocnShTddyVn+BxSzr2McPuHO417e2r2vvgB30jWJELg6aiOfT/ae53Pjiv+R/7nMvF1++adWvf/TqJGYptc/T+17sv2zTTbU1XcjZZWdA5PWVeNdSPlVgneM74435VX6APsOl9JPtlDCUIRH64ZhuUJgQOyuE593l1YfLE/Km3LW9yu7E87PpmAR9oA/a0ERohy/+e5Daczg4ZADln4o7/Xv3iapzf/2GkjWQqh7DZpF2DDynSf5OtBmH3wL28pK3bL0L5oEurMi6xO5X9L2ClkPocncLDFGQ5v5SoPHaEX/1iLBiKi+4OIBy2h7ZKUWuAWvNcpCIYHU/orP9fDTp0RQ48h5HwIZXDFx4TZ8is1X1/B4EFPxu1J5SJeiZlIuPdspdypI+HbmhWrZeZiQmf12/rKWf29eFxhFH5xp3mHYsAZvioIYyBVsd+uoPSirT+H/yQELoxBMgZKRYwPL021mS5KP4zRv6ROSz50Lsa9oZMok2zaDuoObVRBrX2QPR/3iDnk7y6cl0bsOunX/OlHQHO11EGIicArBv88taI6ek2jNSPSvdAEuKJnN663Y/kvzRTNg8hhsTXbryjPaAR7K798iWinAufRBKVTslobeo2NkFtZ21g6Or/768piwkaX1JPcriUWw3op+HjVuGqa0yec6GePdcjbZFO0euEioGBWOg+vRvNUG9SdISnDW4o4hht2rcny8KjH9JX4ivfkaMWHQqx9XooZ2pRbrKA6mpPVcMjRb0byCCFXlhoMmj+3tMyg+TEdtMEnrMNIT1o3YjcAu1SUbjyhvgPHAoHN2tBT4LlPMuaJbKDzpEvpUEcNS3NV+8wX5UyutjJtmaKAGyrDunM2fGldAfclHcxLrX9yzfPGNOU6OsgCQyX79p7u0h6Ut9Ck+EqXkRFAzrwcksHkvMi++XZ7Yj+fp0CleC65umXAlbXcgbt2gyLIFx/VKUQDKsb4tHPW/ZFne3rouoVx8YhzsmKHYqgaEHY3c/1Q87zSQbSA7m9k7k+TvyaRRJeE4c5LfOslZLpJA0MjxQO099fSfqszl5vmSuF9tpfZs/r30fcc2LLyeyB8KIrNHKr9/wzA9VQjc9yiN42n5OUWRHg3bGiQjuopQpgKU3z4sxHD4Y3mhAxw1Bze1UKFTy72oQcfQM/30TtRRMlp602rEYiALOAKEqtdEHQAvaEqL5w31mEplBDifOCHW3rHk/rjPhfkRuSWsgg6a/Zpt6xtx1PEgmo/tyvdSN6X0n1/bv0bKmiyiJNM07EjS9gXl85/6ADt3lobG9/M9H2zqr6yTeigAnheBBwgWAZ3PJgDBXwoa23PtA/nObaadEl5MWfUZ4faXt10d0AdqnPruRPMOsJV0n+aQniry/5JqbDUlRrhwG0lr12VLbb6hnfOr0dU9hWyY2vjw05nts2AUpQYE1W356ABrlOJf/0KOf2R/HtPJthzjiRHKq2DWmGJhavz8PbeqltKu3+TJ1AjUgjcZ82Dmjo9wAcY+pE0Ysyhxf5b1ex1e8IXfh2nC4fngjLUWOvAvqRGpSGFnKUuPG5X+2mC7BUawTZuyEhX1NBYllrSfZMbaiASNWBPvIQLO2COFy0/OFFav/mpRI7YTiFZ6Qld+w+QceshLq1VXjvjylGkQxors5urKvqA1Ed3nqMR+YKQ2X6Lw+k5fFqrXNhsJv8CFNHh5cfZZdXoPYJfxMG0sSbQfkVw9CMj2jl0qJi7F1evd+GboTLEi8nL5qIijFW8QycLlMiPqg2L3lT88KPqeah9430abC69700Sg0Zq4aNHH5sAkcLH/Vsvk7DtppP/evjwrsJHLIR1ubUAAAA",
+    dropIn:"data:image/webp;base64,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",
+    start:"data:image/webp;base64,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",
+    end:"data:image/webp;base64,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",
+  };
+  // 2D pin geometry: a 29pt icon centred on a white disc 1.10x its diameter
+  // (RideTrackerMapLibreSessionMapView.pinSize x RideTrackerEventStyle
+  // .haloScale = 31.9). Reproduced so a pin reads the same size in both views.
+  var PIN_ICON_PX = 29, PIN_HALO_PX = 32;
+  // Pause-glyph proportions, read off the 2D stop bitmap (64px canvas: white
+  // r30, grey r26, two 6x24 bars 4 apart — RideTrackerSessionMap.kt).
+  function makeBadge(kind){
+    var halo = document.createElement("div");
+    halo.style.cssText = "width:"+PIN_HALO_PX+"px;height:"+PIN_HALO_PX+"px;border-radius:50%;"+
+      "background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.45);display:flex;"+
+      "align-items:center;justify-content:center;box-sizing:border-box";
+    var src = EVENT_ICONS[kind];
+    if(src){
+      var img = document.createElement("img");
+      img.src = src; img.alt = "";
+      // object-fit keeps the art's 156x151 aspect inside the square box.
+      // (iOS 2D draws it into a square rect and squashes it ~3%; Android
+      // 2D preserves the aspect. Follow Android — undistorted is right.)
+      img.style.cssText = "width:"+PIN_ICON_PX+"px;height:"+PIN_ICON_PX+"px;display:block;object-fit:contain";
+      halo.appendChild(img);
+      return halo;
+    }
+    var unit = PIN_HALO_PX / 60;   // the 2D canvas' white disc is 60 of 64
+    var disc = document.createElement("div");
+    disc.style.cssText = "width:"+(52*unit).toFixed(1)+"px;height:"+(52*unit).toFixed(1)+
+      "px;border-radius:50%;background:"+(EVENT_COLORS[kind]||EVENT_COLORS.unknown)+
+      ";display:flex;align-items:center;justify-content:center;gap:"+(4*unit).toFixed(1)+"px";
+    if(kind === "stop"){
+      for(var i=0;i<2;i++){
+        var bar = document.createElement("div");
+        bar.style.cssText = "width:"+(6*unit).toFixed(1)+"px;height:"+(24*unit).toFixed(1)+
+          "px;background:#fff;border-radius:1px";
+        disc.appendChild(bar);
+      }
+    }
+    halo.appendChild(disc);
+    return halo;
+  }
   var sessionEventMarkers = [];
   function clearSessionEvents(){
     sessionEventMarkers.forEach(function(m){ try{ m.remove(); }catch(e){} });
@@ -770,13 +925,9 @@ window.OffpisteDraw = (function(){
     if(!Array.isArray(list) || !list.length) return;
     list.forEach(function(ev){
       if(!ev || !isFinite(ev.lng) || !isFinite(ev.lat)) return;
-      var color = EVENT_COLORS[ev.t] || EVENT_COLORS.unknown;
       var wrap = document.createElement("div");
       wrap.style.cssText = "display:flex;align-items:center;gap:4px;pointer-events:none";
-      var dot = document.createElement("div");
-      dot.style.cssText = "width:11px;height:11px;border-radius:50%;background:"+color+
-        ";border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)";
-      wrap.appendChild(dot);
+      wrap.appendChild(makeBadge(ev.t));
       if(ev.label){
         var chip = document.createElement("div");
         chip.textContent = String(ev.label);
@@ -802,6 +953,7 @@ window.OffpisteDraw = (function(){
     else{
       var rt=savedRoutes[idx]||{}, c=rt.geometry&&rt.geometry.coordinates;
       if(!c||c.length<2) return;
+      if(selPiste) selectPiste(null);   // one selection at a time — the dock is shared
       selRoute={idx:idx, coords:c.slice(), name:rt.name||null};
       if(!routeOpen){ routeOpen=true; updOpToolsVis(); }   // surface the Fly button
     }
@@ -809,6 +961,133 @@ window.OffpisteDraw = (function(){
     if(el.fly && !flying) el.fly.disabled=!canFly();
     if(el.flyModeSel && !canFly()) el.flyModeSel.classList.remove("show");
     renderDock();
+  }
+  // ---- Piste tap-to-fly: select a whole run from geometry.json ----
+  function updatePisteSel(){
+    var s=map.getSource("op-piste-sel"); if(!s) return;
+    s.setData(fc(selPiste ? [{type:"Feature",properties:selPiste.props||{},
+      geometry:{type:"LineString",coordinates:selPiste.coords.map(function(p){return [p[0],p[1]];})}}] : []));
+  }
+  // Min distance (metres) from a lng/lat to a polyline — web-mercator segment
+  // math with a cos(lat) correction, used only to pick the tapped segment.
+  function distToLineM(ll,line){
+    var px=lon2mx(ll[0]), py=lat2my(ll[1]), best=1/0;
+    for(var i=1;i<line.length;i++){
+      var ax=lon2mx(line[i-1][0]), ay=lat2my(line[i-1][1]),
+          bx=lon2mx(line[i][0]),   by=lat2my(line[i][1]);
+      var dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy;
+      var t=L2?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/L2)):0;
+      best=Math.min(best,Math.hypot(ax+t*dx-px,ay+t*dy-py));
+    }
+    return best*Math.cos(ll[1]*Math.PI/180);
+  }
+  // Chain-merge: grow from the tapped segment by attaching candidate lines
+  // whose endpoint lies within PISTE_JOIN_M of the chain's head or tail,
+  // reversing them as needed, until nothing connects. Same-name(+difficulty)
+  // segments of one course get stitched into a single top-to-bottom line.
+  var PISTE_JOIN_M=30;
+  function mergePisteLines(lines,seedIdx){
+    var chain=lines[seedIdx].slice(), used={}; used[seedIdx]=true;
+    var grew=true;
+    while(grew && chain.length<6000){
+      grew=false;
+      var head=chain[0], tail=chain[chain.length-1];
+      for(var i=0;i<lines.length;i++){
+        if(used[i]) continue;
+        var L=lines[i], a=L[0], b=L[L.length-1];
+        if(distM(tail,a)<=PISTE_JOIN_M)      chain=chain.concat(L.slice(1));
+        else if(distM(tail,b)<=PISTE_JOIN_M) chain=chain.concat(L.slice(0,-1).reverse());
+        else if(distM(head,b)<=PISTE_JOIN_M) chain=L.slice(0,-1).concat(chain);
+        else if(distM(head,a)<=PISTE_JOIN_M) chain=L.slice(1).reverse().concat(chain);
+        else continue;
+        used[i]=true; grew=true; break;
+      }
+    }
+    return chain;
+  }
+  // Point the run downhill: compare endpoint elevations from the LiDAR raster;
+  // if either end is outside it, fall back to queryTerrainElevation for BOTH
+  // ends (the two live in different datums — never mix one of each). No
+  // reading at all → keep OSM digitisation order (usually already downhill).
+  function orientPisteDownhill(){
+    if(!selPiste) return; var c=selPiste.coords; if(c.length<2) return;
+    var h=c[0], t=c[c.length-1];
+    var a=sampleElev(h[0],h[1]), b=sampleElev(t[0],t[1]);
+    if(a==null || b==null){
+      a=b=null;
+      try{ a=map.queryTerrainElevation([h[0],h[1]]); b=map.queryTerrainElevation([t[0],t[1]]); }catch(x){ a=b=null; }
+    }
+    if(a==null || b==null || b<=a) return;
+    c.reverse();
+  }
+  // Per-vertex elevations from the LiDAR raster (session-track pattern: null
+  // samples carry the previous value so the profile stays continuous).
+  function applyPisteElev(){
+    if(!selPiste) return;
+    if(!elevImg){ selPiste.hasElev=false; return; }
+    var any=false, prev=0;
+    selPiste.coords.forEach(function(c){
+      var e=sampleElev(c[0],c[1]);
+      if(e!=null){ any=true; prev=e; }
+      c[2]=prev;
+    });
+    selPiste.hasElev=any;
+  }
+  // Select the piste run under a tap (null deselects). `hit` is the rendered
+  // (tile-clipped) feature — identity + properties only; the full geometry
+  // comes from the shared geometry.json (same objects as the "geometry"
+  // source, so every point is COPIED before elevations are written into it).
+  function selectPiste(hit,at){
+    if(hit==null){
+      pisteSelToken++;
+      if(!selPiste) return;
+      selPiste=null; updatePisteSel();
+      if(el.fly && !flying) el.fly.disabled=!canFly();
+      if(el.flyModeSel && !canFly()) el.flyModeSel.classList.remove("show");
+      renderDock(); return;
+    }
+    if(!window.loadGeometry) return;
+    var props=hit.properties||{}, fid=(hit.id!=null?hit.id:null);
+    var name=props.name||"", dif=props["piste:difficulty"]||"";
+    var tok=++pisteSelToken;
+    window.loadGeometry().then(function(gj){
+      if(tok!==pisteSelToken || active || pinMode || flying) return;
+      // Candidate pool: line features matching the tapped run's identity
+      // (same name + difficulty; unnamed runs match only the exact feature).
+      // `all` seeds the tapped segment when identity matching finds nothing
+      // (e.g. unnamed run whose feature id didn't survive the render query).
+      var pool=[], all=[];
+      (gj.features||[]).forEach(function(f){
+        if(!f || !f.geometry) return;
+        var t=f.geometry.type;
+        if(t!=="LineString" && t!=="MultiLineString") return;
+        var p=f.properties||{};
+        if(!(p["piste:type"]||p["piste:difficulty"])) return;   // mirror the "pistes" layer filter
+        var lines = t==="LineString" ? [f.geometry.coordinates] : f.geometry.coordinates;
+        var same = (fid!=null && f.id===fid) ||
+                   (!!name && (p.name||"")===name && (p["piste:difficulty"]||"")===dif);
+        lines.forEach(function(L){
+          if(!L || L.length<2) return;
+          all.push(L); if(same) pool.push(L);
+        });
+      });
+      var lines = pool.length ? pool : all, merge = pool.length>0;
+      if(!lines.length) return;
+      var seed=0, best=1/0;
+      for(var i=0;i<lines.length;i++){ var d=distToLineM(at,lines[i]); if(d<best){ best=d; seed=i; } }
+      if(!pool.length && best>50) return;   // fallback pool: only accept a line actually near the tap
+      var chain = merge ? mergePisteLines(lines,seed) : lines[seed];
+      selPiste={ coords:chain.map(function(p){ return [p[0],p[1],0]; }),
+                 name:(name||null), hasElev:false,
+                 props:{"piste:difficulty":dif} };
+      if(selRoute) selectSaved(null);
+      if(!routeOpen){ routeOpen=true; updOpToolsVis(); }   // surface the Fly button
+      orientPisteDownhill();
+      applyPisteElev();
+      updatePisteSel();
+      if(el.fly && !flying) el.fly.disabled=!canFly();
+      renderDock();
+    }).catch(function(e){ console.log("piste select failed", e); });
   }
   // Fly button: stop if already flying. A ride-session track replays with a
   // FIXED overview camera + moving cue (startPlayback — user feedback: the
@@ -822,9 +1101,11 @@ window.OffpisteDraw = (function(){
     else startFly("chase");
   }
   // The session track is the replay target only when nothing else is armed —
-  // a drawn or selected saved route keeps the normal fly-through.
+  // a drawn route, selected saved route or selected piste keeps the normal
+  // fly-through.
   function sessionReplayTarget(){
     return !(pts.length>=2) && !(selRoute && selRoute.coords.length>=2)
+      && !(selPiste && selPiste.coords.length>=2)
       && !!(sessionRoute && sessionRoute.coords.length>=2);
   }
   // Per-mode camera constants (metres): back/clear = camera offset behind/above
@@ -853,11 +1134,13 @@ window.OffpisteDraw = (function(){
     flyMode = FLY[mode] ? mode : "chase";
     var coords=(pts.length>=2 ? pts
       : (selRoute && selRoute.coords.length>=2) ? selRoute.coords
+      : (selPiste && selPiste.coords.length>=2) ? selPiste.coords
       : sessionRoute.coords).slice();
     var cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
     var total=cum[cum.length-1]; if(total<1) return;
     savedCam={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
     flying=true; el.fly.classList.add("on");
+    setFlyGestures(false);                                 // see FLY_GESTURES note
     if(el.flyCursor){ el.flyCursor.classList.add("show"); updateFlyCursor(0); }
     if(active) toggle();                                   // leave draw mode during fly
     var dur=flyDurMs(total);                              // pacing: FLY_SPEED_MPS
@@ -903,7 +1186,30 @@ window.OffpisteDraw = (function(){
         new maplibregl.LngLat(camLL[0],camLL[1]), altFrom,
         new maplibregl.LngLat(ahead[0],ahead[1]), altTo);
     }
-    var t0=0, EST_MS=1200;
+    var t0=0, EST_MS=1200, paused=false, pauseT=0;
+    // Profile scrub: rebase the clock so the follow phase lands at fraction f.
+    // A scrub during the establishing blend (or before t0 is set) skips ahead
+    // to the follow phase; the bearing low-pass restarts to avoid a long swing.
+    // While paused, a scrub renders the pose once so the camera tracks the
+    // cursor back onto the route without resuming playback.
+    flySeek=function(f){
+      if(!t0) return;
+      t0=performance.now()-(EST_MS+f*dur); prevBrg=null;
+      if(paused){
+        pauseT=performance.now();
+        try{ map.jumpTo(camAt(f*total)); }catch(e){}
+        updateFlyCursor(f*total);
+      }
+    };
+    // Pause: stop driving the camera and hand the map back to the user
+    // (gestures re-enabled). Resume: gestures off, next frame snaps the camera
+    // back onto the route at the cursor position.
+    flyPauseToggle=function(){
+      paused=!paused;
+      setFlyGestures(paused);
+      setFlyPauseBtn(true,paused);
+    };
+    setFlyPauseBtn(true,false);
     // Single rAF loop. First EST_MS ms: an establishing blend from the saved view
     // to the LIVE chase pose (camAt recomputed every frame). Then the follow.
     // queryTerrainElevation drifts ~200 m with zoom/loaded tiles, so ANY pose
@@ -913,6 +1219,10 @@ window.OffpisteDraw = (function(){
     var waitFrames=0;
     function frame(now){
       if(!flying) return;
+      // Paused: keep the loop alive but leave the camera to the user. On
+      // resume, shift the clock by the pause duration so position is kept.
+      if(paused){ if(!pauseT) pauseT=now; flyRAF=requestAnimationFrame(frame); return; }
+      if(pauseT){ if(t0) t0+=now-pauseT; pauseT=0; }
       // Hold the current view until terrain elevation is measurable at the route
       // start — else the establishing blend interpolates toward a pose whose
       // altitude collapsed to camClear (2nd-run "starts below terrain"). Give up
@@ -924,10 +1234,13 @@ window.OffpisteDraw = (function(){
         t0=now;
       }
       var el=now-t0;
-      if(el<EST_MS){ var k=el/EST_MS; k=k*k*(3-2*k); map.jumpTo(blend(savedCam, camAt(0), k)); }
+      // A throw here (maplibre terrain math can fault, see FLY_GESTURES note)
+      // must not kill the rAF chain with flying stuck true — end the fly so
+      // state, button and camera are all restored.
+      if(el<EST_MS){ var k=el/EST_MS; k=k*k*(3-2*k); try{ map.jumpTo(blend(savedCam, camAt(0), k)); }catch(e){ endFly(); return; } }
       else{
         var p=Math.min(1,(el-EST_MS)/dur);
-        map.jumpTo(camAt(p*total));
+        try{ map.jumpTo(camAt(p*total)); }catch(e){ endFly(); return; }
         updateFlyCursor(p*total);
         if(p>=1){ endFly(); return; }
       }
@@ -966,14 +1279,31 @@ window.OffpisteDraw = (function(){
       if(co) pose={center:co.center,zoom:co.zoom-REPLAY.zoomBack,bearing:map.getBearing(),pitch:REPLAY.pitch};
     }catch(e){}
     var from={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
-    var t0=0;
+    var t0=0, paused=false, pauseT=0;
+    // Profile scrub for the replay cue. Seeking during the establishing frame
+    // pushes ms past estMs, which completes the one-time framing on the next
+    // frame (the else branch) before the cue jumps. While paused, move the cue
+    // immediately without resuming.
+    flySeek=function(f){
+      if(!t0) return;
+      t0=performance.now()-(REPLAY.estMs+f*dur);
+      if(paused){ pauseT=performance.now(); cueAt(f*total); updateFlyCursor(f*total); }
+    };
+    // Replay pause only freezes the cue — gestures are live throughout a
+    // replay by design, so they are not touched here.
+    flyPauseToggle=function(){ paused=!paused; setFlyPauseBtn(true,paused); };
+    setFlyPauseBtn(true,false);
     function frame(now){
       if(!flying) return;
+      if(paused){ if(!pauseT) pauseT=now; flyRAF=requestAnimationFrame(frame); return; }
+      if(pauseT){ if(t0) t0+=now-pauseT; pauseT=0; }
       if(!t0) t0=now;
       var ms=now-t0;
       if(pose){
-        if(ms<REPLAY.estMs){ var k=ms/REPLAY.estMs; k=k*k*(3-2*k); map.jumpTo(blend(from,pose,k)); }
-        else { map.jumpTo(pose); pose=null; }              // framing done — camera is the user's
+        // Gestures stay live during a replay (spec), so the same terrain fault
+        // as in the fly loop can throw here during the establishing frame.
+        if(ms<REPLAY.estMs){ var k=ms/REPLAY.estMs; k=k*k*(3-2*k); try{ map.jumpTo(blend(from,pose,k)); }catch(e){ endFly(); return; } }
+        else { try{ map.jumpTo(pose); }catch(e){ endFly(); return; } pose=null; }   // framing done — camera is the user's
       }
       var p=Math.min(1,Math.max(0,ms-REPLAY.estMs)/dur);
       cueAt(p*total); updateFlyCursor(p*total);
@@ -1149,7 +1479,8 @@ window.OffpisteDraw = (function(){
     probeAt:probeAt, consumesTaps:consumesTaps,
     _sim:function(a,b,n){ if(!ready) return "not-ready"; if(!active) toggle(); pts=[];
       for(var i=0;i<=n;i++){ addAt(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n); } refresh(); return pts.length; },
-    _state:function(){ return {active:active,n:pts.length,ready:ready}; } };
+    _state:function(){ return {active:active,n:pts.length,ready:ready}; },
+    _pisteState:function(){ return selPiste ? {n:selPiste.coords.length,name:selPiste.name,hasElev:selPiste.hasElev} : null; } };
 })();
 </script>
 <script>
@@ -1684,7 +2015,7 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   if (_focusManifest && (_focusManifest.z15 || _focusManifest.z14)) { v2FocusSeeded = true; v2Seed(_focusManifest, "focus"); }
   else loadV2Index();
 
-  const map = new maplibregl.Map({
+  const map = window.__r3dMap = new maplibregl.Map({
     container: "map",
     transformRequest: routeDem,
     center: [(w + e_) / 2, (s + n) / 2],
@@ -2976,11 +3307,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       map.on("click", (e) => {
         try {
           if (!window.OffpisteDraw || OffpisteDraw.consumesTaps()) return;
-          // A tap on a saved route belongs to that route, not to the readout.
+          // A tap on a saved route or a piste belongs to that selection
+          // (OffpisteDraw's click handler), not to the elevation readout.
           let hit = [];
           try { hit = map.queryRenderedFeatures(
             [[e.point.x - 8, e.point.y - 8], [e.point.x + 8, e.point.y + 8]],
-            { layers: ["op-saved-line"] }); } catch (x) {}
+            { layers: map.getLayer("pistes") ? ["op-saved-line", "pistes"] : ["op-saved-line"] }); } catch (x) {}
           if (hit.length) return;
           // Second tap on the existing probe dismisses it.
           if (at) {
@@ -3184,6 +3516,75 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // Defensive: if the container measured 0 at init, resize once settled.
     setTimeout(() => { map.resize(); }, 300);
   });
+})();
+</script>
+<script>
+/* ===== Satellite winter texture overlay (manifest-driven, self-contained).
+   Reads satellite_v1/manifest.json; when this resort has coverage the raster
+   overlay is inserted UNDER the slope/cliff safety drapes (before "slope",
+   falling back to "c100") together with a zoom-faded DEM hillshade above it —
+   the photo's own shading carries the overview, DEM relief takes over as the
+   texture over-zooms. #bSat stays hidden unless covered, so per-resort
+   rollout, seasonal version bumps and kill-switch all live in the manifest
+   and need no app release. Keep iOS/Android bytes identical. ===== */
+window.SatLayer = (function(){
+  var SAT_BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/satellite_v1/";
+  var on = false, armed = false;
+  function arm(map, entry, ver){
+    if (armed) return; armed = true;
+    map.addSource("sat-tex", { type: "raster",
+      tiles: [SAT_BASE + RESORT_ID + "/winterized/{z}/{x}/{y}.webp?v=" + ver],
+      tileSize: 256, minzoom: entry.minzoom || 11, maxzoom: entry.maxzoom || 17,
+      bounds: entry.bbox || undefined,
+      attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
+    // Insert UNDER the slope/aspect safety drapes (they must stay readable
+    // over the imagery) — v2slope is the on-device drape id, "slope" the
+    // legacy image-drape id; contours are the last resort.
+    var before;
+    ["v2slope", "slope", "op-aspect-layer", "c100"].some(function(id){
+      if (map.getLayer(id)) { before = id; return true; }
+      return false;
+    });
+    map.addLayer({ id: "sat-tex-layer", type: "raster", source: "sat-tex",
+      layout: { visibility: "none" },
+      paint: { "raster-opacity": 1, "raster-resampling": "linear" } }, before);
+    map.addLayer({ id: "sat-shade", type: "hillshade", source: "dem",
+      layout: { visibility: "none" },
+      paint: { "hillshade-exaggeration":
+                 ["interpolate", ["linear"], ["zoom"], 13.5, 0.05, 15, 0.3],
+               "hillshade-shadow-color": "#3F5168",
+               "hillshade-highlight-color": "#FFFFFF" } }, before);
+    var btn = document.getElementById("bSat");
+    if (!btn) return;
+    btn.style.display = "";
+    btn.addEventListener("click", function(){
+      on = !on;
+      var v = on ? "visible" : "none";
+      map.setLayoutProperty("sat-tex-layer", "visibility", v);
+      map.setLayoutProperty("sat-shade", "visibility", v);
+      btn.classList.toggle("on", on); btn.classList.toggle("off", !on);
+    });
+  }
+  (function boot(){
+    var m = window.__r3dMap;
+    if (!m){ setTimeout(boot, 250); return; }
+    fetch(SAT_BASE + "manifest.json")
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(man){
+        if (!man || !man.resorts || !man.resorts[RESORT_ID]) return;
+        var entry = man.resorts[RESORT_ID], ver = man.version || "1";
+        // addLayer only needs the stylesheet parsed, not every tile settled —
+        // isStyleLoaded() stays false while DEM tiles stream, so gate by
+        // try/retry instead of waiting for idle (which can lag for minutes).
+        var tries = 0;
+        (function tryArm(){
+          try { arm(m, entry, ver); }
+          catch (e) { if (++tries < 240) setTimeout(tryArm, 500); }
+        })();
+      })
+      .catch(function(){});
+  })();
+  return {};
 })();
 </script>
 </body>
