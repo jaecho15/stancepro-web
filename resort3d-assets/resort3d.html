@@ -179,10 +179,10 @@
   <button id="op-aspect" disabled aria-label="Aspect"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><polygon points="12,3 16,12 8,12" fill="currentColor"/><polygon points="12,21 16,12 8,12"/></svg></button>
   <button id="bSlope" class="off" aria-label="Slope angle"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18H20"/><path d="M4 18L19 6.5"/><path d="M10 18A6 6 0 0 0 8.3 13.7"/></svg></button>
   <button id="bForest" class="on" aria-label="Forest"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L16.5 11H14L18.5 18H5.5L10 11H7.5Z"/><path d="M12 18V22"/></svg></button>
-  <!-- Satellite winter texture toggle. Hidden until the satellite manifest
-       confirms coverage for this resort (see SatLayer module) — manifest-driven
+  <!-- Winter imagery toggle. Hidden until the winter-imagery manifest
+       confirms coverage for this resort (see WinterImagery module) — manifest-driven
        so per-resort/seasonal rollout needs no app release. -->
-  <button id="bSat" class="off" style="display:none" aria-label="Satellite imagery"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.6 2.3 2.6 14.7 0 17"/><path d="M12 3.5c-2.6 2.3-2.6 14.7 0 17"/></svg></button>
+  <button id="bWinterImg" class="off" style="display:none" aria-label="Winter imagery"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.6 2.3 2.6 14.7 0 17"/><path d="M12 3.5c-2.6 2.3-2.6 14.7 0 17"/></svg></button>
 </div>
 <div id="slope-legend">
   <div class="sl-h">Slope angle</div>
@@ -1998,9 +1998,40 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     return { url };
   };
 
-  // No baked drape at all: the V2 mesh + demshade carry the shading, v2slope the
-  // steepness bands, aspect:// the aspect, and OSM lines the pistes/lifts.
-  const focDrape = { sources: {}, layers: [] };
+  // Baked LiDAR hillshade drape — the SAME hillshade.webp the 2D resort map lays
+  // down as its crisp relief patch, draped over the 3D mesh through this slot.
+  // It adds SURFACE SHADING only: the mesh is untouched, so landform shape (and
+  // how rounded a ridge reads) is exactly as before.
+  //
+  // Zoom-gated on purpose. At overview zooms the mesh falls back to 30 m
+  // Terrarium, and a full-strength 5 m patch there reads as a sticker pasted on
+  // smooth surroundings — the bbox edge is plainly visible at z12. Fading in over
+  // z12.8 -> z13.8 leaves the wide view identical to what it was before.
+  //
+  // demshade is deliberately NOT touched. Cutting its exaggeration to match the
+  // 2D map's "covered" value flattened everything OUTSIDE the patch, and at pitch
+  // most of the frame IS outside it — that measured worse than not draping at all.
+  // Pinning hillshade-illumination-anchor to "map" was also tried (the bake sits
+  // at a measured 338 deg while the runtime light is viewport-anchored) and did
+  // not help, so the default anchor stays.
+  //
+  // Only the off-piste tree publishes hillshade.webp: degraded resorts (no LiDAR
+  // adapter) and the bc-* backcountry tree both 404 it, so both are skipped.
+  const focDrape = (function () {
+    const bb = meta.bbox_4326;
+    if (degraded || ART_TREE !== "terrain_offpiste_v1" || !bb || bb.length !== 4)
+      return { sources: {}, layers: [] };
+    const w = bb[0], s = bb[1], e = bb[2], n = bb[3];
+    return {
+      sources: { hsdrape: { type: "image", url: art("hillshade.webp"),
+                            coordinates: [[w, n], [e, n], [e, s], [w, s]] } },
+      layers: [{ id: "hsdrape", type: "raster", source: "hsdrape",
+                 paint: { "raster-opacity":
+                            ["interpolate", ["linear"], ["zoom"], 12.8, 0, 13.8, 0.72],
+                          "raster-resampling": "linear",
+                          "raster-fade-duration": 0 } }]
+    };
+  })();
 
   // WebGL is mandatory for the MapLibre 3D terrain; some desktop browsers ship
   // with hardware acceleration off, which makes context creation throw and
@@ -3519,21 +3550,21 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
 })();
 </script>
 <script>
-/* ===== Satellite winter texture overlay (manifest-driven, self-contained).
-   Reads satellite_v1/manifest.json; when this resort has coverage the raster
+/* ===== Winter imagery overlay (aerial photo + measured snow line) (manifest-driven, self-contained).
+   Reads winter_imagery_v1/manifest.json; when this resort has coverage the raster
    overlay is inserted UNDER the slope/cliff safety drapes (before "slope",
    falling back to "c100") together with a zoom-faded DEM hillshade above it —
    the photo's own shading carries the overview, DEM relief takes over as the
-   texture over-zooms. #bSat stays hidden unless covered, so per-resort
+   texture over-zooms. #bWinterImg stays hidden unless covered, so per-resort
    rollout, seasonal version bumps and kill-switch all live in the manifest
    and need no app release. Keep iOS/Android bytes identical. ===== */
-window.SatLayer = (function(){
-  var SAT_BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/satellite_v1/";
+window.WinterImagery = (function(){
+  var IMG_BASE = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/ride-tracker-static/winter_imagery_v1/";
   var on = false, armed = false;
   function arm(map, entry, ver){
     if (armed) return; armed = true;
-    map.addSource("sat-tex", { type: "raster",
-      tiles: [SAT_BASE + RESORT_ID + "/winterized/{z}/{x}/{y}.webp?v=" + ver],
+    map.addSource("wimg-detail", { type: "raster",
+      tiles: [IMG_BASE + RESORT_ID + "/detail/{z}/{x}/{y}.webp?v=" + ver],
       tileSize: 256, minzoom: entry.minzoom || 11, maxzoom: entry.maxzoom || 17,
       bounds: entry.bbox || undefined,
       attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
@@ -3552,36 +3583,36 @@ window.SatLayer = (function(){
     // already covers the same ground and reads correctly, so hand z<14 to it
     // and fade the resort image in over 13.6–14.3. Without a wide image the
     // resort image stays on at every zoom (fading it would leave a hole).
-    if (entry.ring) {
-      map.addSource("sat-ring", { type: "raster",
-        tiles: [SAT_BASE + RESORT_ID + "/ring/{z}/{x}/{y}.webp?v=" + ver],
-        tileSize: 256, minzoom: entry.ring.minzoom || 10, maxzoom: entry.ring.maxzoom || 14,
-        bounds: entry.ring.bbox || entry.bbox || undefined,
+    if (entry.wide) {
+      map.addSource("wimg-wide", { type: "raster",
+        tiles: [IMG_BASE + RESORT_ID + "/wide/{z}/{x}/{y}.webp?v=" + ver],
+        tileSize: 256, minzoom: entry.wide.minzoom || 10, maxzoom: entry.wide.maxzoom || 14,
+        bounds: entry.wide.bbox || entry.bbox || undefined,
         attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
-      map.addLayer({ id: "sat-ring-layer", type: "raster", source: "sat-ring",
+      map.addLayer({ id: "wimg-wide-layer", type: "raster", source: "wimg-wide",
         layout: { visibility: "none" },
         paint: { "raster-opacity": 1, "raster-resampling": "linear" } }, before);
     }
-    map.addLayer({ id: "sat-tex-layer", type: "raster", source: "sat-tex",
+    map.addLayer({ id: "wimg-detail-layer", type: "raster", source: "wimg-detail",
       layout: { visibility: "none" },
-      paint: { "raster-opacity": entry.ring
+      paint: { "raster-opacity": entry.wide
                  ? ["interpolate", ["linear"], ["zoom"], 13.6, 0, 14.3, 1] : 1,
                "raster-resampling": "linear" } }, before);
-    map.addLayer({ id: "sat-shade", type: "hillshade", source: "dem",
+    map.addLayer({ id: "wimg-shade", type: "hillshade", source: "dem",
       layout: { visibility: "none" },
       paint: { "hillshade-exaggeration":
                  ["interpolate", ["linear"], ["zoom"], 13.5, 0.05, 15, 0.3],
                "hillshade-shadow-color": "#3F5168",
                "hillshade-highlight-color": "#FFFFFF" } }, before);
-    var btn = document.getElementById("bSat");
+    var btn = document.getElementById("bWinterImg");
     if (!btn) return;
     btn.style.display = "";
     btn.addEventListener("click", function(){
       on = !on;
       var v = on ? "visible" : "none";
-      map.setLayoutProperty("sat-tex-layer", "visibility", v);
-      map.setLayoutProperty("sat-shade", "visibility", v);
-      if (map.getLayer("sat-ring-layer")) map.setLayoutProperty("sat-ring-layer", "visibility", v);
+      map.setLayoutProperty("wimg-detail-layer", "visibility", v);
+      map.setLayoutProperty("wimg-shade", "visibility", v);
+      if (map.getLayer("wimg-wide-layer")) map.setLayoutProperty("wimg-wide-layer", "visibility", v);
       btn.classList.toggle("on", on); btn.classList.toggle("off", !on);
     });
   }
@@ -3595,7 +3626,7 @@ window.SatLayer = (function(){
   (function boot(attempt){
     var m = window.__r3dMap;
     if (!m){ setTimeout(function(){ boot(attempt); }, 250); return; }
-    fetch(SAT_BASE + "manifest.json?t=" + Math.floor(Date.now() / 3600000))
+    fetch(IMG_BASE + "manifest.json?t=" + Math.floor(Date.now() / 3600000))
       .then(function(r){ if (!r.ok) throw new Error("http " + r.status); return r.json(); })
       .then(function(man){
         if (!man || !man.resorts || !man.resorts[RESORT_ID]) return;   // not covered — final
