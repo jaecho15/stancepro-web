@@ -3545,9 +3545,28 @@ window.SatLayer = (function(){
       if (map.getLayer(id)) { before = id; return true; }
       return false;
     });
+    // The resort image is built on a ~0.85 m/px grid, so below z14 all it
+    // contributes is fine grain that averages into mush at oblique angles —
+    // measured 18% less contrast than the wide image with 46% MORE fine
+    // gradient once contrast is normalised. Where a wide image exists it
+    // already covers the same ground and reads correctly, so hand z<14 to it
+    // and fade the resort image in over 13.6–14.3. Without a wide image the
+    // resort image stays on at every zoom (fading it would leave a hole).
+    if (entry.ring) {
+      map.addSource("sat-ring", { type: "raster",
+        tiles: [SAT_BASE + RESORT_ID + "/ring/{z}/{x}/{y}.webp?v=" + ver],
+        tileSize: 256, minzoom: entry.ring.minzoom || 10, maxzoom: entry.ring.maxzoom || 14,
+        bounds: entry.ring.bbox || entry.bbox || undefined,
+        attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
+      map.addLayer({ id: "sat-ring-layer", type: "raster", source: "sat-ring",
+        layout: { visibility: "none" },
+        paint: { "raster-opacity": 1, "raster-resampling": "linear" } }, before);
+    }
     map.addLayer({ id: "sat-tex-layer", type: "raster", source: "sat-tex",
       layout: { visibility: "none" },
-      paint: { "raster-opacity": 1, "raster-resampling": "linear" } }, before);
+      paint: { "raster-opacity": entry.ring
+                 ? ["interpolate", ["linear"], ["zoom"], 13.6, 0, 14.3, 1] : 1,
+               "raster-resampling": "linear" } }, before);
     map.addLayer({ id: "sat-shade", type: "hillshade", source: "dem",
       layout: { visibility: "none" },
       paint: { "hillshade-exaggeration":
@@ -3562,6 +3581,7 @@ window.SatLayer = (function(){
       var v = on ? "visible" : "none";
       map.setLayoutProperty("sat-tex-layer", "visibility", v);
       map.setLayoutProperty("sat-shade", "visibility", v);
+      if (map.getLayer("sat-ring-layer")) map.setLayoutProperty("sat-ring-layer", "visibility", v);
       btn.classList.toggle("on", on); btn.classList.toggle("off", !on);
     });
   }
