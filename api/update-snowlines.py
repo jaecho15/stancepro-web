@@ -46,10 +46,26 @@ import requests
 import sys as _sys
 from pathlib import Path as _Path
 _here = _Path(__file__).resolve()
-for _candidate in (_here.parent,
-                   *(_here.parents[i] / "scripts" for i in range(min(4, len(_here.parents))))):
-    if (_candidate / "short_range_core.py").exists() and str(_candidate) not in _sys.path:
-        _sys.path.insert(0, str(_candidate))
+# This file's own directory goes on the path UNCONDITIONALLY: the vendored
+# `_short_range_core.py` sits beside it and the fallback import below is what
+# resolves it. Gating that insert behind a search for the canonical
+# `short_range_core.py` — as this block did until 2026-08-15 — left sys.path
+# untouched wherever only the underscore-prefixed copy exists, i.e. on Vercel,
+# and BOTH imports below then raised ModuleNotFoundError at module load. That
+# killed all four core-importing api/ workers from 2026-08-05 to 08-15: the
+# crons fired, the functions 500'd before their handlers ran, and nothing was
+# written. A run that dies at import leaves no trace but a stale table, which
+# is why only a freshness alert found it. Running the file directly hides the
+# bug — Python puts the script's own directory on sys.path itself — so the
+# guard belongs here and cannot be covered by a local test.
+if str(_here.parent) not in _sys.path:
+    _sys.path.insert(0, str(_here.parent))
+# The canonical core still wins where it is reachable (StancePro/scripts),
+# which is the case for runs out of the app tree.
+for _candidate in (_here.parents[i] / "scripts" for i in range(min(4, len(_here.parents)))):
+    if (_candidate / "short_range_core.py").exists():
+        if str(_candidate) not in _sys.path:
+            _sys.path.insert(0, str(_candidate))
         break
 try:
     from short_range_core import OPEN_METEO_HOSTS, open_meteo_params
