@@ -3569,11 +3569,26 @@ window.WinterImagery = (function(){
     // Cache key prefers the per-resort scene_date so an unchanged resort is
     // never re-downloaded by a global manifest bump.
     var dver = entry.scene_date || ver;
+    var ATTR = "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2";
+    // Layered resorts serve the summer photo and the snow as separate tiles.
+    // The aerial path embeds a survey fingerprint (aerial@<fp>): it only ever
+    // changes when new survey photography is published, so seasonal snow
+    // refreshes never touch it and browsers keep the photography they already
+    // hold, while a new survey changes the URL and rolls out by itself.
+    // Drawing snow over aerial with src-over reproduces exactly what the old
+    // single baked tile contained. Unlayered resorts (pre-split) still serve
+    // one combined tile through the same detail source.
+    var layered = !!(entry.aerial && entry.aerial.path);
+    if (layered) {
+      map.addSource("wimg-aerial", { type: "raster",
+        tiles: [IMG_BASE + entry.aerial.path + "/{z}/{x}/{y}.webp"],
+        tileSize: 256, minzoom: entry.minzoom || 11, maxzoom: entry.maxzoom || 17,
+        bounds: entry.bbox || undefined, attribution: ATTR });
+    }
     map.addSource("wimg-detail", { type: "raster",
       tiles: [IMG_BASE + (entry.detail_path || (RESORT_ID + "/detail")) + "/{z}/{x}/{y}.webp?v=" + dver],
       tileSize: 256, minzoom: entry.minzoom || 11, maxzoom: entry.maxzoom || 17,
-      bounds: entry.bbox || undefined,
-      attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
+      bounds: entry.bbox || undefined, attribution: ATTR });
     // Insert UNDER the slope/aspect safety drapes (they must stay readable
     // over the imagery) — v2slope is the on-device drape id, "slope" the
     // legacy image-drape id; contours are the last resort.
@@ -3589,21 +3604,38 @@ window.WinterImagery = (function(){
     // already covers the same ground and reads correctly, so hand z<14 to it
     // and fade the resort image in over 13.6–14.3. Without a wide image the
     // resort image stays on at every zoom (fading it would leave a hole).
+    var detailFade = entry.wide
+          ? ["interpolate", ["linear"], ["zoom"], 13.6, 0, 14.3, 1] : 1;
     if (entry.wide) {
+      var wideAerial = entry.wide.aerial && entry.wide.aerial.path;
+      if (wideAerial) {
+        map.addSource("wimg-wide-aerial", { type: "raster",
+          tiles: [IMG_BASE + wideAerial + "/{z}/{x}/{y}.webp"],
+          tileSize: 256, minzoom: entry.wide.minzoom || 10, maxzoom: entry.wide.maxzoom || 14,
+          bounds: entry.wide.bbox || entry.bbox || undefined, attribution: ATTR });
+        map.addLayer({ id: "wimg-wide-aerial-layer", type: "raster", source: "wimg-wide-aerial",
+          layout: { visibility: "none" },
+          paint: { "raster-opacity": 1, "raster-resampling": "linear" } }, before);
+      }
       map.addSource("wimg-wide", { type: "raster",
         tiles: [IMG_BASE + (entry.wide_path || (RESORT_ID + "/wide")) + "/{z}/{x}/{y}.webp?v=" + dver],
         tileSize: 256, minzoom: entry.wide.minzoom || 10, maxzoom: entry.wide.maxzoom || 14,
-        bounds: entry.wide.bbox || entry.bbox || undefined,
-        attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
+        bounds: entry.wide.bbox || entry.bbox || undefined, attribution: ATTR });
       map.addLayer({ id: "wimg-wide-layer", type: "raster", source: "wimg-wide",
         layout: { visibility: "none" },
         paint: { "raster-opacity": 1, "raster-resampling": "linear" } }, before);
     }
+    // Aerial goes under its snow and fades on the same curve, so the pair
+    // behaves as one image — a snow layer fading in over an already-opaque
+    // aerial would read as the mountain turning white out of nowhere.
+    if (layered) {
+      map.addLayer({ id: "wimg-aerial-layer", type: "raster", source: "wimg-aerial",
+        layout: { visibility: "none" },
+        paint: { "raster-opacity": detailFade, "raster-resampling": "linear" } }, before);
+    }
     map.addLayer({ id: "wimg-detail-layer", type: "raster", source: "wimg-detail",
       layout: { visibility: "none" },
-      paint: { "raster-opacity": entry.wide
-                 ? ["interpolate", ["linear"], ["zoom"], 13.6, 0, 14.3, 1] : 1,
-               "raster-resampling": "linear" } }, before);
+      paint: { "raster-opacity": detailFade, "raster-resampling": "linear" } }, before);
     map.addLayer({ id: "wimg-shade", type: "hillshade", source: "dem",
       layout: { visibility: "none" },
       paint: { "hillshade-exaggeration":
@@ -3616,9 +3648,10 @@ window.WinterImagery = (function(){
     btn.addEventListener("click", function(){
       on = !on;
       var v = on ? "visible" : "none";
-      map.setLayoutProperty("wimg-detail-layer", "visibility", v);
-      map.setLayoutProperty("wimg-shade", "visibility", v);
-      if (map.getLayer("wimg-wide-layer")) map.setLayoutProperty("wimg-wide-layer", "visibility", v);
+      ["wimg-aerial-layer", "wimg-detail-layer", "wimg-wide-aerial-layer",
+       "wimg-wide-layer", "wimg-shade"].forEach(function(id){
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", v);
+      });
       btn.classList.toggle("on", on); btn.classList.toggle("off", !on);
     });
   }
