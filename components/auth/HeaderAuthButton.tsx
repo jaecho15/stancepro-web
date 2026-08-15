@@ -40,7 +40,9 @@ export function HeaderAuthButton() {
     <button
       type="button"
       onClick={async () => {
-        await supabase?.auth.signOut();
+        // scope local: the supabase-js default (global) revokes every
+        // device's session, logging the mobile apps out too.
+        await supabase?.auth.signOut({ scope: "local" });
         router.refresh();
       }}
       className="text-slate-300 hover:text-white transition-colors"

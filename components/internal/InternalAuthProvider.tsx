@@ -174,7 +174,8 @@ export function InternalAuthProvider({ children }: { children: React.ReactNode }
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
+    // scope local: the default (global) would log out the mobile apps too.
+    await supabase.auth.signOut({ scope: "local" });
     accessCheckGen.current += 1;
     setIsMember(null);
     setIsFinanceAdmin(null);
