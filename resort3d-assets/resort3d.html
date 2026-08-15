@@ -3643,7 +3643,14 @@ window.WinterImagery = (function(){
           catch (e) { if (++tries < 600) setTimeout(tryArm, 1000); }
         })();
       })
-      .catch(function(){ if (attempt < 10) setTimeout(function(){ boot(attempt + 1); }, 5000); });
+      // Back off rather than give up at 50s: a seasonal refresh replaces the
+      // manifest by move-then-copy (storage cannot overwrite), so there is a
+      // brief window with no manifest, and a page booted inside it would
+      // otherwise lose the overlay for the whole session.
+      .catch(function(){
+        if (attempt < 20) setTimeout(function(){ boot(attempt + 1); },
+                                     Math.min(5000 * Math.pow(1.4, attempt), 60000));
+      });
   })(0);
   return {};
 })();
