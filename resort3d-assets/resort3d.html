@@ -3563,8 +3563,14 @@ window.WinterImagery = (function(){
   var on = false, armed = false;
   function arm(map, entry, ver){
     if (armed) return; armed = true;
+    // Seasonal refreshes publish to versioned trees (<rid>/detail@<sceneDate>)
+    // named by entry.detail_path/wide_path, because storage objects cannot be
+    // overwritten in place; unversioned paths are the pre-refresh legacy.
+    // Cache key prefers the per-resort scene_date so an unchanged resort is
+    // never re-downloaded by a global manifest bump.
+    var dver = entry.scene_date || ver;
     map.addSource("wimg-detail", { type: "raster",
-      tiles: [IMG_BASE + RESORT_ID + "/detail/{z}/{x}/{y}.webp?v=" + ver],
+      tiles: [IMG_BASE + (entry.detail_path || (RESORT_ID + "/detail")) + "/{z}/{x}/{y}.webp?v=" + dver],
       tileSize: 256, minzoom: entry.minzoom || 11, maxzoom: entry.maxzoom || 17,
       bounds: entry.bbox || undefined,
       attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
@@ -3585,7 +3591,7 @@ window.WinterImagery = (function(){
     // resort image stays on at every zoom (fading it would leave a hole).
     if (entry.wide) {
       map.addSource("wimg-wide", { type: "raster",
-        tiles: [IMG_BASE + RESORT_ID + "/wide/{z}/{x}/{y}.webp?v=" + ver],
+        tiles: [IMG_BASE + (entry.wide_path || (RESORT_ID + "/wide")) + "/{z}/{x}/{y}.webp?v=" + dver],
         tileSize: 256, minzoom: entry.wide.minzoom || 10, maxzoom: entry.wide.maxzoom || 14,
         bounds: entry.wide.bbox || entry.bbox || undefined,
         attribution: "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2" });
