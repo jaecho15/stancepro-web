@@ -591,10 +591,27 @@ def forecast_tier(
             demote(1, "reduced_models")
 
     anchors = TIER_SPREAD_ANCHORS.get(bucket)
-    if anchors and snow_p50 is not None and snow_p50 >= TIER_SNOW_FLOOR_CM:
+    # The floor CLAMPS the denominator; it does not skip the check. Skipping it
+    # exempted exactly the rows that need it most: a phase or regime split drives
+    # p50 toward zero while p90 stays large, so the most-disagreeing days fell
+    # below the floor and kept a `high` tier. Measured on the archive, 8,182
+    # D1-8 rows had p50 < 0.5 while p90 >= 0.5, and 5,584 of them reported
+    # `high`; the worst implied spread was 263x. Temple Basin 2026-08-23 flipped
+    # from `low` to `high` between two cycles while its p90 barely moved (16.5 ->
+    # 15.2), purely because p50 crossed 0.5 downward.
+    #
+    # The floor's PURPOSE — do not tier a rounding artefact, and do not divide by
+    # something near zero — is kept: clamping bounds the ratio, and rows whose
+    # p90 is itself trivial still fail to reach the anchors. Note that
+    # snow_in_play above already uses p90 for exactly this judgement; only this
+    # test was keyed off p50.
+    #
+    # Verified: rows already above the floor are unchanged (max(p50, floor) is
+    # p50 there), so this can only affect the previously-exempt set.
+    if anchors and snow_p50 is not None:
         low = snow_p10 if snow_p10 is not None else snow_p50
         high = snow_p90 if snow_p90 is not None else snow_p50
-        spread = (high - low) / snow_p50
+        spread = (high - low) / max(snow_p50, TIER_SNOW_FLOOR_CM)
         if spread >= anchors[1]:
             demote(2, "wide_spread_for_lead")
         elif spread >= anchors[0]:
@@ -1260,7 +1277,15 @@ def fetch_ensemble_daily(
     params: dict[str, Any] = {
         "latitude": lat, "longitude": lon,
         "daily": "snowfall_sum", "models": ENSEMBLE_MODELS,
-        "forecast_days": 16, "timezone": "UTC", "cell_selection": "nearest",
+        # timezone=auto, NOT UTC: fetch_band_forecast aggregates on the resort's
+        # LOCAL day and attach_ensemble joins the two purely on the date string.
+        # With UTC here, a New Zealand row carried snow_cm_* and ens_cm_* for the
+        # same printed date describing windows 12 h apart. Measured on the
+        # Temple Basin case, aligning the window moved the ECMWF ensemble median
+        # from 5.11 to 3.57 cm — not cosmetic. This is an internal-consistency
+        # fix, NOT an accuracy claim: there is no truth to say which 24 h window
+        # is closer to reality, only that the two series must describe the same one.
+        "forecast_days": 16, "timezone": "auto", "cell_selection": "nearest",
     }
     if elevation_m is not None:
         params["elevation"] = round(float(elevation_m))
@@ -1305,15 +1330,35 @@ def fetch_ensemble_daily(
 # them — hence this comment rather than a silent no-op.
 
 
+# Two different questions, so two different constants. They were one until
+# 2026-08-16 and that silently starved day 8.
+#
+# ENSEMBLE_FROM_DAY_INDEX answers "where does the deterministic member set stop
+# being a usable spread?" Past the hourly window a row is 2-4 raw daily values,
+# and its p10-p90 is a min/max of runs rather than a quantile — the same
+# objection this file already records for D9-16 applies verbatim at day 8, which
+# runs 3-4 members. The ensemble is already fetched to forecast_days=16, so
+# extending it costs nothing upstream.
+#
+# ROLLING_FROM_DAY_INDEX answers a different question: "where is the daily band
+# so sparse that a single day says nothing?" That was measured at D9+ (five of
+# eight days had p10=p50=p90=0). Day 8 is not in that state — it carries real
+# spread — and the 3-day sum assumes perfect day-to-day correlation, so it
+# OVERSTATES width. Smearing a day that does not need smearing is a loss, not a
+# gain. It stays at 9.
+ENSEMBLE_FROM_DAY_INDEX = 8
+
+
 def attach_ensemble(rows: list[dict[str, Any]],
                     ensemble: dict[str, tuple[float, float, float, int]]) -> None:
-    """Attach ens_* to D9-16 rows, in place. D1-8 is untouched — it already has
-    four models hour by hour, which is a better-resolved answer than a daily
-    ensemble sum at that range."""
+    """Attach ens_* from ENSEMBLE_FROM_DAY_INDEX onward, in place. Earlier days
+    are untouched: inside the hourly window they have four models hour by hour
+    with the wet-bulb phase step applied, which is a better-resolved answer than
+    a daily ensemble sum."""
     if not ensemble:
         return
     for row in rows:
-        if (row.get("day_index") or 0) < ROLLING_FROM_DAY_INDEX:
+        if (row.get("day_index") or 0) < ENSEMBLE_FROM_DAY_INDEX:
             continue
         found = ensemble.get(row.get("date"))
         if not found:

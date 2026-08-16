@@ -60,7 +60,23 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # Bumped even though no number changed, because the archive keys on this string
 # and would otherwise mix two lead_band conventions inside one series with no
 # way to tell them apart after the fact.
-CONFIG_VERSION = "hybrid-tw-v3.2-lead-band"
+# v3.3 (2026-08-16): three archive-visible rule changes, no physics.
+# (a) the ensemble is fetched on the resort's LOCAL day instead of UTC, so
+#     ens_cm_* and snow_cm_* under one date finally describe the same 24 h — in
+#     NZ they were 12 h apart, worth 5.11 -> 3.57 cm on the Temple Basin median.
+# (b) ens_* now attaches from day_index 8 rather than 9 (ENSEMBLE_FROM_DAY_INDEX),
+#     because day 8 sits past the wet-bulb window and its p10-p90 was a min/max
+#     over 3-4 raw runs. The 3-day rolling window deliberately stays at 9.
+# (c) the tier spread test CLAMPS its denominator to TIER_SNOW_FLOOR_CM instead
+#     of skipping when p50 is below it. Skipping exempted the rows that need it
+#     most: a phase split drives p50 toward zero while p90 stays large, so
+#     8,182 archive rows had p50 < 0.5 with p90 >= 0.5 and 5,584 of those
+#     reported `high`. Worst implied spread 263x.
+# snow_cm_*, precip, temperature and freezing level are byte-identical to v3.2
+# (verified by replay against frozen upstream responses). Bumped because `tier`
+# and `ens_*` are archived and their RULE changed: a scorer crossing this
+# boundary without splitting on config_version compares two different rules.
+CONFIG_VERSION = "hybrid-tw-v3.3-spread-gate"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
