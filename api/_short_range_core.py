@@ -653,6 +653,16 @@ def hourly_band_day(
     day_snow: dict[str, float] = defaultdict(float)
     day_precip: dict[str, float] = defaultdict(float)
     day_temps: dict[str, list[float]] = defaultdict(list)
+    # Per-model hybrid accounting, for forecast_diagnostics. Definitions come
+    # from 20260729010000_forecast_diagnostics.sql:
+    #   rain_candidate_mm  = sum of max(0, precip - native_cm/0.7) per hour
+    #   contributing_hours = hours that survived the precip/temp gate
+    #   hybrid_hours       = hours where the wet-bulb step actually ran
+    # hybrid_applied is CONSERVATIVE: false if ANY contributing hour fell back.
+    day_rain_candidate: dict[str, float] = defaultdict(float)
+    day_hours: dict[str, int] = defaultdict(int)
+    day_hybrid_hours: dict[str, int] = defaultdict(int)
+    day_fallback: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     block_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     # DISPLAY temperature at band elevation: the profile-interpolated value
@@ -688,12 +698,26 @@ def hourly_band_day(
             # the hour's precip.
             snow_hr = snow_series[index] if index < len(snow_series) else None
             rh_hr = rh_series[index] if index < len(rh_series) else None
+            day_hours[model] += 1
             if snow_hr is None:
                 snow_cm = 0.0
+                # No native prior, so no wet-bulb re-partition happened. Weight
+                # the reason by precipitation, per the table's rule: the reason
+                # recorded is the one covering the most contributing precip.
+                day_fallback[model]["missing_snowfall"] += float(precip)
             else:
+                if rh_hr is None:
+                    day_fallback[model]["missing_rh"] += float(precip)
+                else:
+                    day_hybrid_hours[model] += 1
                 snow_cm = hybrid_hourly_snow_cm(
                     float(snow_hr), float(precip), float(temp), rh_hr,
                 )
+                # Precip the hybrid could re-book as rain, at the SAME density
+                # Open-Meteo uses for the native snowfall it is joining.
+                rain_mm = float(precip) - float(snow_hr) / OM_SNOW_CM_PER_MM
+                if rain_mm > 0.0:
+                    day_rain_candidate[model] += rain_mm
             day_snow[model] += snow_cm
             day_precip[model] += float(precip)
             block_snow[block_index][model] += snow_cm
@@ -798,7 +822,39 @@ def hourly_band_day(
 
     temp_means = [sum(day_temps[m]) / len(day_temps[m]) for m in day_present]
     day_wind_kmh, day_wind_dir_deg, day_wind_gust_kmh = _wind_aggregate(day_wind)
+    # Per-member values carried out alongside the aggregate, keyed by MODEL
+    # NAME. `day_present` is the hourly path's member set; the caller persists
+    # these before the p10/p50/p90 below discard which model said what. These
+    # snow totals are POST-hybrid (hybrid_hourly_snow_cm ran per hour), which
+    # is what the served quantiles are built from — so they are the right
+    # thing to score, and `native_snow_cm` is not recoverable here.
+    day_members = []
+    for model in day_present:
+        contributing = day_hours[model]
+        hybrid_hours = day_hybrid_hours[model]
+        reasons = day_fallback[model]
+        # CONSERVATIVE, per the table's own rule: applied only when NO
+        # contributing hour fell back. The reason reported is the one covering
+        # the most contributing precipitation; ties resolve by name so the
+        # value is stable across runs.
+        applied = contributing > 0 and hybrid_hours == contributing
+        reason = None
+        if not applied:
+            reason = (max(sorted(reasons), key=lambda r: reasons[r])
+                      if reasons else "missing_snowfall")
+        day_members.append({
+            "model": model,
+            "snow_cm": round(day_snow[model], 2),
+            "precip_mm": round(day_precip[model], 2),
+            "tmean_c": round(sum(day_temps[model]) / len(day_temps[model]), 2),
+            "rain_candidate_mm": round(day_rain_candidate[model], 2),
+            "contributing_hours": contributing,
+            "hybrid_hours": hybrid_hours,
+            "hybrid_applied": applied,
+            "fallback_reason": reason,
+        })
     day_agg = {
+        "members": day_members,
         "n_models": len(day_present),
         "snow_cm_p10": day_p10,
         "snow_cm_p50": day_p50,
@@ -820,7 +876,18 @@ def band_daily_rows(
     freezing_by_block: dict[tuple[str, int], float],
     time_of_day_days: int,
     profile_hourly: dict[str, Any] | None = None,
+    members_out: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    """`members_out`, when given, collects one PER-MODEL row per (band, day)
+    BEFORE the quantile reduction below folds the members away.
+
+    The reduction is lossy in a way nothing downstream can undo: p10/p50/p90
+    keep the order statistics and discard which model said what, so questions
+    like "is one model systematically the member we zero out?" are unanswerable
+    from the 134k rows already archived. Collecting here costs one dict per
+    (model, band, day) and changes no served value — every number below is
+    computed exactly as before.
+    """
     daily = payload.get("daily") or {}
     times = daily.get("time") or []
     hourly = payload.get("hourly") or {}
@@ -845,6 +912,26 @@ def band_daily_rows(
                                               profile_temps)
 
         if day_agg:
+            if members_out is not None:
+                for member in day_agg.get("members") or []:
+                    members_out.append({
+                        "band": band, "date": date, "model": member["model"],
+                        "layer": "D1-7",
+                        "band_elevation_m": band_elevation,
+                        "snow_cm": member["snow_cm"],
+                        "precip_mm": member["precip_mm"],
+                        "tmean_c": member["tmean_c"],
+                        # Hourly path applies the wet-bulb override per hour, so
+                        # the vendor's untouched snowfall is not reconstructible
+                        # from the day total. Left null rather than guessed.
+                        "native_snow_cm": None,
+                        "rain_candidate_mm": member["rain_candidate_mm"],
+                        "contributing_hours": member["contributing_hours"],
+                        "hybrid_hours": member["hybrid_hours"],
+                        "hybrid_applied": member["hybrid_applied"],
+                        "fallback_reason": member["fallback_reason"],
+                        "included": True,
+                    })
             snow_p10 = day_agg["snow_cm_p10"]
             snow_p50 = day_agg["snow_cm_p50"]
             snow_p90 = day_agg["snow_cm_p90"]
@@ -864,12 +951,55 @@ def band_daily_rows(
                 tmax = (daily.get(f"temperature_2m_max_{model}") or [None] * len(times))[index]
                 tmin = (daily.get(f"temperature_2m_min_{model}") or [None] * len(times))[index]
                 if precip is None or tmax is None or tmin is None:
+                    # NOTE: this `continue` is why the member lists CANNOT be
+                    # zipped back to `models` by position afterwards — the
+                    # dropped model leaves no gap. The name is recorded here,
+                    # with its own values, precisely so nobody has to.
+                    if members_out is not None:
+                        members_out.append({
+                            "band": band, "date": date, "model": model,
+                            "layer": "D1-7" if index < time_of_day_days else "D8-16",
+                            "band_elevation_m": band_elevation,
+                            "snow_cm": None, "precip_mm": None, "tmean_c": None,
+                            "native_snow_cm": float(snow) if snow is not None else None,
+                            "rain_candidate_mm": None,
+                            "contributing_hours": None,
+                            "hybrid_hours": None,
+                            "hybrid_applied": False,
+                            # The model contributed nothing usable: this is the
+                            # one case 'model_unavailable' genuinely describes.
+                            "fallback_reason": "model_unavailable",
+                            "included": False,
+                        })
                     continue
                 t_mean = (float(tmax) + float(tmin)) / 2.0
                 # Native model snowfall (cm), not precip × our SLR ladder.
-                per_model_snow.append(float(snow) if snow is not None else 0.0)
+                snow_member = float(snow) if snow is not None else 0.0
+                per_model_snow.append(snow_member)
                 per_model_precip.append(float(precip))
                 per_model_tmean.append(t_mean)
+                if members_out is not None:
+                    members_out.append({
+                        "band": band, "date": date, "model": model,
+                        "layer": "D8-16",
+                        "band_elevation_m": band_elevation,
+                        "snow_cm": snow_member,
+                        "precip_mm": float(precip),
+                        "tmean_c": t_mean,
+                        # None (not 0.0) when the vendor gave no snowfall: the
+                        # member votes 0 in the quantile but the distinction
+                        # between "no snow" and "no data" must survive here.
+                        "native_snow_cm": float(snow) if snow is not None else None,
+                        # No hourly window past time_of_day_days, so no wet-bulb
+                        # step exists. This is OUR code gate — never
+                        # 'model_unavailable', which would blame the upstream.
+                        "rain_candidate_mm": None,
+                        "contributing_hours": None,
+                        "hybrid_hours": None,
+                        "hybrid_applied": False,
+                        "fallback_reason": "outside_hourly_window",
+                        "included": True,
+                    })
             if not per_model_snow:
                 continue
             snow_p10 = round(_quantile(per_model_snow, QUANTILES["p10"]), 1)
@@ -1689,10 +1819,14 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
+    # Per-model members, captured before the quantile reduction. Carried out
+    # under a leading underscore so the serving path can strip it: this is
+    # audit data, not part of the client payload contract.
+    members: list[dict[str, Any]] = []
     for band in sorted(band_payloads, key=lambda name: name != "mid"):
         band_rows = band_daily_rows(band_payloads[band], band, bands[band],
                                     freezing_by_date, freezing_by_block, 7,
-                                    profile_hourly)
+                                    profile_hourly, members_out=members)
         attach_ensemble(band_rows, ensembles.get(band) or {})
         daily_rows.extend(band_rows)
     for row in daily_rows:
@@ -1766,4 +1900,8 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         "daily": daily_rows,
         "depth": depth,
         "tendency_weekly": tendency,
+        # Audit only — the serving path pops this before storing or returning
+        # the payload, so it never reaches a client and never enters the
+        # payload jsonb the apps decode.
+        "_members": members,
     }

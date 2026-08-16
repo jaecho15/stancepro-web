@@ -38,6 +38,7 @@ import _snow_outlook_slug_map as slug_map  # noqa: E402
 
 TABLE = "short_range_forecasts"
 ARCHIVE_TABLE = "short_range_forecast_archive"
+DIAGNOSTICS_TABLE = "forecast_diagnostics"
 DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # v3 (2026-08-06): displayed band temp from the pressure-level profile (2m
 # lapse downscaling exported valley-inversion cold uphill — measured -8.7 to
@@ -54,7 +55,12 @@ CONFIG_VERSION = "hybrid-tw-v3.1-day-wx"
 # the same run_init_time and collapse via the primary key.
 ARCHIVE_CYCLE_H = 3
 ARCHIVE_TIMEOUT_S = 10   # bounds the latency the archive can add to a serve
-ARCHIVE_BANDS = ("base", "mid", "top")  # table CHECK constraint
+# Summit to valley. `low` exists only where the map-index polygon shows
+# terrain below the published base area (5 of 58 resorts) — the band the
+# rain/snow line most often sits in, which is why it is worth recording.
+# Kept in step with the CHECK in
+# supabase/migrations/20260816010000_verification_tables_allow_low_band.sql.
+ARCHIVE_BANDS = ("low", "base", "mid", "top")  # table CHECK constraint
 
 SUPABASE_URL = (
     os.environ.get("SUPABASE_URL")
@@ -484,6 +490,190 @@ def _archive_rows(resort_id: str, payload: dict, run_init_time: str) -> tuple[li
     return rows, skipped
 
 
+def _write_member_diagnostics(payload: object, members: list, fallback_resort_id: str,
+                              now: datetime) -> dict:
+    """Persist the PER-MODEL members behind each served quantile.
+
+    `short_range_forecast_archive` records what we served; this records what the
+    individual models said before p10/p50/p90 folded them together. Without it,
+    "which model is systematically the one we zero out?" is unanswerable — and
+    unlike observations, a forecast cannot be bought back after the fact.
+
+    Same posture as _write_archive: TELEMETRY. Every failure path returns
+    quietly, nothing here may raise into the response, and nothing here may
+    change the forecast.
+    """
+    result: dict = {"status": "error", "rows_submitted": 0, "rows_skipped": 0}
+    resort_label = "<unknown>"
+    try:
+        data = payload if isinstance(payload, dict) else {}
+        resort_id = str(data.get("resort_id") or fallback_resort_id or "")
+        resort_label = _safe_label(resort_id)
+        if not resort_id:  # NOT NULL primary-key column, never fabricable
+            result["status"] = "no_rows"
+            return result
+        if not members:
+            result["status"] = "no_rows"
+            return result
+        if not WRITE_KEY:
+            result["status"] = "disabled_no_write_key"
+            print("[diagnostics] DISABLED: SUPABASE_SECRET_KEY is not set — per-model "
+                  "members are NOT being recorded and cannot be backfilled later "
+                  f"(resort {resort_label}, table {DIAGNOSTICS_TABLE})",
+                  file=sys.stderr)
+            return result
+
+        run_init_time = _archive_cycle(data, now)
+        lat = data.get("lat")
+        lon = data.get("lon")
+        fetched = now.isoformat()
+        # Lead label taken from the SAME source the archive uses (day_index - 1),
+        # not recomputed from dates. The two tables must agree or they cannot be
+        # joined; the caveat documented at _archive_rows (lead is not unique per
+        # cycle and must be recomputed for any skill analysis) applies verbatim
+        # here too.
+        lead_by_key = {
+            (str(day.get("band")), str(day.get("date"))): int(day["day_index"]) - 1
+            for day in (data.get("daily") or [])
+            if isinstance(day, dict) and day.get("day_index") is not None
+        }
+        rows = []
+        skipped = 0
+        seen_keys: set = set()
+        lat = _num(lat)
+        lon = _num(lon)
+        if lat is None or lon is None:
+            # requested_lat/lon are NOT NULL and never fabricable.
+            result["status"] = "no_rows"
+            result["rows_skipped"] = len(members)
+            return result
+        for member in members:
+            valid_date = str(member.get("date") or "")
+            band_id = str(member.get("band") or "")
+            model = member.get("model")
+            if not valid_date or not band_id or model is None:
+                skipped += 1
+                continue
+            # ONE row violating the band CHECK makes PostgREST reject the WHOLE
+            # batch, so an unknown band must be dropped here rather than cost us
+            # every other member for that resort. ARCHIVE_BANDS is the single
+            # source of truth and must stay in step with the table CHECK; the
+            # skipped count is surfaced, never swallowed, so a band we stop
+            # recording shows up instead of quietly vanishing.
+            if band_id not in ARCHIVE_BANDS:
+                skipped += 1
+                continue
+            lead = lead_by_key.get((band_id, valid_date))
+            if lead is None or not (0 <= lead <= 46):
+                skipped += 1
+                continue
+            # The PK is (run_init_time, resort_id, band_id, model, lead) and
+            # ignore-duplicates keeps the FIRST row, so a duplicate inside one
+            # batch would silently drop the later member. Dedupe here instead.
+            pk = (band_id, model, lead)
+            if pk in seen_keys:
+                skipped += 1
+                continue
+            seen_keys.add(pk)
+            # NaN/inf serialise to bare NaN/Infinity, which is not valid JSON —
+            # PostgREST rejects the WHOLE batch, so one poisoned member would
+            # cost every other member in the request. Coerce here, drop the row
+            # if the NOT NULL columns cannot be made finite.
+            precip = _num(member.get("precip_mm"))
+            snow = _num(member.get("snow_cm"))
+            native = _num(member.get("native_snow_cm"))
+            elev = _num(member.get("band_elevation_m"))
+            rain = _num(member.get("rain_candidate_mm"))
+            contributing = member.get("contributing_hours")
+            hybrid_hours = member.get("hybrid_hours")
+            if rain is not None and rain < 0:
+                rain = None
+            if snow is not None and snow < 0:
+                snow = None            # CHECK hybrid_snow_cm >= 0
+            if native is not None and native < 0:
+                native = None          # CHECK native_snowfall_cm IS NULL OR >= 0
+            if precip is not None and precip < 0:
+                precip = None          # CHECK precipitation_mm_total >= 0
+            # hybrid_applied / fallback_reason are decided in the core, where
+            # the hourly loop can actually see whether the wet-bulb step ran.
+            # The table CHECKs (fallback_reason IS NULL) = hybrid_applied, so
+            # these two travel together and are never re-derived here.
+            applied = bool(member.get("hybrid_applied"))
+            reason = member.get("fallback_reason")
+            if applied != (reason is None):
+                # Defensive: a member that cannot satisfy the CHECK is dropped
+                # rather than allowed to fail the whole batch.
+                skipped += 1
+                continue
+            rows.append({
+                "run_init_time": run_init_time,
+                "resort_id": resort_id,
+                "band_id": band_id,
+                "model": model,
+                "lead_time_days": lead,
+                "fetched_at": fetched,
+                "band_elevation_m": elev,
+                "requested_lat": lat,
+                "requested_lon": lon,
+                # NOT NULL columns. An excluded member has no precip of its own
+                # to record, so it lands as 0.0 with the reason in
+                # fallback_reason — `hybrid_applied=false` plus a reason string
+                # is how a non-contributing member is distinguished from a
+                # contributing one that genuinely forecast nothing.
+                "precipitation_mm_total": precip if precip is not None else 0.0,
+                # The SANITISED local, not member[...]: the finiteness coercion
+                # and the negative clamp above are the whole point, and a raw
+                # NaN here would make PostgREST reject the entire batch.
+                "native_snowfall_cm": native,
+                # Measured in the hourly loop. NOT NULL, so the daily layer —
+                # which has no hourly window to measure — lands 0.0 alongside
+                # fallback_reason='outside_hourly_window', which is what says
+                # "not measured" rather than "measured as zero".
+                "rain_candidate_mm": rain if rain is not None else 0.0,
+                "hybrid_hours": hybrid_hours,
+                "contributing_hours": contributing,
+                "hybrid_snow_cm": float(snow) if snow is not None else 0.0,
+                # The table CHECKs (fallback_reason IS NULL) = hybrid_applied,
+                # so these two are one decision, not two. hybrid_applied is TRUE
+                # only on the D1-7 hourly path, where hybrid_hourly_snow_cm
+                # actually ran; every other row must carry a reason, and the
+                # reason must be one of the three the table allows
+                # (missing_rh / missing_snowfall / model_unavailable).
+                "hybrid_applied": applied,
+                "fallback_reason": reason,
+                # tw_c is the hourly path's wet-bulb. The daily path has no
+                # wet-bulb — writing the daily mean temperature here would put a
+                # different physical quantity in the column.
+                "tw_c": None,
+            })
+        result["rows_skipped"] = skipped
+        if skipped:
+            print(f"[diagnostics] {resort_label}: skipped {skipped} member row(s)",
+                  file=sys.stderr)
+        if not rows:
+            result["status"] = "no_rows"
+            return result
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/{DIAGNOSTICS_TABLE}",
+            params={"on_conflict": "run_init_time,resort_id,band_id,model,lead_time_days"},
+            headers={
+                "apikey": WRITE_KEY,
+                "Authorization": f"Bearer {WRITE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=ignore-duplicates,return=minimal",
+            },
+            data=json.dumps(rows),
+            timeout=ARCHIVE_TIMEOUT_S,
+        )
+        response.raise_for_status()
+        result["status"] = "ok"
+        result["rows_submitted"] = len(rows)
+        return result
+    except Exception as exc:  # noqa: BLE001 — telemetry must never break a serve
+        print(f"[diagnostics] {resort_label}: {_scrub(type(exc).__name__)}", file=sys.stderr)
+        return result
+
+
 def _write_archive(payload: object, fallback_resort_id: str, now: datetime) -> dict:
     """Best-effort append into the forecast archive. NEVER raises — the serve
     must not depend on telemetry.
@@ -676,8 +866,14 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
 
     resort = {**resort, "resort_id": weather_id, **_terrain_extent(weather_id)}
     payload = core.compute_forecast(resort)
+    # Split the per-model audit rows off IMMEDIATELY. Everything downstream —
+    # summary, cache write, archive write, HTTP response — sees the payload it
+    # has always seen; `_members` must never reach the payload jsonb the apps
+    # decode, and must never widen the client contract.
+    members: list = []
     if isinstance(payload, dict):
         payload = {**payload, "resort_id": weather_id}
+        members = payload.pop("_members", None) or []
     summary = core.build_summary(payload)
     try:
         wrote = _write_cache(resort, payload, summary)
@@ -691,6 +887,7 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
     # of the archive key from `payload`, which is why the raw payload (not
     # payload.get(...)) is what crosses into it.
     archive = _write_archive(payload, weather_id, now)
+    diagnostics = _write_member_diagnostics(payload, members, weather_id, now)
 
     return 200, {
         "resort_id": weather_id,
@@ -703,6 +900,8 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
         "archive_status": archive["status"],
         "archive_rows_submitted": archive["rows_submitted"],
         "archive_rows_skipped": archive["rows_skipped"],
+        "diagnostics_status": diagnostics["status"],
+        "diagnostics_rows_submitted": diagnostics["rows_submitted"],
         "config_version": CONFIG_VERSION,
         "generated_at": payload.get("generated_utc"),
         "age_seconds": 0,
