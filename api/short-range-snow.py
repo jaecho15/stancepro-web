@@ -686,6 +686,11 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
                 "band_id": band_id,
                 "model": model,
                 "lead_time_days": lead,
+                # Which build wrote this row. Without it, a NULL in any other
+                # column cannot be told apart from "that feature did not exist
+                # yet" — shadow_hybrid_snow_cm acquired exactly that ambiguity
+                # the day it shipped. Deliberately not in the primary key.
+                "config_version": CONFIG_VERSION,
                 "fetched_at": fetched,
                 "band_elevation_m": elev,
                 "requested_lat": lat,
