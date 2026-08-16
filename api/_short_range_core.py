@@ -438,6 +438,11 @@ def _rain_risk(elevation: float | None, freezing: float | None) -> bool:
 #     D1-8    n=2324   p50 1.52   p75 2.43   p90 4.32   models 3.9
 #     D9-16   n=1134   p50 1.57   p75 1.60   p90 1.64   models 1.9
 #
+# (Those two rows are the ORIGINAL measurement, bucketed at the old D1-8/D9-16
+# boundary. The buckets are now D1-7/D8-16; the anchors were kept rather than
+# rescaled, because moving one lead across a 2,324-row bucket is not something to
+# estimate by hand. Re-measure from the archive before quoting these again.)
+#
 # D8-16 IS DEGENERATE AND IS TREATED AS SUCH
 # Its spread barely moves — 1.57 at the median, 1.67 at the 90th. With 2.1
 # models the min/max is the gap between two deterministic runs, not a quantile,
@@ -468,6 +473,33 @@ TIER_SPREAD_ANCHORS = {
     "D9-16": None,
 }
 
+
+def tier_bucket(day_index: int) -> str:
+    """The bucket the TIER anchors were MEASURED in. Deliberately not lead_band().
+
+    These two boundaries were the same value until 2026-08-16, and merging them
+    again is tempting and wrong. `lead_band` answers "is this row the same kind of
+    object the apps render as a point?" — that is a display question, and it moved
+    to day_index<=7 to match the physics gate and what both apps already do.
+
+    This answers "which measured population do the spread anchors and the
+    model-count policy come from?", and that population is fixed by history: the
+    anchors above were computed over archive rows bucketed D1-8/D9-16.
+
+    Moving day 8 across without re-measuring is not neutral, and it fails in the
+    OPTIMISTIC direction, which is the worse one. Measured on the change itself:
+    the D9-16 policy deliberately does not discriminate (no spread anchor, demote
+    only at n_models<=1) because rows there genuinely run about two models. Day 8
+    runs three to four with real spread, so it would inherit an exemption built
+    for a different population — tier went low -> high in 5 of 7 realistic cases,
+    including the live Temple Basin row (n=3, p10/p50/p90 = 1.3/3.9/13.6).
+
+    To merge them: re-measure the anchors from the forecast archive with day 8 in
+    the long bucket, and re-derive the model-count policy from the actual n_models
+    distribution per lead. Until then this stays where the measurement is.
+    """
+    return "D1-8" if day_index <= 8 else "D9-16"
+
 # Wind is NOT a confidence axis. High wind does not make a total wrong, it makes
 # it non-local — the snow arrives, just not necessarily where the point forecast
 # says. That is a slope-condition statement (transport, loading, scoured faces),
@@ -479,17 +511,38 @@ WIND_TRANSPORT_KMH = 75         # provisional (240-row sample)
 WIND_STRONG_TRANSPORT_KMH = 110  # provisional (240-row sample)
 
 
+# The one place the hourly/wet-bulb window is defined. `band_daily_rows` takes it
+# as `time_of_day_days`, `lead_band` derives its boundary from it, and the layer
+# label is computed from the same value — so the display zone, the tier zone and
+# the physics can no longer drift apart.
+#
+# They HAD drifted. Until 2026-08-16 `lead_band` returned "D1-8" for day_index<=8
+# while the physics gate cut at index<7 (= day_index<=7), so day_index 8 alone was
+# labelled a short-range row while being built from the daily snowfall_sum with no
+# wet-bulb repartition. The docstring below already claimed the boundary was where
+# "`layer` already changes", and the tier comment below already said "D1-7 runs
+# four; D8-16 runs about two" — both describe day_index<=7. Only the two literals
+# disagreed, and they disagreed silently because nothing compares them.
+HOURLY_WINDOW_DAYS = 7
+
+
 def lead_band(day_index: int) -> str:
     """Two zones, per DECISIONS.md #1.
 
-    The boundary is 8 because that is where the forecast stops being the same
-    object: `layer` already changes there, the hourly multi-model window ends,
-    and model count falls from 4 to about 2. The earlier D5 cut had no such
+    The boundary is HOURLY_WINDOW_DAYS because that is where the forecast stops
+    being the same object: `layer` changes there, the hourly multi-model window
+    ends, and model count falls from 4 to about 2. The earlier D5 cut had no such
     basis — it came from a constant asserting skill drops there, and measured
     per lead day the spread actually steps at D3 and again at D5-6, so D5 was
     never a single clean break.
+
+    Both apps already split on this boundary, not on the old one: iOS
+    `isQuantitative` is `layer == "D1-7"` and its second section filters
+    dayIndex 8...16; Android filters `layer == "D1-7"`. Neither reads
+    `show_point_value`, and neither compares against "D1-8"/"D9-16" — which is
+    why the drift never surfaced as a visible bug.
     """
-    return "D1-8" if day_index <= 8 else "D9-16"
+    return "D1-7" if day_index <= HOURLY_WINDOW_DAYS else "D8-16"
 
 
 def forecast_tier(
@@ -519,7 +572,8 @@ def forecast_tier(
             level = to
         reasons.append(reason)
 
-    band = lead_band(day_index)
+    band = lead_band(day_index)          # display zone, emitted in the payload
+    bucket = tier_bucket(day_index)      # measured zone, drives the thresholds only
     upper = snow_p90 if snow_p90 is not None else (snow_p50 or 0.0)
     snow_in_play = upper >= TIER_SNOW_FLOOR_CM
     precip_in_play = (precip_mm or 0.0) >= TIER_PRECIP_FLOOR_MM
@@ -528,7 +582,7 @@ def forecast_tier(
     # D8-16 runs about two, so demoting D8-16 for "only two" fires on the normal
     # case and says nothing.
     if n_models is not None:
-        if band == "D9-16":
+        if bucket == "D9-16":
             if n_models <= 1:
                 demote(1, "single_model")
         elif n_models <= 2:
@@ -536,7 +590,7 @@ def forecast_tier(
         elif n_models < TIER_MIN_MODELS_FULL:
             demote(1, "reduced_models")
 
-    anchors = TIER_SPREAD_ANCHORS.get(band)
+    anchors = TIER_SPREAD_ANCHORS.get(bucket)
     if anchors and snow_p50 is not None and snow_p50 >= TIER_SNOW_FLOOR_CM:
         low = snow_p10 if snow_p10 is not None else snow_p50
         high = snow_p90 if snow_p90 is not None else snow_p50
@@ -570,10 +624,14 @@ def forecast_tier(
     return {
         "tier": tier,
         "reasons": reasons,
-        # DECISIONS.md #1. D9-16 is range-only: with ~1.9 models its p10-p90 is
-        # a min/max of two runs, so a point value there claims a precision that
-        # does not exist even by the pipeline's own arithmetic.
-        "show_point_value": band == "D1-8",
+        # DECISIONS.md #1. The long band is range-only: with ~1.9 models its
+        # p10-p90 is a min/max of two runs, so a point value there claims a
+        # precision that does not exist even by the pipeline's own arithmetic.
+        #
+        # NOTE: neither app reads this field (verified by grep across both repos,
+        # 2026-08-16); both branch on `layer` instead. It is payload metadata and
+        # an audit record, not the display gate its name suggests.
+        "show_point_value": band == "D1-7",
         "lead_band": band,
         # Gate fields for a notification feature that does not exist yet. Stored
         # now so the day it ships the gate is already populated and auditable,
@@ -1045,7 +1103,7 @@ def band_daily_rows(
                 "day_index": index + 1,
                 "band": band,
                 "elevation_m": band_elevation,
-                "layer": "D1-7" if index < 7 else "D8-16",
+                "layer": "D1-7" if index < HOURLY_WINDOW_DAYS else "D8-16",
                 "n_models": n_models,
                 "snow_cm_p10": snow_p10,
                 "snow_cm_p50": snow_p50,
@@ -1825,7 +1883,8 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
     members: list[dict[str, Any]] = []
     for band in sorted(band_payloads, key=lambda name: name != "mid"):
         band_rows = band_daily_rows(band_payloads[band], band, bands[band],
-                                    freezing_by_date, freezing_by_block, 7,
+                                    freezing_by_date, freezing_by_block,
+                                    HOURLY_WINDOW_DAYS,
                                     profile_hourly, members_out=members)
         attach_ensemble(band_rows, ensembles.get(band) or {})
         daily_rows.extend(band_rows)

@@ -48,7 +48,19 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # v3.1: D1-7 day weather_code = mode of its own block codes (the daily
 # variable is each model's worst hour — served an overcast header over four
 # clear blocks, Cardrona 2026-08-06). Numeric fields untouched from v3.
-CONFIG_VERSION = "hybrid-tw-v3.1-day-wx"
+# v3.2 (2026-08-16): lead_band boundary moved off its own literal onto
+# short_range_core.HOURLY_WINDOW_DAYS, so the display zone, the layer label and
+# the wet-bulb physics gate can no longer drift. They HAD drifted: day_index 8
+# alone was labelled "D1-8" while being built from the daily snowfall_sum with
+# no wet-bulb repartition. Two payload fields move and NOTHING numeric does —
+# `lead_band` is now "D1-7"/"D8-16" (was "D1-8"/"D9-16") on every row, and
+# `show_point_value` is false at day_index 8 (was true). Verified across 4,480
+# input combinations: tier and alert_eligible are byte-identical to v3.1.
+#
+# Bumped even though no number changed, because the archive keys on this string
+# and would otherwise mix two lead_band conventions inside one series with no
+# way to tell them apart after the fact.
+CONFIG_VERSION = "hybrid-tw-v3.2-lead-band"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
