@@ -639,6 +639,12 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
             rain = _num(member.get("rain_candidate_mm"))
             contributing = member.get("contributing_hours")
             hybrid_hours = member.get("hybrid_hours")
+            # The counterfactual, not a forecast. Clamped like the served
+            # values: a negative here would mean the repartition produced
+            # nonsense, and a null records that better than a negative does.
+            shadow = _num(member.get("shadow_hybrid_snow_cm"))
+            if shadow is not None and shadow < 0:
+                shadow = None
             if rain is not None and rain < 0:
                 rain = None
             if snow is not None and snow < 0:
@@ -668,6 +674,12 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
                 "band_elevation_m": elev,
                 "requested_lat": lat,
                 "requested_lon": lon,
+                # NEVER served. What the wet-bulb repartition would have given
+                # past the hourly window, recorded so the question "should the
+                # window move out?" can eventually be answered from fleet data
+                # instead of from one resort. hybrid_applied stays false and
+                # hybrid_snow_cm below still holds what the user actually saw.
+                "shadow_hybrid_snow_cm": shadow,
                 # NOT NULL columns. An excluded member has no precip of its own
                 # to record, so it lands as 0.0 with the reason in
                 # fallback_reason — `hybrid_applied=false` plus a reason string

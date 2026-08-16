@@ -991,9 +991,34 @@ def band_daily_rows(
 
         blocks: list[dict[str, Any]] = []
         day_agg: dict[str, Any] | None = None
+        # SHADOW ONLY, never served. Past the hourly window the served row is
+        # built from the vendor's daily snowfall_sum with no wet-bulb step, and
+        # whether that step SHOULD run out here is an open question this
+        # pipeline has no way to answer: there is no southern-hemisphere truth,
+        # so the counterfactual can be sized but not scored.
+        #
+        # Sizing it is still worth doing, and it cannot be done from one resort
+        # on one cycle. Measured at Temple Basin, running the hybrid at D+8
+        # collapses the ECMWF/GEM spread from 25.4x to 2.4x and separates three
+        # bands that currently serve byte-identical snow — but one lead further
+        # out, GFS carries 113.5 mm and the hybrid turns it into 69.8 cm at the
+        # mid band, taking p90 from 13.1 to 58.0. Both of those are the same
+        # change. Which one is typical is a fleet question over many cycles.
+        #
+        # So: compute it, persist it next to the native value, serve neither.
+        # `shadow_agg` must never reach `day_agg` — that assignment is the whole
+        # difference between recording a counterfactual and shipping it.
+        shadow_by_model: dict[str, dict[str, Any]] = {}
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
                                               profile_temps)
+        elif members_out is not None:
+            # Gated on members_out because this is pure cost with no served
+            # effect: if nobody is persisting diagnostics, nobody can read it.
+            _, shadow_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
+                                            profile_temps)
+            for member in (shadow_agg or {}).get("members") or []:
+                shadow_by_model[member["model"]] = member
 
         if day_agg:
             if members_out is not None:
@@ -1012,6 +1037,11 @@ def band_daily_rows(
                         "rain_candidate_mm": member["rain_candidate_mm"],
                         "contributing_hours": member["contributing_hours"],
                         "hybrid_hours": member["hybrid_hours"],
+                        # Null by definition here: inside the window the
+                        # hybrid is not a counterfactual, it is what snow_cm
+                        # already is. A non-null shadow on a D1-7 row would mean
+                        # the two paths had diverged.
+                        "shadow_hybrid_snow_cm": None,
                         "hybrid_applied": member["hybrid_applied"],
                         "fallback_reason": member["fallback_reason"],
                         "included": True,
@@ -1057,6 +1087,7 @@ def band_daily_rows(
                             "hybrid_applied": False,
                             # The model contributed nothing usable: this is the
                             # one case 'model_unavailable' genuinely describes.
+                            "shadow_hybrid_snow_cm": None,
                             "fallback_reason": "model_unavailable",
                             "included": False,
                         })
@@ -1075,6 +1106,7 @@ def band_daily_rows(
                 per_model_tmin.append(float(tmin))
                 per_model_tmax.append(float(tmax))
                 if members_out is not None:
+                    shadow = shadow_by_model.get(model)
                     members_out.append({
                         "band": band, "date": date, "model": model,
                         "layer": "D8-16",
@@ -1089,9 +1121,22 @@ def band_daily_rows(
                         # No hourly window past time_of_day_days, so no wet-bulb
                         # step exists. This is OUR code gate — never
                         # 'model_unavailable', which would blame the upstream.
-                        "rain_candidate_mm": None,
-                        "contributing_hours": None,
-                        "hybrid_hours": None,
+                        # From the SHADOW run, not from anything served. These
+                        # describe a wet-bulb pass that did happen in memory and
+                        # was then discarded; hybrid_applied stays False because
+                        # the served number is still the native daily value
+                        # above. A reader that treats these as evidence the
+                        # hybrid ran for the user has misread the row.
+                        "rain_candidate_mm": (shadow or {}).get("rain_candidate_mm"),
+                        "contributing_hours": (shadow or {}).get("contributing_hours"),
+                        "hybrid_hours": (shadow or {}).get("hybrid_hours"),
+                        # What the wet-bulb repartition WOULD have produced at
+                        # this band elevation. None when the model had no usable
+                        # hourly data out here — ICON, for instance, returns 1 of
+                        # 24 hours at D+8 and 0 of 24 at D+9, so its shadow is
+                        # absent rather than zero. Never compare a null here
+                        # against a 0.0; check contributing_hours first.
+                        "shadow_hybrid_snow_cm": (shadow or {}).get("snow_cm"),
                         "hybrid_applied": False,
                         "fallback_reason": "outside_hourly_window",
                         "included": True,
