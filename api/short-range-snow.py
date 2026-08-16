@@ -370,6 +370,17 @@ def _write_cache(resort: dict, payload: dict, summary: dict) -> bool:
 # gaps must be read as "not served" rather than "no forecast existed".
 
 
+def _small_int(value: object) -> int | None:
+    """Int or None, for the smallint archive columns. Same contract as _num:
+    a missing value stays missing. Rejects bool (a Python bool IS an int, and
+    True would silently archive as 1) and rejects floats rather than truncating
+    — a weather_code that arrived as 71.0 means the producer changed, and that
+    should surface as a NULL to investigate, not as a rounded code."""
+    if value is None or isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _num(value: object) -> float | None:
     """Finite float or None. Never coerces a missing value into 0."""
     if value is None or isinstance(value, bool):
@@ -495,6 +506,36 @@ def _archive_rows(resort_id: str, payload: dict, run_init_time: str) -> tuple[li
             "tier": day.get("tier"),
             "tier_reasons": day.get("reasons"),
             "wind_gust_kmh": int(gust) if isinstance((gust := day.get("wind_gust_kmh")), int) and not isinstance(gust, bool) else None,
+            # The sky header AS SERVED. Nothing in this database recorded it
+            # before 2026-08-16, so v3.1's D1-7 header fix could never be
+            # checked on a past date. At D8-16 this is still
+            # _weather_code_mode over each model's DAILY code, which ties
+            # 1-1-1 with 3-4 models and breaks toward the MAXIMUM — read it as
+            # "most severe code any one model produced in any one hour".
+            "weather_code": _small_int(day.get("weather_code")),
+            # The signed margin that PRODUCED rain_risk and the phase tier
+            # demotions. Only the boolean survived before, so a rain/snow miss
+            # could not be traced back to the margin that caused it.
+            "snow_level_margin_m": _num(day.get("snow_level_margin_m")),
+            # Extremes of the SAME series tmean_c came from, so the triple is
+            # coherent — but that series changes at the D1-7/D8-16 boundary, so
+            # temp_source travels with them and is not optional. An analysis
+            # that compares tmin across leads without splitting on it will see a
+            # step at day 8 that is a definition change, not weather.
+            "tmin_c": _num(day.get("tmin_c_p50")),
+            "tmax_c": _num(day.get("tmax_c_p50")),
+            "temp_source": day.get("temp_source") or None,
+            # Ensemble quantiles over ~103 members. NULL at D1-8 by
+            # construction (attach_ensemble starts at ROLLING_FROM_DAY_INDEX)
+            # and NULL wherever no ensemble was attached — never 0.0, because
+            # "no ensemble" and "an ensemble forecasting no snow" are
+            # different facts and _num keeps them apart.
+            "ens_cm_p10": _num(day.get("ens_cm_p10")),
+            "ens_cm_p50": _num(day.get("ens_cm_p50")),
+            "ens_cm_p90": _num(day.get("ens_cm_p90")),
+            # Read this before comparing ens_* across rows: the member count
+            # moves with lead and with which systems reach that day.
+            "ens_members": _small_int(day.get("ens_members")),
             # Only a FRESH compute reaches this writer; a cache hit is the same
             # forecast already recorded.
             "served_cached": False,

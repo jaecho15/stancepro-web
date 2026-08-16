@@ -720,6 +720,10 @@ def hourly_band_day(
     day_rain_candidate: dict[str, float] = defaultdict(float)
     day_hours: dict[str, int] = defaultdict(int)
     day_hybrid_hours: dict[str, int] = defaultdict(int)
+    # Provenance of the DISPLAY temperature, per model per day: total hours and
+    # how many of them fell back from the pressure profile to the 2 m series.
+    day_temp_profile_hours: dict[str, int] = defaultdict(int)
+    day_temp_fallback_hours: dict[str, int] = defaultdict(int)
     day_fallback: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     block_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
     block_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(n_blocks)]
@@ -785,6 +789,12 @@ def hourly_band_day(
                 disp_temp = profile_temps.get(stamp, {}).get(model)
             if disp_temp is None:
                 disp_temp = float(temp)
+                # Counted, not just used. The two sources differ by up to ~10 C
+                # in a valley inversion — that gap is why v3 exists — so a day
+                # that silently mixed them must not be archived as if it were a
+                # clean profile day. Feeds temp_source in the day aggregate.
+                day_temp_fallback_hours[model] += 1
+            day_temp_profile_hours[model] += 1
             day_temps[model].append(disp_temp)
             block_temps[block_index][model].append(disp_temp)
             wspd = wspd_series[index] if index < len(wspd_series) else None
@@ -911,6 +921,17 @@ def hourly_band_day(
             "hybrid_applied": applied,
             "fallback_reason": reason,
         })
+    # Extremes of the SAME series tmean_c_p50 is built from, so the triple is
+    # always internally coherent. Deliberately NOT the vendor's daily
+    # temperature_2m_min/max: those are 2 m values, and mixing them with a
+    # profile-derived mean would let tmean fall outside [tmin, tmax] by the full
+    # inversion gap (~10 C in the case that motivated v3). The cost is that the
+    # D8-16 path below uses the vendor dailies instead, so the definition
+    # changes at the window boundary — hence temp_source, which labels it rather
+    # than hiding it. Hourly sampling also understates a true daily extreme
+    # slightly; temp_source identifies those rows too.
+    _fallback_hours = sum(day_temp_fallback_hours[m] for m in day_present)
+    _profile_hours = sum(day_temp_profile_hours[m] for m in day_present)
     day_agg = {
         "members": day_members,
         "n_models": len(day_present),
@@ -919,6 +940,11 @@ def hourly_band_day(
         "snow_cm_p90": day_p90,
         "precip_mm_p50": round(_median([day_precip[m] for m in day_present]), 1),
         "tmean_c_p50": round(_median(temp_means), 1),
+        "tmin_c_p50": round(_median([min(day_temps[m]) for m in day_present]), 1),
+        "tmax_c_p50": round(_median([max(day_temps[m]) for m in day_present]), 1),
+        "temp_source": ("profile_hourly" if _fallback_hours == 0
+                        else "surface_hourly" if _fallback_hours == _profile_hours
+                        else "mixed_hourly"),
         "wind_kmh": day_wind_kmh,
         "wind_dir_deg": day_wind_dir_deg,
         "wind_gust_kmh": day_wind_gust_kmh,
@@ -995,6 +1021,9 @@ def band_daily_rows(
             snow_p90 = day_agg["snow_cm_p90"]
             precip_p50 = day_agg["precip_mm_p50"]
             temp_p50 = day_agg["tmean_c_p50"]
+            tmin_p50 = day_agg["tmin_c_p50"]
+            tmax_p50 = day_agg["tmax_c_p50"]
+            temp_source = day_agg["temp_source"]
             n_models = day_agg["n_models"]
             wind_kmh = day_agg["wind_kmh"]
             wind_dir_deg = day_agg["wind_dir_deg"]
@@ -1003,6 +1032,8 @@ def band_daily_rows(
             per_model_snow: list[float] = []
             per_model_precip: list[float] = []
             per_model_tmean: list[float] = []
+            per_model_tmin: list[float] = []
+            per_model_tmax: list[float] = []
             for model in models:
                 snow = (daily.get(f"snowfall_sum_{model}") or [None] * len(times))[index]
                 precip = (daily.get(f"precipitation_sum_{model}") or [None] * len(times))[index]
@@ -1036,6 +1067,13 @@ def band_daily_rows(
                 per_model_snow.append(snow_member)
                 per_model_precip.append(float(precip))
                 per_model_tmean.append(t_mean)
+                # The vendor's own daily extremes, 2 m downscaled. Unlike the
+                # D1-7 branch there is no pressure profile out here
+                # (fetch_pressure_profile stops at 7 days), so tmean is the
+                # midpoint of exactly these two and the triple is coherent by
+                # construction — just on a different series than D1-7's.
+                per_model_tmin.append(float(tmin))
+                per_model_tmax.append(float(tmax))
                 if members_out is not None:
                     members_out.append({
                         "band": band, "date": date, "model": model,
@@ -1065,6 +1103,9 @@ def band_daily_rows(
             snow_p90 = round(_quantile(per_model_snow, QUANTILES["p90"]), 1)
             precip_p50 = round(_median(per_model_precip), 1)
             temp_p50 = round(_median(per_model_tmean), 1)
+            tmin_p50 = round(_median(per_model_tmin), 1)
+            tmax_p50 = round(_median(per_model_tmax), 1)
+            temp_source = "vendor_daily"
             n_models = len(per_model_snow)
             wind_samples: list[tuple[float, float, float]] = []
             for model in models:
@@ -1111,6 +1152,13 @@ def band_daily_rows(
                 "snow_cm_model_native": snow_native,
                 "precip_mm_p50": precip_p50,
                 "tmean_c_p50": temp_p50,
+                # Additive only — both apps decode by key, so a new field is
+                # safe where changing an existing int to a float would not be.
+                # Read temp_source before comparing tmin/tmax across the D1-7 /
+                # D8-16 boundary: the series changes there.
+                "tmin_c_p50": tmin_p50,
+                "tmax_c_p50": tmax_p50,
+                "temp_source": temp_source,
                 "freezing_level_m": round(freezing) if freezing is not None else None,
                 "snow_level_margin_m": _snow_level_margin(band_elevation, freezing),
                 "rain_risk": _rain_risk(band_elevation, freezing),
@@ -1397,8 +1445,21 @@ def fetch_pressure_profile(resort: dict[str, Any], models: str) -> dict[str, Any
 
     Per resort and not per band: pressure-level values describe the air column
     above the grid cell, so every band interpolates from the same payload
-    (profile_temp_by_stamp). 7 days matches the hourly/blocks window — D8-16
-    rows are daily-var only and keep their 2m tmean.
+    (profile_temp_by_stamp). The horizon is HOURLY_WINDOW_DAYS, not a literal —
+    D8-16 rows are daily-var only and keep their 2 m tmean.
+
+    That binding is load-bearing, not tidiness. If this horizon were ever left
+    behind while the hourly window moved out (the obvious next change: run the
+    wet-bulb repartition one day further), hourly_band_day would still run for
+    the new day, profile_temps would have no stamp for it, and disp_temp would
+    fall back to the 2 m series with no error and no log. The band temperature
+    for that day alone would silently revert to pre-v3 behaviour — the failure
+    that served -8.7 to -11.4 C across the Queenstown resorts where the slope
+    sensors read -0.7 to +0.1 C. Equal literals in two files cannot express
+    "these must move together"; one constant can.
+
+    (If it does happen anyway, temp_source in the archive now records it: those
+    rows land as mixed_hourly or surface_hourly instead of profile_hourly.)
     """
     params: dict[str, Any] = {
         "latitude": f"{float(resort['lat']):.5f}",
@@ -1408,7 +1469,7 @@ def fetch_pressure_profile(resort: dict[str, Any], models: str) -> dict[str, Any
             for level in PRESSURE_PROFILE_LEVELS
         ),
         "models": models,
-        "forecast_days": 7,
+        "forecast_days": HOURLY_WINDOW_DAYS,
         "timezone": "auto",
         # Same pin as fetch_band_forecast so profile and band describe the
         # same grid column (no elevation param — the column has no elevation).
