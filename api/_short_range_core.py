@@ -452,6 +452,132 @@ SNOW_EVENT_FLIP_CM = 1.0         # a reportable event appears or vanishes across
 LAPSE_RATIO_FLOOR_CM = 0.1       # below this a max/min ratio is noise, not signal
 
 
+# ---- band wind from the free atmosphere -------------------------------------
+#
+# WHY THE 10 m WIND IS NOT USED FOR A MOUNTAIN BAND
+# A global model's 10 m wind belongs to its own smoothed terrain, and that terrain
+# is not the resort. Measured at Treble Cone (1791 m, the one alpine station whose
+# elevation survives both a DEM check and an independent temperature inversion),
+# over 300 hours against the observed sustained wind:
+#
+#     source                 correlation   observed/forecast   serious misses
+#     10 m surface, ECMWF        0.08            4.08           42 / 300
+#     10 m surface, GEM          0.34            4.26           45 / 300
+#     10 m surface, GFS          0.20            1.94           24 / 300
+#     free air at 1791 m, GFS    0.47            1.17            0 / 300
+#
+# A "serious miss" is observed >= 25 km/h served as < 10 km/h — a real alpine gale
+# shown as calm. That is the failure this function exists to remove, and it is the
+# one a rider is most exposed to. In the prevailing westerly the free-air
+# correlation reaches 0.83-0.86.
+#
+# WHAT THIS IS NOT
+# Free air is NOT the wind at the site. An exposed ridge sees roughly all of it
+# (Treble Cone ratio ~1.0 in every sector); a sheltered bowl sees a fraction. We
+# have NO verified sheltered alpine station, so no exposure factor is applied and
+# none is guessed: TERRAIN_EXPOSURE_FACTOR is 1.0. The known consequence is that
+# sheltered terrain will be OVER-forecast, which is the direction we accept while
+# the safer direction is unverifiable — but it is a limitation, not a feature.
+#
+# ECMWF IS DELIBERATELY NOT THE SOURCE
+# Not a judgement on ECMWF's forecast skill. Its pressure-level product reaches us
+# with 800 and 900 hPa missing, so a mountain band brackets across 850<->700 hPa —
+# about 1534 m, against ~483 m for GFS/ICON/GEM. At Treble Cone that produced a
+# free-air wind of ~30 km/h where GFS said 17 and the station measured 18.
+TERRAIN_EXPOSURE_FACTOR = 1.0
+
+# The bracket must be between levels ADJACENT in PRESSURE_PROFILE_LEVELS — no
+# skipped level. This is a data-completeness test, not a thickness test, and the
+# difference matters: pressure levels are naturally further apart in metres higher
+# up (800<->700 hPa spans about 1000 m over the high Andes), so a thickness limit
+# rejects perfectly good high-altitude brackets. Measured: a 900 m cap took
+# Farellones at 2770 m from full coverage to zero. What must be excluded is a
+# bracket that spans a MISSING level — ECMWF's 850<->700 with 800 absent — and
+# adjacency catches exactly that while admitting the Andes.
+
+
+def band_free_air_wind_series(
+    profile_hourly: dict[str, Any] | None, band_elevation: float | None, model: str,
+) -> dict[str, tuple[float, float]]:
+    """{time stamp: (speed_kmh, direction_deg)} at band elevation, or {}.
+
+    Interpolates u and v SEPARATELY between the two pressure levels bracketing the
+    band by geopotential height, then recovers speed and direction. A stamp is
+    absent whenever the interpolation would not be valid — never extrapolated,
+    never clamped to an end level — so the caller falls back per hour rather than
+    per resort, and the reason is recoverable from free_air_fallback_reason."""
+    if not profile_hourly or band_elevation is None:
+        return {}
+    times = profile_hourly.get("time") or []
+    if not times:
+        return {}
+    elev = float(band_elevation)
+    out: dict[str, tuple[float, float]] = {}
+    for index, stamp in enumerate(times):
+        points = []
+        for order, level in enumerate(PRESSURE_PROFILE_LEVELS):
+            z = (profile_hourly.get(f"geopotential_height_{level}hPa_{model}")
+                 or [None] * len(times))[index]
+            speed = (profile_hourly.get(f"wind_speed_{level}hPa_{model}")
+                     or [None] * len(times))[index]
+            direction = (profile_hourly.get(f"wind_direction_{level}hPa_{model}")
+                         or [None] * len(times))[index]
+            if z is None or speed is None or direction is None:
+                continue
+            rad = math.radians(float(direction))
+            # Meteorological 'from' bearing -> vector the air is moving TOWARDS.
+            points.append((float(z), -float(speed) * math.sin(rad),
+                           -float(speed) * math.cos(rad), order))
+        points.sort()
+        if len(points) < 2 or elev < points[0][0] or elev > points[-1][0]:
+            continue
+        for (z_lo, u_lo, v_lo, o_lo), (z_hi, u_hi, v_hi, o_hi) in zip(points, points[1:]):
+            if z_lo <= elev <= z_hi:
+                # PRESSURE_PROFILE_LEVELS descends in pressure, so adjacent
+                # levels differ by exactly one in the list. Anything else means a
+                # level between them was absent from the response.
+                if abs(o_hi - o_lo) != 1:
+                    break
+                frac = 0.0 if z_hi == z_lo else (elev - z_lo) / (z_hi - z_lo)
+                u = u_lo + frac * (u_hi - u_lo)
+                v = v_lo + frac * (v_hi - v_lo)
+                speed = math.hypot(u, v) * TERRAIN_EXPOSURE_FACTOR
+                out[stamp] = (speed, (math.degrees(math.atan2(-u, -v)) + 360.0) % 360.0)
+                break
+    return out
+
+
+def free_air_fallback_reason(
+    profile_hourly: dict[str, Any] | None, band_elevation: float | None, model: str,
+    stamp_index: int,
+) -> str:
+    """Why band_free_air_wind_series had no answer for this hour. Diagnostic only."""
+    if not profile_hourly:
+        return "missing_pressure_data"
+    if band_elevation is None:
+        return "missing_band_elevation"
+    times = profile_hourly.get("time") or []
+    heights = []
+    for level in PRESSURE_PROFILE_LEVELS:
+        z = (profile_hourly.get(f"geopotential_height_{level}hPa_{model}")
+             or [None] * len(times))[stamp_index] if stamp_index < len(times) else None
+        speed = (profile_hourly.get(f"wind_speed_{level}hPa_{model}")
+                 or [None] * len(times))[stamp_index] if stamp_index < len(times) else None
+        if z is not None and speed is not None:
+            heights.append(float(z))
+    if len(heights) < 2:
+        return "missing_pressure_data"
+    heights.sort()
+    if float(band_elevation) < heights[0]:
+        # The band sits below the lowest usable level, i.e. inside the model's own
+        # terrain or boundary layer. Extrapolating down there would be inventing
+        # an atmosphere under the ground.
+        return "below_lowest_pressure_level"
+    if float(band_elevation) > heights[-1]:
+        return "above_highest_pressure_level"
+    return "bracket_too_thick"
+
+
 def lapse_shadow_chain(
     hourly: dict[str, Any], model: str, date: str,
     band_elevation_m: float | None, grid_elevation_m: float | None,
@@ -866,6 +992,7 @@ def hourly_band_day(
     date: str,
     freezing_block: dict[tuple[str, int], float],
     profile_temps: dict[str, dict[str, float]] | None = None,
+    free_air_wind: dict[str, dict[str, tuple[float, float]]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     times = hourly.get("time") or []
     models = hourly_model_names(hourly)
@@ -894,6 +1021,10 @@ def hourly_band_day(
     # Snow/phase physics reads `temp` directly and never these arrays.
     block_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
     day_wind: list[tuple[float, float, float]] = []
+    # Which wind source actually fed each model-day, so a served value is always
+    # traceable to free air or to the 10 m fallback.
+    day_free_air_hours: dict[str, int] = defaultdict(int)
+    day_surface_fallback_hours: dict[str, int] = defaultdict(int)
     block_wind: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
 
@@ -959,8 +1090,21 @@ def hourly_band_day(
             day_temp_profile_hours[model] += 1
             day_temps[model].append(disp_temp)
             block_temps[block_index][model].append(disp_temp)
-            wspd = wspd_series[index] if index < len(wspd_series) else None
-            wdir = wdir_series[index] if index < len(wdir_series) else None
+            # SPEED and DIRECTION come from the free atmosphere at band
+            # elevation where that is valid; the 10 m surface value is the
+            # per-hour fallback, not a per-resort one. GUST is always the native
+            # field — sustained and gust fail differently by model and must not
+            # share a correction (measured: ECMWF sustained 4x low with gust
+            # ~1.2x, GFS sustained 1.9x low with gust 4.2x low and nearly
+            # constant). Changing gust is a separate, unstarted piece of work.
+            fa = (free_air_wind or {}).get(model, {}).get(stamp)
+            if fa is not None:
+                wspd, wdir = fa[0], fa[1]
+                day_free_air_hours[model] += 1
+            else:
+                wspd = wspd_series[index] if index < len(wspd_series) else None
+                wdir = wdir_series[index] if index < len(wdir_series) else None
+                day_surface_fallback_hours[model] += 1
             if wspd is not None and wdir is not None:
                 wgst = wgst_series[index] if index < len(wgst_series) else None
                 sample = (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
@@ -1110,6 +1254,8 @@ def hourly_band_day(
         "wind_kmh": day_wind_kmh,
         "wind_dir_deg": day_wind_dir_deg,
         "wind_gust_kmh": day_wind_gust_kmh,
+        "wind_free_air_hours": sum(day_free_air_hours.values()),
+        "wind_surface_fallback_hours": sum(day_surface_fallback_hours.values()),
     }
     return blocks, day_agg
 
@@ -1142,6 +1288,13 @@ def band_daily_rows(
     used_elevation = payload.get("elevation")
     band_elevation = elevation_m if elevation_m is not None else used_elevation
     profile_temps = profile_temp_by_stamp(profile_hourly, band_elevation)
+    # Once per band, for the full 16-day horizon: one wind source end to end, so
+    # there is no D7->D8 source cliff. Empty per model where the profile cannot
+    # answer, which makes the fallback per HOUR rather than per resort.
+    free_air_wind = {
+        model: band_free_air_wind_series(profile_hourly, band_elevation, model)
+        for model in hourly_model_names(payload.get("hourly") or {})
+    }
     rows: list[dict[str, Any]] = []
     for index, date in enumerate(times):
         native_values = [
@@ -1175,12 +1328,12 @@ def band_daily_rows(
         lapse_by_model: dict[str, dict[str, Any]] = {}
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
-                                              profile_temps)
+                                              profile_temps, free_air_wind)
         elif members_out is not None:
             # Gated on members_out because this is pure cost with no served
             # effect: if nobody is persisting diagnostics, nobody can read it.
             _, shadow_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
-                                            profile_temps)
+                                            profile_temps, free_air_wind)
             for member in (shadow_agg or {}).get("members") or []:
                 shadow_by_model[member["model"]] = member
             for model_name in models:
@@ -1227,6 +1380,8 @@ def band_daily_rows(
             temp_source = day_agg["temp_source"]
             n_models = day_agg["n_models"]
             wind_kmh = day_agg["wind_kmh"]
+            wind_free_air_hours = day_agg["wind_free_air_hours"]
+            wind_surface_fallback_hours = day_agg["wind_surface_fallback_hours"]
             wind_dir_deg = day_agg["wind_dir_deg"]
             wind_gust_kmh = day_agg["wind_gust_kmh"]
         else:
@@ -1329,16 +1484,45 @@ def band_daily_rows(
             tmax_p50 = round(_median(per_model_tmax), 1)
             temp_source = "vendor_daily"
             n_models = len(per_model_snow)
+            # Wind past the hourly window uses the SAME free-air calculation as
+            # inside it, aggregated from the hourly profile over this date. That
+            # removes a D7->D8 cliff which would otherwise be two cliffs at once:
+            # the source changing (free air -> 10 m) AND the statistic changing
+            # (hourly mean -> vendor daily MAX). Both are gone; the whole horizon
+            # is now one hourly mean of one source.
+            #
+            # The daily max/dominant fields remain the fallback for a band the
+            # profile cannot bracket, and gust still comes from the native daily
+            # max in every case — sustained and gust are not corrected together.
             wind_samples: list[tuple[float, float, float]] = []
+            fa_hours = 0
             for model in models:
+                gust_daily = (daily.get(f"wind_gusts_10m_max_{model}")
+                              or [None] * len(times))[index]
+                series = (free_air_wind or {}).get(model, {})
+                hours = [(sp, dr) for stamp, (sp, dr) in series.items()
+                         if stamp.startswith(date)]
+                if hours:
+                    fa_hours += len(hours)
+                    mean_speed = sum(sp for sp, _ in hours) / len(hours)
+                    u = sum(sp * math.sin(math.radians(dr)) for sp, dr in hours)
+                    v = sum(sp * math.cos(math.radians(dr)) for sp, dr in hours)
+                    wind_samples.append((
+                        mean_speed, math.degrees(math.atan2(u, v)) % 360.0,
+                        float(gust_daily) if gust_daily is not None else mean_speed,
+                    ))
+                    continue
                 wspd = (daily.get(f"wind_speed_10m_max_{model}") or [None] * len(times))[index]
-                wdir = (daily.get(f"wind_direction_10m_dominant_{model}") or [None] * len(times))[index]
-                wgst = (daily.get(f"wind_gusts_10m_max_{model}") or [None] * len(times))[index]
+                wdir = (daily.get(f"wind_direction_10m_dominant_{model}")
+                        or [None] * len(times))[index]
                 if wspd is not None and wdir is not None:
-                    wind_samples.append(
-                        (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
-                    )
+                    wind_samples.append((
+                        float(wspd), float(wdir),
+                        float(gust_daily) if gust_daily is not None else float(wspd),
+                    ))
             wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(wind_samples)
+            wind_free_air_hours = fa_hours
+            wind_surface_fallback_hours = 0 if fa_hours else len(wind_samples)
 
         # Day-level sky code (2026-08-06): within the hourly window the day's
         # code is the MODE OF ITS OWN BLOCK CODES, not Open-Meteo's daily
@@ -1385,6 +1569,15 @@ def band_daily_rows(
                 "snow_level_margin_m": _snow_level_margin(band_elevation, freezing),
                 "rain_risk": _rain_risk(band_elevation, freezing),
                 "wind_kmh": wind_kmh,
+                # Which source produced the sustained wind. Additive field; both
+                # apps decode by key so an unknown one is ignored. free_air =
+                # pressure levels interpolated to band elevation; surface_10m =
+                # the model's own smoothed-terrain wind, used only where the
+                # profile could not bracket the band; mixed = some hours each,
+                # normal near a level boundary.
+                "wind_source": ("free_air" if wind_surface_fallback_hours == 0
+                                else "surface_10m" if wind_free_air_hours == 0
+                                else "mixed"),
                 "wind_dir_deg": wind_dir_deg,
                 "wind_gust_kmh": wind_gust_kmh,
                 "weather_code": day_weather_code,
@@ -1714,12 +1907,24 @@ def fetch_pressure_profile(resort: dict[str, Any], models: str) -> dict[str, Any
     params: dict[str, Any] = {
         "latitude": f"{float(resort['lat']):.5f}",
         "longitude": f"{float(resort['lon']):.5f}",
+        # Wind joins temperature here rather than in fetch_band_forecast because
+        # a pressure level is a property of the air column, not of a band: one
+        # call per resort serves every band. Speed AND direction, because the
+        # interpolation must be done on u/v components — interpolating a scalar
+        # speed across a directional shear understates the result.
         "hourly": ",".join(
-            f"temperature_{level}hPa,geopotential_height_{level}hPa"
+            f"temperature_{level}hPa,geopotential_height_{level}hPa,"
+            f"wind_speed_{level}hPa,wind_direction_{level}hPa"
             for level in PRESSURE_PROFILE_LEVELS
         ),
         "models": models,
-        "forecast_days": HOURLY_WINDOW_DAYS,
+        # 16, not HOURLY_WINDOW_DAYS. The temperature use is still gated to the
+        # hourly window by its caller, but band wind now runs the full horizon so
+        # D1-16 has ONE source and there is no D7->D8 cliff. Measured: GFS serves
+        # all six levels for 384/384 hours. Setting this to the maximum horizon
+        # also permanently removes the drift hazard that binding it to the window
+        # was guarding against — 16 is >= any window this pipeline can have.
+        "forecast_days": 16,
         "timezone": "auto",
         # Same pin as fetch_band_forecast so profile and band describe the
         # same grid column (no elevation param — the column has no elevation).

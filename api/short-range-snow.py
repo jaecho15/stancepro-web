@@ -76,7 +76,30 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # (verified by replay against frozen upstream responses). Bumped because `tier`
 # and `ens_*` are archived and their RULE changed: a scorer crossing this
 # boundary without splitting on config_version compares two different rules.
-CONFIG_VERSION = "hybrid-tw-v3.3-spread-gate"
+# v3.4 (2026-08-17): band SUSTAINED WIND now comes from GFS pressure-level u/v
+# interpolated to each band elevation, not the model's 10 m surface wind.
+#
+# The 10 m wind belongs to the model's own smoothed terrain, which is not the
+# resort: across all 58 served resorts the GFS grid cell sits a median 1263 m
+# up, while bands run to 3600 m. Measured at Treble Cone (1791 m, the one alpine
+# station whose elevation survives both a DEM check and an independent
+# temperature inversion), 300 hours against the observed sustained wind:
+#     10 m surface : MAE 8.6, bias -7.0, r 0.20, observed/forecast 1.94,
+#                    24 hours of a >=25 km/h gale served as <10 km/h
+#     free air     : MAE 8.1, bias -1.3, r 0.47, observed/forecast 1.10,
+#                    3 such hours (and 4 new extreme false alarms)
+# The three bands also stop sharing one number: at Cardrona today the evening
+# reads 13 / 19 / 29 km/h at 1260 / 1582 / 1904 m where it used to read 7 / 7 / 7.
+#
+# GUST IS DELIBERATELY UNCHANGED. Sustained and gust fail in opposite directions
+# per model (ECMWF sustained 4.1x low with gust 1.2x; GFS sustained 1.9x low with
+# gust 4.2x and near-constant across sites), so one correction cannot serve both,
+# and measurement found no better single source than today's max-across-models.
+# No max(gust, sustained) rule was added.
+#
+# Feels-like follows automatically: wind_chill_c already reads the block's
+# aggregated wind, so it now uses the same source it displays.
+CONFIG_VERSION = "hybrid-tw-v3.4-band-wind"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
