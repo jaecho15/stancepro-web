@@ -661,6 +661,19 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
             shadow = _num(member.get("shadow_hybrid_snow_cm"))
             if shadow is not None and shadow < 0:
                 shadow = None
+            # Lapse-rate sensitivity probe. Shadow only, and ONE axis of
+            # uncertainty (altitude/phase) — storm track, amount and timing are
+            # not in it. Never surface this as "confidence" on its own.
+            chain = member.get("phase_lapse_chain") or None
+            lapse_min = _num((chain or {}).get("snowfall_lapse_min"))
+            lapse_max = _num((chain or {}).get("snowfall_lapse_max"))
+            lapse_range = _num((chain or {}).get("snowfall_lapse_range"))
+            # Deliberately not coalesced: the core returns NULL when the minimum
+            # is below the floor, because a ratio there measures the denominator.
+            lapse_ratio = _num((chain or {}).get("snowfall_lapse_ratio"))
+            phase_flip = (chain or {}).get("phase_flip")
+            event_flip = (chain or {}).get("snow_event_flip")
+            grid_elev = _num((chain or {}).get("grid_elevation_m"))
             if rain is not None and rain < 0:
                 rain = None
             if snow is not None and snow < 0:
@@ -701,6 +714,16 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
                 # instead of from one resort. hybrid_applied stays false and
                 # hybrid_snow_cm below still holds what the user actually saw.
                 "shadow_hybrid_snow_cm": shadow,
+                "phase_lapse_chain": chain,
+                "snowfall_lapse_min": lapse_min,
+                "snowfall_lapse_max": lapse_max,
+                "snowfall_lapse_range": lapse_range,
+                "snowfall_lapse_ratio": lapse_ratio,
+                "phase_flip": phase_flip if isinstance(phase_flip, bool) else None,
+                "snow_event_flip": event_flip if isinstance(event_flip, bool) else None,
+                # Finally fillable: the API echoes the elevation we ASKED for, so
+                # the model's own grid height only exists in the static cell map.
+                "grid_elevation_m": grid_elev,
                 # NOT NULL columns. An excluded member has no precip of its own
                 # to record, so it lands as 0.0 with the reason in
                 # fallback_reason — `hybrid_applied=false` plus a reason string

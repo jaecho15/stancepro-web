@@ -16,6 +16,7 @@ Keep this in lockstep with fetch_short_range_snow.py's base path.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 from collections import Counter, defaultdict
@@ -392,6 +393,150 @@ def _tw_keep_fraction(t_wet_c: float) -> float:
     if t_wet_c >= TW_KEEP_HI_C:
         return 0.0
     return (TW_KEEP_HI_C - t_wet_c) / (TW_KEEP_HI_C - TW_KEEP_LO_C)
+
+
+# ---- lapse-rate shadow: how much of the phase call is OUR altitude correction? ----
+#
+# Open-Meteo returns temperature already downscaled to the elevation we requested,
+# using a lapse rate that is a FIXED 6.5 C/km. Measured, not assumed: sweeping
+# 1000-2600 m at three sites on three continents, four models, 96 hours each, the
+# implied rate is exactly 6.500 with zero non-linear hours (1,152 adjacent pairs).
+# Relative humidity is NOT adjusted — it comes back byte-identical at every
+# elevation — so reconstructing the grid-level state needs only the temperature.
+#
+# That inversion is what makes this shadow free: no extra upstream call, because
+# the grid temperature is recoverable from the band temperature we already have.
+OM_DOWNSCALE_LAPSE_C_PER_KM = 6.5
+
+_MODEL_CELLS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_model_cells.json")
+_MODEL_CELLS_CACHE: dict[str, Any] | None = None
+
+
+def model_grid_elevations(resort_id: str | None) -> dict[str, float]:
+    """{model: grid elevation m} for a resort, or {} when unmapped.
+
+    Read from a static asset because a serving response never reveals it: the API
+    echoes the elevation we ASKED for. Missing entries degrade to no shadow rather
+    than to a guess — an unmapped resort must produce no chain, not a chain built
+    on an assumed grid height."""
+    global _MODEL_CELLS_CACHE
+    if not resort_id:
+        return {}
+    if _MODEL_CELLS_CACHE is None:
+        try:
+            with open(_MODEL_CELLS_PATH, encoding="utf-8") as handle:
+                _MODEL_CELLS_CACHE = json.load(handle).get("cells") or {}
+        except Exception:
+            _MODEL_CELLS_CACHE = {}
+    entry = (_MODEL_CELLS_CACHE or {}).get(str(resort_id)) or {}
+    out: dict[str, float] = {}
+    for model, cell in entry.items():
+        elevation = (cell or {}).get("grid_elevation_m")
+        if isinstance(elevation, (int, float)):
+            out[model] = float(elevation)
+    return out
+
+# The three lapse rates the shadow evaluates. NOT a probability distribution and
+# NOT a confidence interval — a SENSITIVITY probe. It answers "how much of this
+# snowfall is our altitude assumption?" and nothing else. Storm track, precipitation
+# amount and timing uncertainty are separate axes and are not in here.
+LAPSE_SHADOW_C_PER_KM = (4.0, 6.5, 8.0)
+
+# Γ=6.5 reproduces what the serving path already computes. It is kept as an
+# INVERSION SELF-CONSISTENCY CHECK — if it stops matching, the reconstruction or
+# the API's downscaling changed. It is not physical validation of 6.5.
+LAPSE_SELF_CHECK_C_PER_KM = 6.5
+
+PHASE_FLIP_SNOW_FRACTION = 0.5   # dominant phase changes across the Γ range
+SNOW_EVENT_FLIP_CM = 1.0         # a reportable event appears or vanishes across it
+LAPSE_RATIO_FLOOR_CM = 0.1       # below this a max/min ratio is noise, not signal
+
+
+def lapse_shadow_chain(
+    hourly: dict[str, Any], model: str, date: str,
+    band_elevation_m: float | None, grid_elevation_m: float | None,
+) -> dict[str, Any] | None:
+    """Per-Γ phase chain for one model-day. SHADOW ONLY — never served.
+
+    Reconstructs the model's grid-level temperature from the band-level
+    temperature in `hourly`, then re-derives wet bulb, snow fraction and snowfall
+    at each Γ in LAPSE_SHADOW_C_PER_KM. Returns None when the inputs are missing;
+    a partial chain is worse than none because it would read as a measurement.
+    """
+    if band_elevation_m is None or grid_elevation_m is None:
+        return None
+    times = hourly.get("time") or []
+    precip = hourly.get(f"precipitation_{model}") or []
+    temps = hourly.get(f"temperature_2m_{model}") or []
+    rhs = hourly.get(f"relative_humidity_2m_{model}") or []
+    snow = hourly.get(f"snowfall_{model}") or []
+    if not times or not precip or not temps or not rhs:
+        return None
+    dz_km = (float(band_elevation_m) - float(grid_elevation_m)) / 1000.0
+    per_gamma: dict[str, dict[str, float]] = {}
+    hours = 0
+    day_precip = 0.0
+    for gamma in LAPSE_SHADOW_C_PER_KM:
+        snow_cm = 0.0
+        tw_min = tw_max = None
+        used = 0
+        total_p = 0.0
+        for index, stamp in enumerate(times):
+            if not stamp.startswith(date):
+                continue
+            p = precip[index] if index < len(precip) else None
+            t_band = temps[index] if index < len(temps) else None
+            rh = rhs[index] if index < len(rhs) else None
+            if p is None or t_band is None or rh is None:
+                continue
+            used += 1
+            total_p += float(p)
+            # band -> grid -> band at OUR gamma. RH is carried through unchanged,
+            # which is what the API itself does; noting it because holding RH fixed
+            # while moving temperature does not conserve vapour pressure.
+            t_grid = float(t_band) + OM_DOWNSCALE_LAPSE_C_PER_KM * dz_km
+            t_gamma = t_grid - gamma * dz_km
+            t_wet = wet_bulb_stull(t_gamma, float(rh))
+            tw_min = t_wet if tw_min is None else min(tw_min, t_wet)
+            tw_max = t_wet if tw_max is None else max(tw_max, t_wet)
+            native_hr = float(snow[index]) if index < len(snow) and snow[index] is not None else 0.0
+            snow_cm += hybrid_hourly_snow_cm(native_hr, float(p), t_gamma, float(rh))
+        if not used:
+            return None
+        hours = used
+        day_precip = total_p
+        liquid_equiv = total_p * OM_SNOW_CM_PER_MM
+        per_gamma[f"{gamma:g}"] = {
+            "snow_cm": round(snow_cm, 2),
+            "tw_min_c": round(tw_min, 2) if tw_min is not None else None,
+            "tw_max_c": round(tw_max, 2) if tw_max is not None else None,
+            "snow_fraction": round(snow_cm / liquid_equiv, 3) if liquid_equiv > 0.01 else None,
+        }
+    values = [v["snow_cm"] for v in per_gamma.values()]
+    fractions = [v["snow_fraction"] for v in per_gamma.values() if v["snow_fraction"] is not None]
+    lo, hi = min(values), max(values)
+    return {
+        "grid_elevation_m": float(grid_elevation_m),
+        "target_elevation_m": float(band_elevation_m),
+        "delta_z_m": round(float(band_elevation_m) - float(grid_elevation_m), 1),
+        "om_downscale_lapse": OM_DOWNSCALE_LAPSE_C_PER_KM,
+        "hours": hours,
+        "precip_mm": round(day_precip, 2),
+        "per_gamma": per_gamma,
+        "snowfall_lapse_min": round(lo, 2),
+        "snowfall_lapse_max": round(hi, 2),
+        "snowfall_lapse_range": round(hi - lo, 2),
+        # NULL, not infinity, when the floor is not cleared: a ratio against a
+        # near-zero denominator is an artefact of the denominator.
+        "snowfall_lapse_ratio": round(hi / lo, 2) if lo >= LAPSE_RATIO_FLOOR_CM else None,
+        # Does the DOMINANT PHASE change across the Γ range — rain-mostly at one
+        # end, snow-mostly at the other? This is the qualitative flip that a
+        # range in centimetres does not show.
+        "phase_flip": (min(fractions) < PHASE_FLIP_SNOW_FRACTION <= max(fractions)) if fractions else None,
+        # Does a reportable event appear or vanish? A day that is 0.4 cm at Γ=4
+        # and 3 cm at Γ=8 is a different forecast, not a wider one.
+        "snow_event_flip": lo < SNOW_EVENT_FLIP_CM <= hi,
+    }
 
 
 def hybrid_hourly_snow_cm(
@@ -978,6 +1123,7 @@ def band_daily_rows(
     time_of_day_days: int,
     profile_hourly: dict[str, Any] | None = None,
     members_out: list[dict[str, Any]] | None = None,
+    grid_elevations: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """`members_out`, when given, collects one PER-MODEL row per (band, day)
     BEFORE the quantile reduction below folds the members away.
@@ -1026,6 +1172,7 @@ def band_daily_rows(
         # `shadow_agg` must never reach `day_agg` — that assignment is the whole
         # difference between recording a counterfactual and shipping it.
         shadow_by_model: dict[str, dict[str, Any]] = {}
+        lapse_by_model: dict[str, dict[str, Any]] = {}
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
                                               profile_temps)
@@ -1036,6 +1183,12 @@ def band_daily_rows(
                                             profile_temps)
             for member in (shadow_agg or {}).get("members") or []:
                 shadow_by_model[member["model"]] = member
+            for model_name in models:
+                chain = lapse_shadow_chain(
+                    hourly, model_name, date, band_elevation,
+                    (grid_elevations or {}).get(model_name))
+                if chain is not None:
+                    lapse_by_model[model_name] = chain
 
         if day_agg:
             if members_out is not None:
@@ -1059,6 +1212,7 @@ def band_daily_rows(
                         # already is. A non-null shadow on a D1-7 row would mean
                         # the two paths had diverged.
                         "shadow_hybrid_snow_cm": None,
+                        "phase_lapse_chain": None,
                         "hybrid_applied": member["hybrid_applied"],
                         "fallback_reason": member["fallback_reason"],
                         "included": True,
@@ -1105,6 +1259,7 @@ def band_daily_rows(
                             # The model contributed nothing usable: this is the
                             # one case 'model_unavailable' genuinely describes.
                             "shadow_hybrid_snow_cm": None,
+                            "phase_lapse_chain": None,
                             "fallback_reason": "model_unavailable",
                             "included": False,
                         })
@@ -1154,6 +1309,11 @@ def band_daily_rows(
                         # absent rather than zero. Never compare a null here
                         # against a 0.0; check contributing_hours first.
                         "shadow_hybrid_snow_cm": (shadow or {}).get("snow_cm"),
+                        # Lapse-rate sensitivity probe, shadow only. See
+                        # lapse_shadow_chain: this is the altitude/phase axis of
+                        # uncertainty in isolation, NOT a confidence interval and
+                        # NOT a distribution over Γ.
+                        "phase_lapse_chain": lapse_by_model.get(model),
                         "hybrid_applied": False,
                         "fallback_reason": "outside_hourly_window",
                         "included": True,
@@ -2032,11 +2192,15 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
     # under a leading underscore so the serving path can strip it: this is
     # audit data, not part of the client payload contract.
     members: list[dict[str, Any]] = []
+    # Static per-model grid cells for the lapse shadow. Empty when the resort is
+    # unmapped, which suppresses the chain rather than assuming a grid height.
+    grid_cells = model_grid_elevations(resort.get("resort_id"))
     for band in sorted(band_payloads, key=lambda name: name != "mid"):
         band_rows = band_daily_rows(band_payloads[band], band, bands[band],
                                     freezing_by_date, freezing_by_block,
                                     HOURLY_WINDOW_DAYS,
-                                    profile_hourly, members_out=members)
+                                    profile_hourly, members_out=members,
+                                    grid_elevations=grid_cells)
         attach_ensemble(band_rows, ensembles.get(band) or {})
         daily_rows.extend(band_rows)
     for row in daily_rows:

@@ -1,0 +1,1526 @@
+{
+ "_meta": {
+  "generated_utc": "2026-08-17",
+  "how": "Probed once with elevation=nan (which disables Open-Meteo's statistical downscaling and reports the model grid cell). Every response asserted for coordinate count and for a cell within 60 km of the request.",
+  "models": [
+   "ecmwf_ifs025",
+   "gfs_seamless",
+   "icon_seamless",
+   "gem_seamless"
+  ],
+  "regenerate": "Re-probe whenever a model's grid changes (a resolution upgrade moves every cell). Nothing detects that automatically; treat a stale map as a silent error source.",
+  "resorts": 58,
+  "what": "Per-resort, per-model NWP grid cell as selected by Open-Meteo with cell_selection=nearest.",
+  "why": "The API returns the REQUESTED elevation in its response, never the model's own grid elevation, so this cannot be recovered from a serving call. It is needed to reconstruct the grid-level temperature from the band-level temperature the serving call returns."
+ },
+ "cells": {
+  "manual-farellones": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 12.44,
+    "grid_elevation_m": 3641.0,
+    "grid_lat": -33.25,
+    "grid_lon": -70.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.69,
+    "grid_elevation_m": 2343.0,
+    "grid_lat": -33.3,
+    "grid_lon": -70.35
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 2.35,
+    "grid_elevation_m": 2647.0,
+    "grid_lat": -33.329,
+    "grid_lon": -70.3125
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.23,
+    "grid_elevation_m": 2669.0,
+    "grid_lat": -33.375,
+    "grid_lon": -70.25
+   }
+  },
+  "manual-ski_arpa": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 4.34,
+    "grid_elevation_m": 3325.0,
+    "grid_lat": -33.0,
+    "grid_lon": -70.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 2.41,
+    "grid_elevation_m": 3505.0,
+    "grid_lat": -33.0,
+    "grid_lon": -70.2
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.4,
+    "grid_elevation_m": 3426.0,
+    "grid_lat": -32.9775,
+    "grid_lon": -70.1953
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.34,
+    "grid_elevation_m": 2966.0,
+    "grid_lat": -33.0,
+    "grid_lon": -70.25
+   }
+  },
+  "manual-vallecitos": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 4.35,
+    "grid_elevation_m": 1953.0,
+    "grid_lat": -33.0,
+    "grid_lon": -69.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 3.82,
+    "grid_elevation_m": 2741.0,
+    "grid_lat": -33.0,
+    "grid_lon": -69.3
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 2.23,
+    "grid_elevation_m": 2268.0,
+    "grid_lat": -32.9775,
+    "grid_lon": -69.2578
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.35,
+    "grid_elevation_m": 1944.0,
+    "grid_lat": -33.0,
+    "grid_lon": -69.25
+   }
+  },
+  "osm-node-2574552473": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 7.91,
+    "grid_elevation_m": 1928.0,
+    "grid_lat": 42.75,
+    "grid_lon": 1.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.41,
+    "grid_elevation_m": 1847.0,
+    "grid_lat": 42.75,
+    "grid_lon": 0.9
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 0.43,
+    "grid_elevation_m": 2054.0,
+    "grid_lat": 42.7009,
+    "grid_lon": 0.9375
+   },
+   "icon_seamless": {
+    "cell_distance_km": 1.2,
+    "grid_elevation_m": 1951.0,
+    "grid_lat": 42.6875,
+    "grid_lon": 0.9375
+   }
+  },
+  "osm-node-2641613980": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 7.65,
+    "grid_elevation_m": 798.0,
+    "grid_lat": -44.25,
+    "grid_lon": 170.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 9.4,
+    "grid_elevation_m": 773.0,
+    "grid_lat": -44.25,
+    "grid_lon": 170.55
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.13,
+    "grid_elevation_m": 774.0,
+    "grid_lat": -44.2239,
+    "grid_lon": 170.5078
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.68,
+    "grid_elevation_m": 739.0,
+    "grid_lat": -44.125,
+    "grid_lon": 170.5
+   }
+  },
+  "osm-node-290050323": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 11.72,
+    "grid_elevation_m": 3641.0,
+    "grid_lat": -33.25,
+    "grid_lon": -70.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.87,
+    "grid_elevation_m": 2343.0,
+    "grid_lat": -33.3,
+    "grid_lon": -70.35
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.13,
+    "grid_elevation_m": 2647.0,
+    "grid_lat": -33.329,
+    "grid_lon": -70.3125
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.64,
+    "grid_elevation_m": 2669.0,
+    "grid_lat": -33.375,
+    "grid_lon": -70.25
+   }
+  },
+  "osm-node-290050547": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 10.26,
+    "grid_elevation_m": 3641.0,
+    "grid_lat": -33.25,
+    "grid_lon": -70.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.86,
+    "grid_elevation_m": 2343.0,
+    "grid_lat": -33.3,
+    "grid_lon": -70.35
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 2.23,
+    "grid_elevation_m": 2647.0,
+    "grid_lat": -33.329,
+    "grid_lon": -70.3125
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.71,
+    "grid_elevation_m": 2669.0,
+    "grid_lat": -33.375,
+    "grid_lon": -70.25
+   }
+  },
+  "osm-node-290057440": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 11.45,
+    "grid_elevation_m": 3641.0,
+    "grid_lat": -33.25,
+    "grid_lon": -70.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.45,
+    "grid_elevation_m": 3581.0,
+    "grid_lat": -33.3,
+    "grid_lon": -70.2
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.66,
+    "grid_elevation_m": 3178.0,
+    "grid_lat": -33.329,
+    "grid_lon": -70.1953
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.45,
+    "grid_elevation_m": 2669.0,
+    "grid_lat": -33.375,
+    "grid_lon": -70.25
+   }
+  },
+  "osm-relation-12475343": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 8.1,
+    "grid_elevation_m": 1331.0,
+    "grid_lat": 42.25,
+    "grid_lon": -3.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.53,
+    "grid_elevation_m": 1205.0,
+    "grid_lat": 42.15,
+    "grid_lon": -3.3
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.11,
+    "grid_elevation_m": 1287.0,
+    "grid_lat": 42.2323,
+    "grid_lon": -3.2812
+   },
+   "icon_seamless": {
+    "cell_distance_km": 0.59,
+    "grid_elevation_m": 1382.0,
+    "grid_lat": 42.1875,
+    "grid_lon": -3.3125
+   }
+  },
+  "osm-relation-14756845": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.86,
+    "grid_elevation_m": 310.0,
+    "grid_lat": 42.75,
+    "grid_lon": 140.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 5.08,
+    "grid_elevation_m": 315.0,
+    "grid_lat": 42.9,
+    "grid_lon": 140.7
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.93,
+    "grid_elevation_m": 338.0,
+    "grid_lat": 42.8181,
+    "grid_lon": 140.625
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.03,
+    "grid_elevation_m": 309.0,
+    "grid_lat": 42.875,
+    "grid_lon": 140.625
+   }
+  },
+  "osm-relation-19839568": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 15.39,
+    "grid_elevation_m": 985.0,
+    "grid_lat": -44.75,
+    "grid_lon": 169.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.46,
+    "grid_elevation_m": 997.0,
+    "grid_lat": -44.7,
+    "grid_lon": 168.9
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.81,
+    "grid_elevation_m": 1154.0,
+    "grid_lat": -44.5753,
+    "grid_lon": 168.8672
+   },
+   "icon_seamless": {
+    "cell_distance_km": 1.88,
+    "grid_elevation_m": 731.0,
+    "grid_lat": -44.625,
+    "grid_lon": 168.875
+   }
+  },
+  "osm-way-1020172394": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.37,
+    "grid_elevation_m": 744.0,
+    "grid_lat": -44.0,
+    "grid_lon": 170.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 9.15,
+    "grid_elevation_m": 985.0,
+    "grid_lat": -43.95,
+    "grid_lon": 170.7
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.66,
+    "grid_elevation_m": 1239.0,
+    "grid_lat": -43.8724,
+    "grid_lon": 170.7422
+   },
+   "icon_seamless": {
+    "cell_distance_km": 0.98,
+    "grid_elevation_m": 1369.0,
+    "grid_lat": -43.875,
+    "grid_lon": 170.75
+   }
+  },
+  "osm-way-1056651738": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 12.84,
+    "grid_elevation_m": 700.0,
+    "grid_lat": 43.75,
+    "grid_lon": 142.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.17,
+    "grid_elevation_m": 843.0,
+    "grid_lat": 43.65,
+    "grid_lon": 142.8
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 2.43,
+    "grid_elevation_m": 1224.0,
+    "grid_lat": 43.6381,
+    "grid_lon": 142.8516
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.38,
+    "grid_elevation_m": 1354.0,
+    "grid_lat": 43.625,
+    "grid_lon": 142.875
+   }
+  },
+  "osm-way-1210011762": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.0,
+    "grid_elevation_m": 1129.0,
+    "grid_lat": -36.75,
+    "grid_lon": 147.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.44,
+    "grid_elevation_m": 1063.0,
+    "grid_lat": -36.9,
+    "grid_lon": 147.3
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.5,
+    "grid_elevation_m": 1327.0,
+    "grid_lat": -36.8435,
+    "grid_lon": 147.3047
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.57,
+    "grid_elevation_m": 1352.0,
+    "grid_lat": -36.875,
+    "grid_lon": 147.25
+   }
+  },
+  "osm-way-1225428207": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 10.62,
+    "grid_elevation_m": 1444.0,
+    "grid_lat": -37.0,
+    "grid_lon": 147.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 8.24,
+    "grid_elevation_m": 1063.0,
+    "grid_lat": -37.05,
+    "grid_lon": 147.15
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.09,
+    "grid_elevation_m": 1334.0,
+    "grid_lat": -36.9606,
+    "grid_lon": 147.1875
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.68,
+    "grid_elevation_m": 1068.0,
+    "grid_lat": -37.0,
+    "grid_lon": 147.125
+   }
+  },
+  "osm-way-1225432526": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 12.55,
+    "grid_elevation_m": 1137.0,
+    "grid_lat": -37.25,
+    "grid_lon": 146.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.45,
+    "grid_elevation_m": 813.0,
+    "grid_lat": -37.2,
+    "grid_lon": 146.4
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.42,
+    "grid_elevation_m": 1104.0,
+    "grid_lat": -37.1949,
+    "grid_lon": 146.4844
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.12,
+    "grid_elevation_m": 1007.0,
+    "grid_lat": -37.125,
+    "grid_lon": 146.5
+   }
+  },
+  "osm-way-1360038350": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 10.43,
+    "grid_elevation_m": 1466.0,
+    "grid_lat": -36.5,
+    "grid_lon": 148.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 2.83,
+    "grid_elevation_m": 1165.0,
+    "grid_lat": -36.45,
+    "grid_lon": 148.35
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.81,
+    "grid_elevation_m": 1565.0,
+    "grid_lat": -36.3749,
+    "grid_lon": 148.3594
+   },
+   "icon_seamless": {
+    "cell_distance_km": 7.46,
+    "grid_elevation_m": 1442.0,
+    "grid_lat": -36.375,
+    "grid_lon": 148.375
+   }
+  },
+  "osm-way-1362374789": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 14.13,
+    "grid_elevation_m": 1849.0,
+    "grid_lat": -37.75,
+    "grid_lon": -71.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 9.35,
+    "grid_elevation_m": 1795.0,
+    "grid_lat": -37.8,
+    "grid_lon": -71.1
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.86,
+    "grid_elevation_m": 1875.0,
+    "grid_lat": -37.8978,
+    "grid_lon": -71.0156
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.96,
+    "grid_elevation_m": 1820.0,
+    "grid_lat": -37.875,
+    "grid_lon": -71.0
+   }
+  },
+  "osm-way-1388302700": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 5.13,
+    "grid_elevation_m": 722.0,
+    "grid_lat": -40.75,
+    "grid_lon": -72.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.97,
+    "grid_elevation_m": 895.0,
+    "grid_lat": -40.8,
+    "grid_lon": -72.15
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.91,
+    "grid_elevation_m": 897.0,
+    "grid_lat": -40.8265,
+    "grid_lon": -72.1875
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.13,
+    "grid_elevation_m": 681.0,
+    "grid_lat": -40.75,
+    "grid_lon": -72.25
+   }
+  },
+  "osm-way-1412281678": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 11.44,
+    "grid_elevation_m": 1390.0,
+    "grid_lat": -38.5,
+    "grid_lon": -71.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 0.9,
+    "grid_elevation_m": 1343.0,
+    "grid_lat": -38.4,
+    "grid_lon": -71.55
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.26,
+    "grid_elevation_m": 1474.0,
+    "grid_lat": -38.3664,
+    "grid_lon": -71.4844
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.6,
+    "grid_elevation_m": 1553.0,
+    "grid_lat": -38.375,
+    "grid_lon": -71.5
+   }
+  },
+  "osm-way-1448331027": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 15.24,
+    "grid_elevation_m": 119.0,
+    "grid_lat": 43.0,
+    "grid_lon": 143.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 2.38,
+    "grid_elevation_m": 85.0,
+    "grid_lat": 42.9,
+    "grid_lon": 143.4
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.06,
+    "grid_elevation_m": 77.0,
+    "grid_lat": 42.9352,
+    "grid_lon": 143.3203
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.32,
+    "grid_elevation_m": 61.0,
+    "grid_lat": 42.875,
+    "grid_lon": 143.375
+   }
+  },
+  "osm-way-1458944068": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 7.26,
+    "grid_elevation_m": 1121.0,
+    "grid_lat": 43.75,
+    "grid_lon": 143.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.42,
+    "grid_elevation_m": 1119.0,
+    "grid_lat": 43.65,
+    "grid_lon": 142.95
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.16,
+    "grid_elevation_m": 1032.0,
+    "grid_lat": 43.7553,
+    "grid_lon": 142.9688
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.71,
+    "grid_elevation_m": 865.0,
+    "grid_lat": 43.75,
+    "grid_lon": 142.875
+   }
+  },
+  "osm-way-1517729401": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 12.72,
+    "grid_elevation_m": 3042.0,
+    "grid_lat": 40.0,
+    "grid_lon": -105.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 0.49,
+    "grid_elevation_m": 3136.0,
+    "grid_lat": 39.8881,
+    "grid_lon": -105.7569
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.36,
+    "grid_elevation_m": 2934.0,
+    "grid_lat": 39.8843,
+    "grid_lon": -105.7778
+   },
+   "icon_seamless": {
+    "cell_distance_km": 1.6,
+    "grid_elevation_m": 3321.0,
+    "grid_lat": 39.875,
+    "grid_lon": -105.75
+   }
+  },
+  "osm-way-178133225": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.23,
+    "grid_elevation_m": 1353.0,
+    "grid_lat": -36.5,
+    "grid_lon": 148.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.4,
+    "grid_elevation_m": 1165.0,
+    "grid_lat": -36.45,
+    "grid_lon": 148.35
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.71,
+    "grid_elevation_m": 1565.0,
+    "grid_lat": -36.3749,
+    "grid_lon": 148.3594
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.64,
+    "grid_elevation_m": 1442.0,
+    "grid_lat": -36.375,
+    "grid_lon": 148.375
+   }
+  },
+  "osm-way-274760683": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 6.88,
+    "grid_elevation_m": 1029.0,
+    "grid_lat": -43.25,
+    "grid_lon": 171.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 9.18,
+    "grid_elevation_m": 749.0,
+    "grid_lat": -43.35,
+    "grid_lon": 171.75
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 0.19,
+    "grid_elevation_m": 933.0,
+    "grid_lat": -43.2867,
+    "grid_lon": 171.6797
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.91,
+    "grid_elevation_m": 987.0,
+    "grid_lat": -43.25,
+    "grid_lon": 171.625
+   }
+  },
+  "osm-way-28707473": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 10.59,
+    "grid_elevation_m": 1414.0,
+    "grid_lat": -41.25,
+    "grid_lon": -71.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 8.1,
+    "grid_elevation_m": 955.0,
+    "grid_lat": -41.1,
+    "grid_lon": -71.4
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 4.07,
+    "grid_elevation_m": 1332.0,
+    "grid_lat": -41.178,
+    "grid_lon": -71.4844
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.98,
+    "grid_elevation_m": 1147.0,
+    "grid_lat": -41.125,
+    "grid_lon": -71.5
+   }
+  },
+  "osm-way-378344849": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 8.78,
+    "grid_elevation_m": 1372.0,
+    "grid_lat": -42.75,
+    "grid_lon": -71.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.9,
+    "grid_elevation_m": 959.0,
+    "grid_lat": -42.9,
+    "grid_lon": -71.25
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.22,
+    "grid_elevation_m": 1165.0,
+    "grid_lat": -42.8181,
+    "grid_lon": -71.25
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.12,
+    "grid_elevation_m": 1002.0,
+    "grid_lat": -42.875,
+    "grid_lon": -71.25
+   }
+  },
+  "osm-way-387979660": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 10.2,
+    "grid_elevation_m": 348.0,
+    "grid_lat": 45.5,
+    "grid_lon": -77.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 1.38,
+    "grid_elevation_m": 332.0,
+    "grid_lat": 45.4359,
+    "grid_lon": -77.643
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.38,
+    "grid_elevation_m": 345.0,
+    "grid_lat": 45.4456,
+    "grid_lon": -77.6627
+   },
+   "icon_seamless": {
+    "cell_distance_km": 7.04,
+    "grid_elevation_m": 344.0,
+    "grid_lat": 45.375,
+    "grid_lon": -77.625
+   }
+  },
+  "osm-way-482928467": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.91,
+    "grid_elevation_m": 985.0,
+    "grid_lat": -44.75,
+    "grid_lon": 169.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.52,
+    "grid_elevation_m": 933.0,
+    "grid_lat": -44.85,
+    "grid_lon": 168.9
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.87,
+    "grid_elevation_m": 965.0,
+    "grid_lat": -44.9268,
+    "grid_lon": 168.9844
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.98,
+    "grid_elevation_m": 969.0,
+    "grid_lat": -44.875,
+    "grid_lon": 169.0
+   }
+  },
+  "osm-way-482928468": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 7.83,
+    "grid_elevation_m": 760.0,
+    "grid_lat": -45.0,
+    "grid_lon": 168.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.83,
+    "grid_elevation_m": 765.0,
+    "grid_lat": -45.0,
+    "grid_lon": 168.75
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 4.33,
+    "grid_elevation_m": 969.0,
+    "grid_lat": -45.0439,
+    "grid_lon": 168.8672
+   },
+   "icon_seamless": {
+    "cell_distance_km": 7.68,
+    "grid_elevation_m": 859.0,
+    "grid_lat": -45.0,
+    "grid_lon": 168.875
+   }
+  },
+  "osm-way-482928475": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 8.19,
+    "grid_elevation_m": 760.0,
+    "grid_lat": -45.0,
+    "grid_lon": 168.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 8.19,
+    "grid_elevation_m": 765.0,
+    "grid_lat": -45.0,
+    "grid_lon": 168.75
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.1,
+    "grid_elevation_m": 837.0,
+    "grid_lat": -44.9268,
+    "grid_lon": 168.75
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.89,
+    "grid_elevation_m": 1122.0,
+    "grid_lat": -44.875,
+    "grid_lon": 168.75
+   }
+  },
+  "osm-way-499034347": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 4.95,
+    "grid_elevation_m": 1466.0,
+    "grid_lat": -36.5,
+    "grid_lon": 148.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 7.32,
+    "grid_elevation_m": 1165.0,
+    "grid_lat": -36.45,
+    "grid_lon": 148.35
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.07,
+    "grid_elevation_m": 1499.0,
+    "grid_lat": -36.492,
+    "grid_lon": 148.3594
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.95,
+    "grid_elevation_m": 1251.0,
+    "grid_lat": -36.5,
+    "grid_lon": 148.25
+   }
+  },
+  "osm-way-499036978": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 7.53,
+    "grid_elevation_m": 1276.0,
+    "grid_lat": -39.25,
+    "grid_lon": 175.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.82,
+    "grid_elevation_m": 997.0,
+    "grid_lat": -39.3,
+    "grid_lon": 175.5
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 0.8,
+    "grid_elevation_m": 1198.0,
+    "grid_lat": -39.3036,
+    "grid_lon": 175.5469
+   },
+   "icon_seamless": {
+    "cell_distance_km": 7.53,
+    "grid_elevation_m": 945.0,
+    "grid_lat": -39.25,
+    "grid_lon": 175.5
+   }
+  },
+  "osm-way-556105072": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 9.73,
+    "grid_elevation_m": 992.0,
+    "grid_lat": 44.25,
+    "grid_lon": 8.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 5.99,
+    "grid_elevation_m": 921.0,
+    "grid_lat": 44.25,
+    "grid_lon": 7.95
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.98,
+    "grid_elevation_m": 1399.0,
+    "grid_lat": 44.2239,
+    "grid_lon": 7.8516
+   },
+   "icon_seamless": {
+    "cell_distance_km": 0.79,
+    "grid_elevation_m": 1162.0,
+    "grid_lat": 44.28,
+    "grid_lon": 7.88
+   }
+  },
+  "osm-way-616029504": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 5.64,
+    "grid_elevation_m": 1276.0,
+    "grid_lat": -39.25,
+    "grid_lon": 175.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 8.95,
+    "grid_elevation_m": 997.0,
+    "grid_lat": -39.3,
+    "grid_lon": 175.5
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.68,
+    "grid_elevation_m": 1137.0,
+    "grid_lat": -39.1865,
+    "grid_lon": 175.5469
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.56,
+    "grid_elevation_m": 1335.0,
+    "grid_lat": -39.25,
+    "grid_lon": 175.625
+   }
+  },
+  "osm-way-627625381": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 3.19,
+    "grid_elevation_m": 1012.0,
+    "grid_lat": -43.5,
+    "grid_lon": 171.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.95,
+    "grid_elevation_m": 573.0,
+    "grid_lat": -43.5,
+    "grid_lon": 171.6
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.46,
+    "grid_elevation_m": 741.0,
+    "grid_lat": -43.521,
+    "grid_lon": 171.5625
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.19,
+    "grid_elevation_m": 1160.0,
+    "grid_lat": -43.5,
+    "grid_lon": 171.5
+   }
+  },
+  "osm-way-665125669": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 4.68,
+    "grid_elevation_m": 1821.0,
+    "grid_lat": 46.5,
+    "grid_lon": 7.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.68,
+    "grid_elevation_m": 1739.0,
+    "grid_lat": 46.5,
+    "grid_lon": 7.5
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.43,
+    "grid_elevation_m": 2059.0,
+    "grid_lat": 46.4497,
+    "grid_lon": 7.6172
+   },
+   "icon_seamless": {
+    "cell_distance_km": 0.89,
+    "grid_elevation_m": 1383.0,
+    "grid_lat": 46.5,
+    "grid_lon": 7.56
+   }
+  },
+  "osm-way-682231907": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.66,
+    "grid_elevation_m": 2441.0,
+    "grid_lat": 37.75,
+    "grid_lon": -119.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 0.82,
+    "grid_elevation_m": 2788.0,
+    "grid_lat": 37.6248,
+    "grid_lon": -119.0396
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.58,
+    "grid_elevation_m": 2880.0,
+    "grid_lat": 37.6192,
+    "grid_lon": -119.0214
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.96,
+    "grid_elevation_m": 2761.0,
+    "grid_lat": 37.625,
+    "grid_lon": -119.0
+   }
+  },
+  "osm-way-705875874": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 12.17,
+    "grid_elevation_m": 1525.0,
+    "grid_lat": -38.75,
+    "grid_lon": -71.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 2.06,
+    "grid_elevation_m": 1387.0,
+    "grid_lat": -38.85,
+    "grid_lon": -71.1
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 4.61,
+    "grid_elevation_m": 1427.0,
+    "grid_lat": -38.835,
+    "grid_lon": -71.1328
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.51,
+    "grid_elevation_m": 1425.0,
+    "grid_lat": -38.875,
+    "grid_lon": -71.125
+   }
+  },
+  "osm-way-739168515": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.36,
+    "grid_elevation_m": 2190.0,
+    "grid_lat": 51.0,
+    "grid_lon": -115.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 0.18,
+    "grid_elevation_m": 2133.0,
+    "grid_lat": 51.1215,
+    "grid_lon": -115.759
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 0.14,
+    "grid_elevation_m": 2051.0,
+    "grid_lat": 51.1198,
+    "grid_lon": -115.758
+   },
+   "icon_seamless": {
+    "cell_distance_km": 0.89,
+    "grid_elevation_m": 2114.0,
+    "grid_lat": 51.125,
+    "grid_lon": -115.75
+   }
+  },
+  "osm-way-771668333": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 9.78,
+    "grid_elevation_m": 1580.0,
+    "grid_lat": 36.75,
+    "grid_lon": 137.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 5.94,
+    "grid_elevation_m": 1317.0,
+    "grid_lat": 36.75,
+    "grid_lon": 137.85
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.93,
+    "grid_elevation_m": 1441.0,
+    "grid_lat": 36.7263,
+    "grid_lon": 137.8125
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.7,
+    "grid_elevation_m": 1080.0,
+    "grid_lat": 36.75,
+    "grid_lon": 137.875
+   }
+  },
+  "osm-way-917040354": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 3.59,
+    "grid_elevation_m": 1226.0,
+    "grid_lat": 50.25,
+    "grid_lon": 83.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 3.99,
+    "grid_elevation_m": 1313.0,
+    "grid_lat": 50.25,
+    "grid_lon": 83.55
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.5,
+    "grid_elevation_m": 1339.0,
+    "grid_lat": 50.1985,
+    "grid_lon": 83.5547
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.59,
+    "grid_elevation_m": 1295.0,
+    "grid_lat": 50.25,
+    "grid_lon": 83.5
+   }
+  },
+  "osm-way-934033486": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 9.3,
+    "grid_elevation_m": 1361.0,
+    "grid_lat": -40.75,
+    "grid_lon": -71.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 4.81,
+    "grid_elevation_m": 1201.0,
+    "grid_lat": -40.8,
+    "grid_lon": -71.55
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 4.95,
+    "grid_elevation_m": 0.0,
+    "grid_lat": -40.8265,
+    "grid_lon": -71.6016
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.05,
+    "grid_elevation_m": 1024.0,
+    "grid_lat": -40.75,
+    "grid_lon": -71.625
+   }
+  },
+  "osm-way-934046989": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 3.19,
+    "grid_elevation_m": 485.0,
+    "grid_lat": -54.75,
+    "grid_lon": -68.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 5.25,
+    "grid_elevation_m": 339.0,
+    "grid_lat": -54.75,
+    "grid_lon": -67.95
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.82,
+    "grid_elevation_m": 445.0,
+    "grid_lat": -54.7673,
+    "grid_lon": -67.9688
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.19,
+    "grid_elevation_m": 521.0,
+    "grid_lat": -54.75,
+    "grid_lon": -68.0
+   }
+  },
+  "osm-way-934096931": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 4.58,
+    "grid_elevation_m": 794.0,
+    "grid_lat": -42.0,
+    "grid_lon": -71.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 3.48,
+    "grid_elevation_m": 901.0,
+    "grid_lat": -42.0,
+    "grid_lon": -71.55
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.42,
+    "grid_elevation_m": 930.0,
+    "grid_lat": -41.998,
+    "grid_lon": -71.4844
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.58,
+    "grid_elevation_m": 850.0,
+    "grid_lat": -42.0,
+    "grid_lon": -71.5
+   }
+  },
+  "osm-way-934098320": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.6,
+    "grid_elevation_m": 1543.0,
+    "grid_lat": -40.25,
+    "grid_lon": -71.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.17,
+    "grid_elevation_m": 1265.0,
+    "grid_lat": -40.2,
+    "grid_lon": -71.4
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.87,
+    "grid_elevation_m": 1177.0,
+    "grid_lat": -40.1236,
+    "grid_lon": -71.3672
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.98,
+    "grid_elevation_m": 1202.0,
+    "grid_lat": -40.125,
+    "grid_lon": -71.375
+   }
+  },
+  "osm-way-934099771": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 3.75,
+    "grid_elevation_m": 0.0,
+    "grid_lat": -39.25,
+    "grid_lon": -72.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 2.81,
+    "grid_elevation_m": 653.0,
+    "grid_lat": -39.3,
+    "grid_lon": -72.0
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.5,
+    "grid_elevation_m": 662.0,
+    "grid_lat": -39.3036,
+    "grid_lon": -71.9531
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.75,
+    "grid_elevation_m": 319.0,
+    "grid_lat": -39.25,
+    "grid_lon": -72.0
+   }
+  },
+  "osm-way-934101794": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 11.15,
+    "grid_elevation_m": 605.0,
+    "grid_lat": -41.0,
+    "grid_lon": -72.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 3.35,
+    "grid_elevation_m": 619.0,
+    "grid_lat": -41.1,
+    "grid_lon": -72.45
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.99,
+    "grid_elevation_m": 589.0,
+    "grid_lat": -41.0608,
+    "grid_lon": -72.5391
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.9,
+    "grid_elevation_m": 612.0,
+    "grid_lat": -41.125,
+    "grid_lon": -72.5
+   }
+  },
+  "osm-way-934103782": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.76,
+    "grid_elevation_m": 3099.0,
+    "grid_lat": -35.25,
+    "grid_lon": -70.0
+   },
+   "gem_seamless": {
+    "cell_distance_km": 5.89,
+    "grid_elevation_m": 2847.0,
+    "grid_lat": -35.1,
+    "grid_lon": -70.05
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 6.39,
+    "grid_elevation_m": 2877.0,
+    "grid_lat": -35.2034,
+    "grid_lon": -70.0781
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.55,
+    "grid_elevation_m": 2819.0,
+    "grid_lat": -35.125,
+    "grid_lon": -70.125
+   }
+  },
+  "osm-way-934285904": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 14.88,
+    "grid_elevation_m": 3280.0,
+    "grid_lat": -32.75,
+    "grid_lon": -70.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.79,
+    "grid_elevation_m": 3355.0,
+    "grid_lat": -32.85,
+    "grid_lon": -70.2
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.42,
+    "grid_elevation_m": 3588.0,
+    "grid_lat": -32.8604,
+    "grid_lon": -70.0781
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.24,
+    "grid_elevation_m": 3139.0,
+    "grid_lat": -32.875,
+    "grid_lon": -70.125
+   }
+  },
+  "osm-way-937384810": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 2.55,
+    "grid_elevation_m": 1391.0,
+    "grid_lat": 36.75,
+    "grid_lon": 138.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 6.18,
+    "grid_elevation_m": 1071.0,
+    "grid_lat": 36.75,
+    "grid_lon": 138.45
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 0.46,
+    "grid_elevation_m": 1468.0,
+    "grid_lat": 36.7263,
+    "grid_lon": 138.5156
+   },
+   "icon_seamless": {
+    "cell_distance_km": 2.55,
+    "grid_elevation_m": 1558.0,
+    "grid_lat": 36.75,
+    "grid_lon": 138.5
+   }
+  },
+  "osm-way-955246841": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 11.34,
+    "grid_elevation_m": 1391.0,
+    "grid_lat": 36.75,
+    "grid_lon": 138.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 8.51,
+    "grid_elevation_m": 1071.0,
+    "grid_lat": 36.75,
+    "grid_lon": 138.45
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 2.97,
+    "grid_elevation_m": 733.0,
+    "grid_lat": 36.8435,
+    "grid_lon": 138.3984
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.93,
+    "grid_elevation_m": 579.0,
+    "grid_lat": 36.875,
+    "grid_lon": 138.375
+   }
+  },
+  "osm-way-97509064": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.48,
+    "grid_elevation_m": 1501.0,
+    "grid_lat": -37.0,
+    "grid_lon": -71.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 0.87,
+    "grid_elevation_m": 1741.0,
+    "grid_lat": -36.9,
+    "grid_lon": -71.4
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 7.41,
+    "grid_elevation_m": 1774.0,
+    "grid_lat": -36.9606,
+    "grid_lon": -71.3672
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.34,
+    "grid_elevation_m": 2029.0,
+    "grid_lat": -36.875,
+    "grid_lon": -71.375
+   }
+  },
+  "osm-way-976135206": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 10.56,
+    "grid_elevation_m": 828.0,
+    "grid_lat": -43.25,
+    "grid_lon": 171.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 0.81,
+    "grid_elevation_m": 973.0,
+    "grid_lat": -43.2,
+    "grid_lon": 171.6
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 4.36,
+    "grid_elevation_m": 1133.0,
+    "grid_lat": -43.1695,
+    "grid_lon": 171.5625
+   },
+   "icon_seamless": {
+    "cell_distance_km": 6.47,
+    "grid_elevation_m": 987.0,
+    "grid_lat": -43.25,
+    "grid_lon": 171.625
+   }
+  },
+  "osm-way-987040066": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 12.07,
+    "grid_elevation_m": 1388.0,
+    "grid_lat": -43.0,
+    "grid_lon": 171.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 1.8,
+    "grid_elevation_m": 1181.0,
+    "grid_lat": -42.9,
+    "grid_lon": 171.6
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 3.26,
+    "grid_elevation_m": 1230.0,
+    "grid_lat": -42.9352,
+    "grid_lon": 171.5625
+   },
+   "icon_seamless": {
+    "cell_distance_km": 5.2,
+    "grid_elevation_m": 1249.0,
+    "grid_lat": -42.875,
+    "grid_lon": 171.625
+   }
+  },
+  "osm-way-987242424": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 13.23,
+    "grid_elevation_m": 1603.0,
+    "grid_lat": 42.75,
+    "grid_lon": 1.5
+   },
+   "gem_seamless": {
+    "cell_distance_km": 3.45,
+    "grid_elevation_m": 2041.0,
+    "grid_lat": 42.6,
+    "grid_lon": 1.5
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 5.56,
+    "grid_elevation_m": 2093.0,
+    "grid_lat": 42.5838,
+    "grid_lon": 1.5234
+   },
+   "icon_seamless": {
+    "cell_distance_km": 0.67,
+    "grid_elevation_m": 2159.0,
+    "grid_lat": 42.625,
+    "grid_lon": 1.5
+   }
+  },
+  "osm-way-991056806": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 6.47,
+    "grid_elevation_m": 1145.0,
+    "grid_lat": -44.25,
+    "grid_lon": 169.75
+   },
+   "gem_seamless": {
+    "cell_distance_km": 2.63,
+    "grid_elevation_m": 1057.0,
+    "grid_lat": -44.25,
+    "grid_lon": 169.8
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 2.7,
+    "grid_elevation_m": 1157.0,
+    "grid_lat": -44.2239,
+    "grid_lon": 169.8047
+   },
+   "icon_seamless": {
+    "cell_distance_km": 3.75,
+    "grid_elevation_m": 778.0,
+    "grid_lat": -44.25,
+    "grid_lon": 169.875
+   }
+  },
+  "osm-way-997044732": {
+   "ecmwf_ifs025": {
+    "cell_distance_km": 11.68,
+    "grid_elevation_m": 559.0,
+    "grid_lat": 36.75,
+    "grid_lon": 138.25
+   },
+   "gem_seamless": {
+    "cell_distance_km": 5.63,
+    "grid_elevation_m": 639.0,
+    "grid_lat": 36.9,
+    "grid_lon": 138.3
+   },
+   "gfs_seamless": {
+    "cell_distance_km": 1.06,
+    "grid_elevation_m": 699.0,
+    "grid_lat": 36.8435,
+    "grid_lon": 138.2812
+   },
+   "icon_seamless": {
+    "cell_distance_km": 4.52,
+    "grid_elevation_m": 685.0,
+    "grid_lat": 36.875,
+    "grid_lon": 138.25
+   }
+  }
+ }
+}
