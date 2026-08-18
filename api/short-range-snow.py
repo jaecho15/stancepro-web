@@ -99,7 +99,7 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 #
 # Feels-like follows automatically: wind_chill_c already reads the block's
 # aggregated wind, so it now uses the same source it displays.
-CONFIG_VERSION = "hybrid-tw-v3.5-unified-band"
+CONFIG_VERSION = "hybrid-tw-v3.6-index-identity"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
@@ -233,6 +233,7 @@ def _parse_float(value: str | None) -> float | None:
 # the caller omits ?country=. Cached across warm invocations. This is the
 # authoritative source (not the 314-row curated seed in snow_outlook_resorts).
 STORAGE_BASE = f"{SUPABASE_URL}/storage/v1/object/public/ride-tracker-static/ski-resorts"
+_RESORT_ENTRY_CACHE: dict[str, dict[str, Any]] = {}
 _RESORT_INDEX_CACHE: tuple[dict[str, str], list[tuple[float, float, str]],
                           dict[str, tuple[float, float]]] | None = None
 
@@ -247,6 +248,12 @@ def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]]
         return _RESORT_INDEX_CACHE
     by_id: dict[str, str] = {}
     geo: list[tuple[float, float, str]] = []
+    # The full entry, kept because the index is now the ONLY store for resort
+    # identity. Until 2026-08-18 this function read `lat`/`lon` and threw the
+    # id association away — the correct coordinate was in memory and unreachable
+    # — while serving took its coordinate from the curated table, which was
+    # measured 2-20 km off the resort's own boundary polygon on 11 of 49.
+    entry_by_id: dict[str, dict[str, Any]] = {}
     # Terrain extent per resort, from the SAME index: these are the polygon's
     # own min/max, i.e. how low and high the skiable ground actually goes —
     # a different measurement from the curated seed's "base area elevation",
@@ -277,10 +284,58 @@ def _load_resort_index() -> tuple[dict[str, str], list[tuple[float, float, str]]
                 lon = _parse_float(entry.get("lon"))
                 if lat is not None and lon is not None:
                     geo.append((lat, lon, str(code)))
+                if rid and lat is not None and lon is not None:
+                    entry_by_id[str(rid)] = entry
     except requests.RequestException:
-        by_id, geo, elev_by_id = {}, [], {}
+        by_id, geo, elev_by_id, entry_by_id = {}, [], {}, {}
+    _RESORT_ENTRY_CACHE.clear()
+    _RESORT_ENTRY_CACHE.update(entry_by_id)
     _RESORT_INDEX_CACHE = (by_id, geo, elev_by_id)
     return _RESORT_INDEX_CACHE
+
+
+def _index_resort(weather_id: str) -> dict[str, Any] | None:
+    """Resort identity from the map index, shaped for `compute_forecast`.
+
+    The index owns every field here, which is the whole point of the switch:
+    one store, one owner per field, nothing to reconcile. Two elevations travel
+    and they are NOT the same measurement —
+
+        base_elevation_m       what compute_forecast treats as the base BAND.
+                               The base AREA (lodge, bottom station) when the
+                               index has one, the polygon's terrain minimum
+                               otherwise.
+        terrain_min_m/max_m    the polygon's own floor and ceiling.
+
+    `elevation_bands` adds the `low` band from the gap between them, so feeding
+    terrain_min into both would silently delete that band — which is exactly why
+    the base-area value was seeded into the index first.
+
+    Returns None when the index has no entry, leaving the caller's existing
+    fallbacks in place rather than failing the request."""
+    _load_resort_index()
+    entry = _RESORT_ENTRY_CACHE.get(weather_id)
+    if not entry:
+        return None
+    lat = _parse_float(entry.get("lat"))
+    lon = _parse_float(entry.get("lon"))
+    if lat is None or lon is None:
+        return None
+    tmin = _parse_float(entry.get("base_elevation_m"))
+    tmax = _parse_float(entry.get("top_elevation_m"))
+    base_area = _parse_float(entry.get("base_area_elevation_m"))
+    resort: dict[str, Any] = {"resort_id": weather_id, "lat": lat, "lon": lon}
+    if entry.get("country"):
+        resort["country_code"] = str(entry["country"])
+    if tmin is not None:
+        resort["terrain_min_m"] = tmin
+    if tmax is not None:
+        resort["terrain_max_m"] = tmax
+        resort["top_elevation_m"] = tmax
+    base = base_area if base_area is not None else tmin
+    if base is not None:
+        resort["base_elevation_m"] = base
+    return resort
 
 
 def _resolve_country(resort_id: str, weather_id: str, lat: float, lon: float) -> str | None:
@@ -890,7 +945,25 @@ def _write_archive(payload: object, fallback_resort_id: str, now: datetime) -> d
 
 
 def _fetch_resort_metadata(requested_id: str, weather_id: str) -> dict | None:
-    """Resolve elev/country metadata from snow_outlook_resorts (still slug-keyed)."""
+    """RETIRED 2026-08-18 — no longer on any serving path. Kept for one release
+    so an operator reading an archived row can still see what the curated table
+    said.
+
+    It was retired because it was wrong in two compounding ways. Its coordinates
+    sat 2-20 km outside the resort's own boundary polygon on 11 of 49 measured,
+    and resort lat/lon is the query coordinate for every upstream request with
+    cell_selection=nearest pinning the model grid cell to it — those resorts
+    were not getting a slightly wrong forecast, they were getting one for
+    somewhere else. And its slug-to-OSM mapping pointed at the wrong feature:
+    `winter_park_resort` resolved to "Summer Area Boundary Winter Park"
+    (top 3503 m) while the index already carried "Winter Park Resort" at 3661 m
+    against an official 3676; `adelboden_lenk` resolved to the TschentenAlp
+    sector while the index already carried Adelboden - Lenk, Engstligenalp,
+    Elsigen-Metsch and Lenk - Wallegg as the separate ski areas they are.
+
+    Every elevation disagreement that looked like a bad index measurement was
+    this table flattening several ski areas into one row and then pointing at
+    the wrong one."""
     if not (requested_id.startswith("osm-") or requested_id.startswith("manual-")):
         return core.fetch_resort(requested_id)
     # OSM/manual request: reverse map to curated slug(s). Several slugs can
@@ -969,33 +1042,26 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
 
     # An override (lat/lon supplied by the caller — e.g. the map ski-resort
     # index) skips the DB lookup and computes straight from the coordinates.
-    resort = resort_override or _fetch_resort_metadata(resort_id, weather_id)
+    # THE INDEX IS THE SOURCE OF TRUTH (2026-08-18). It carries coordinates from
+    # OSM geometry, the polygon-clipped terrain extent, and — since v20 — the
+    # base area, so nothing is left that the curated table uniquely knew.
+    #
+    # It replaced that table because the table was wrong and kept being wrong in
+    # ways that were expensive to find: 11 of 49 coordinates sat 2-20 km outside
+    # the resort's own boundary, and resort lat/lon is the query coordinate for
+    # every upstream request with cell_selection=nearest pinning the model grid
+    # cell to it. A resort 20 km out was not getting a slightly wrong forecast;
+    # it was getting a forecast for somewhere else.
+    #
+    # The override and the curated row remain as fallbacks for an id the index
+    # does not carry. They are fallbacks now, not the primary path.
+    resort = _index_resort(weather_id) or resort_override
     if not resort:
         return 404, {"error": "resort_not_found", "resort_id": resort_id}
 
-    if resort_override:
-        # The override's base_m is the map index's figure, which for some
-        # resorts IS the terrain minimum (Cardrona: 1259 m, the lowest piste,
-        # against a 1670 m base area) — and with base == terrain_min the `low`
-        # band can never trigger, no matter how far the terrain runs below the
-        # real base area. When a curated row exists for this weather id and
-        # publishes a HIGHER base, adopt it as the base area; coordinates and
-        # top stay the caller's. Max, not replace: some curated rows carry the
-        # polygon minimum as their base (treble_cone: 1260 against the index's
-        # 1400), and lowering the base would cost that resort its low band.
-        curated = _fetch_resort_metadata(weather_id, weather_id)
-        curated_base = (curated or {}).get("base_elevation_m")
-        override_base = resort.get("base_elevation_m")
-        override_top = resort.get("top_elevation_m")
-        if (
-            isinstance(curated_base, (int, float))
-            and isinstance(override_base, (int, float))
-            and float(curated_base) > float(override_base)
-            and (not isinstance(override_top, (int, float))
-                 or float(curated_base) < float(override_top))
-        ):
-            resort = {**resort, "base_elevation_m": float(curated_base)}
-
+    # _terrain_extent reads the SAME index entry, so for an indexed resort this
+    # rewrites terrain_min/max with the values already there. Kept so the
+    # fallback paths still get an extent.
     resort = {**resort, "resort_id": weather_id, **_terrain_extent(weather_id)}
     payload = core.compute_forecast(resort)
     # Split the per-model audit rows off IMMEDIATELY. Everything downstream —
