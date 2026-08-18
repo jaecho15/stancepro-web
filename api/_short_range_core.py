@@ -712,7 +712,18 @@ def lapse_shadow_chain(
 def hybrid_hourly_snow_cm(
     native_cm: float, precip_mm: float, temp_c: float, rh_pct: float | None,
 ) -> float:
-    """Effective new-snow (cm) for one model-hour at band elevation."""
+    """Effective new-snow (cm) for one model-hour at band elevation.
+
+    `native_cm` is the API-SUPPLIED snowfall. The parameter name predates the
+    finding that its provenance is not established — at ECMWF its temporal
+    structure does not match the precipitation series — so read it as
+    api_supplied_snowfall_cm and do not describe it as the model's own field.
+
+    NOTE the shape: this is NOT precipitation x snow fraction. The supplied
+    value is a phase PRIOR that survives into the result, and only the residual
+    (precip - supplied/0.7) is re-partitioned. So snow <= 0.7 x precip holds
+    only while supplied/0.7 <= precip — which is why scaling precipitation alone
+    breaks it."""
     if rh_pct is None:
         return native_cm
     t_wet = wet_bulb_stull(temp_c, float(rh_pct))
@@ -865,6 +876,115 @@ HOURLY_WINDOW_DAYS = 7
 # the smallest change that makes the horizon consistent. 4.0 and 8.0 stay in
 # lapse_shadow_chain as a sensitivity diagnostic and are not optimised here.
 UNIFY_D8_THERMODYNAMICS = True
+
+# ---- ECMWF daily precipitation mass conservation (Phase A.1, CLOSED) ----
+#
+# VERDICT 2026-08-19: measured, not adopted. Do not enable without new evidence.
+#
+# The correction itself is sound — replaying the fleet with it, no candidate
+# produced more snow water equivalent than its own corrected precipitation, and
+# the change was small (tier movement 1.1%, D1-7 max 1.5 cm). What killed it is
+# what happens NEXT to the number.
+#
+# `hybrid_hourly_snow_cm` does not compute precipitation x snow-fraction. It
+# keeps the API-supplied snowfall as a PHASE PRIOR and re-partitions only the
+# residual: snow = supplied x keep(Tw) + max(0, precip - supplied/0.7) x
+# convert(Tw) x 0.7. That bound holds only while supplied/0.7 <= precip.
+# Conserving precipitation downward without touching the supplied series pushes
+# days across that line — 15 model-days did, every one of them ECMWF.
+#
+# The obvious repair, scaling both series by the same factor, was tested against
+# the data and does not survive it. Across 850 ECMWF model-days the two series
+# do NOT share a replication artifact:
+#   * identical change-point sets on 143 of 556 days (25.7%)
+#   * conservation factors equal to 1e-4 on 49 of 253 (19.4%), max difference 2.25
+#   * precipitation replicates in 3/6/12-hour blocks (median run 3 rising to 6);
+#     the supplied snowfall is mostly hourly (run = 1 on 315 days)
+#   * the mismatch is already 96% at D1, so it is not a D6 step-change effect
+# gfs_seamless matches to 0.000000 at every lead, so this is ECMWF alone.
+#
+# Normalising the supplied snowfall to its own daily snowfall_sum was not tried
+# either: it would introduce a provider-phase constraint the pipeline does not
+# otherwise assert.
+#
+# Recorded as a limitation — ECMWF temporal aggregation/provenance uncertainty —
+# rather than corrected. The hourly output is used as delivered.
+# Open-Meteo's ECMWF hourly precipitation past about day 6 is a 3-hourly (p90:
+# 6-hourly) native step written into every hour, so summing the 24 hourly slots
+# does not reproduce the vendor's own daily precipitation_sum. Measured across
+# 14 resorts and every lead: median -0.70 mm, p95 +1.70, max +12.40. The other
+# three models agree to 0.00 mm at every lead, which is why this is scoped to
+# ECMWF alone — applying it where hourly already equals daily would be a no-op
+# dressed as a correction.
+#
+# It matters because the unified calculation builds snow from the HOURLY series,
+# so a day whose hourly slots over- or under-count is served that way.
+#
+# WHAT IS PRESERVED AND WHAT IS NOT
+# The hourly SHAPE is untouched: every slot keeps its share, so the phase timing
+# the wet-bulb step reads — when precipitation falls relative to the temperature
+# curve — is exactly as before. Only the daily total moves, onto the vendor's own
+# figure. Temperature, RH, wet-bulb and snow fraction are not touched at all.
+#
+# THE DEGENERATE CASE IS NOT PAPERED OVER
+# H = 0 with D > 0 means the vendor reports precipitation for a day its own
+# hourly series says was dry. There is no non-arbitrary way to place that mass in
+# time, and inventing an hourly distribution would be fabricating the very
+# structure the phase step then reads. Those days are left untouched and counted.
+CONSERVE_ECMWF_DAILY_PRECIP = False
+CONSERVED_PRECIP_MODEL = "ecmwf_ifs025"
+
+
+def conserve_daily_precip(payload: dict[str, Any],
+                          model: str = CONSERVED_PRECIP_MODEL) -> dict[str, Any]:
+    """Scale one model's hourly precipitation so each day sums to its vendor
+    daily total. MUTATES `payload`; callers that need both arms must deep-copy
+    first. Returns diagnostics — never silently."""
+    daily = payload.get("daily") or {}
+    hourly = payload.get("hourly") or {}
+    dates = daily.get("time") or []
+    stamps = hourly.get("time") or []
+    pr = hourly.get(f"precipitation_{model}")
+    dv = daily.get(f"precipitation_sum_{model}")
+    stats = {"model": model, "scaled_days": 0, "unchanged_days": 0,
+             "both_zero_days": 0, "hourly_zero_vendor_positive": 0,
+             "missing": 0, "max_abs_shift_mm": 0.0, "total_shift_mm": 0.0}
+    if pr is None or dv is None:
+        stats["missing"] = 1
+        return stats
+    by_date: dict[str, list[int]] = {}
+    for i, st in enumerate(stamps):
+        by_date.setdefault(st[:10], []).append(i)
+    for di, date in enumerate(dates):
+        idx = [i for i in by_date.get(date, []) if i < len(pr) and pr[i] is not None]
+        target = dv[di] if di < len(dv) else None
+        if not idx or target is None:
+            stats["missing"] += 1
+            continue
+        H = sum(pr[i] for i in idx)
+        D = float(target)
+        if H <= 0.0:
+            if D > 0.0:
+                # Vendor says wet, its own hourly series says dry. Left alone:
+                # any placement in time would be invented, and the phase step
+                # would then read that invention as if it were structure.
+                stats["hourly_zero_vendor_positive"] += 1
+            else:
+                stats["both_zero_days"] += 1
+            continue
+        if abs(H - D) < 1e-9:
+            stats["unchanged_days"] += 1
+            continue
+        f = D / H
+        for i in idx:
+            pr[i] = pr[i] * f
+        stats["scaled_days"] += 1
+        stats["total_shift_mm"] += D - H
+        stats["max_abs_shift_mm"] = max(stats["max_abs_shift_mm"], abs(D - H))
+    stats["max_abs_shift_mm"] = round(stats["max_abs_shift_mm"], 3)
+    stats["total_shift_mm"] = round(stats["total_shift_mm"], 3)
+    return stats
+
 
 # ---- input QC: which bands may use the unified path at all ----
 # Two INDEPENDENT reasons a band is held back, and they are not the same failure:
@@ -1175,12 +1295,15 @@ def hourly_band_day(
             if precip is None or temp is None:
                 continue
             block_index = int(stamp[11:13]) // 6
-            # Native model snowfall (cm) as the phase prior, with the hybrid
+            # API-SUPPLIED snowfall (cm) as the phase prior, with the hybrid
             # wet-bulb override re-partitioning the contested slice at band
-            # elevation (see hybrid_hourly_snow_cm above). A missing snowfall
-            # sample means the prior is unknown, not zero — keep the old
-            # "no data → no snow" semantics rather than re-deriving all of
-            # the hour's precip.
+            # elevation (see hybrid_hourly_snow_cm above). Called supplied, not
+            # native: nothing here verifies it is the model's own field rather
+            # than something Open-Meteo derived, and at ECMWF its temporal
+            # structure differs from the precipitation it supposedly came from
+            # (see the Phase A.1 verdict above). A missing sample means the
+            # prior is unknown, not zero — keep the old "no data → no snow"
+            # semantics rather than re-deriving all of the hour's precip.
             snow_hr = snow_series[index] if index < len(snow_series) else None
             rh_hr = rh_series[index] if index < len(rh_series) else None
             day_hours[model] += 1
