@@ -140,6 +140,50 @@ def _median(values: list[float]) -> float:
     return (xs[mid - 1] + xs[mid]) / 2.0
 
 
+def quantile_provenance(values: list[float], models: list[str],
+                        source: str) -> dict[str, Any]:
+    """Everything needed to recompute a served snowfall from its candidates.
+
+    Written because the served number could NOT be reconstructed from what was
+    stored. forecast_diagnostics writes one member row per model from the DAILY
+    branch, which drops a model lacking daily precip/tmax/tmin — while that same
+    model may have contributed an hourly candidate to the served quantile. A
+    served n_models of 3 against 2 diagnostic candidates was observed, and any
+    aggregation study built on those rows would have been studying a different
+    array than the one that produced the number.
+
+    `interpolated` is the field the aggregation question turns on: when the
+    quantile position lands between two candidates, the served value is one no
+    model forecast. At n=2 and n=4 that is the normal case, not the exception.
+    """
+    xs = sorted(float(v) for v in values)
+    n = len(xs)
+    out: dict[str, Any] = {"n": n, "source": source,
+                           "models": list(models), "candidates": [round(v, 3) for v in values],
+                           "sorted": [round(v, 3) for v in xs]}
+    for label, q in (("p10", QUANTILES["p10"]), ("p50", QUANTILES["p50"]),
+                     ("p90", QUANTILES["p90"])):
+        if n == 0:
+            out[label] = None
+            continue
+        if n == 1:
+            out[label] = {"pos": 0.0, "lo": 0, "hi": 0, "frac": 0.0,
+                          "between": [xs[0], xs[0]], "value": round(xs[0], 1),
+                          "interpolated": False}
+            continue
+        pos = q * (n - 1)
+        lo = int(math.floor(pos))
+        hi = min(lo + 1, n - 1)
+        frac = pos - lo
+        out[label] = {"pos": round(pos, 4), "lo": lo, "hi": hi, "frac": round(frac, 4),
+                      "between": [round(xs[lo], 3), round(xs[hi], 3)],
+                      "value": round(_quantile(xs, q), 1),
+                      # A value strictly between two distinct candidates is one
+                      # no model produced.
+                      "interpolated": bool(frac > 1e-9 and abs(xs[hi] - xs[lo]) > 1e-9)}
+    return out
+
+
 def _quantiles(values: list[float]) -> tuple[float, float, float]:
     return (
         round(_quantile(values, QUANTILES["p10"]), 1),
@@ -1326,6 +1370,11 @@ def hourly_band_day(
     _profile_hours = sum(day_temp_profile_hours[m] for m in day_present)
     day_agg = {
         "members": day_members,
+        # The array the quantiles below were computed from, in model order, so a
+        # served value stays reconstructible after the reduction discards which
+        # model said what.
+        "candidates": [round(day_snow[m], 3) for m in day_present],
+        "candidate_models": list(day_present),
         "n_models": len(day_present),
         "snow_cm_p10": day_p10,
         "snow_cm_p50": day_p50,
@@ -1433,6 +1482,9 @@ def band_daily_rows(
 
         if day_agg:
             snow_method = "band_thermodynamic"
+            snow_prov = quantile_provenance(day_agg["candidates"],
+                                            day_agg["candidate_models"],
+                                            "band_thermodynamic")
             if members_out is not None:
                 for member in day_agg.get("members") or []:
                     members_out.append({
@@ -1475,6 +1527,7 @@ def band_daily_rows(
             wind_gust_kmh = day_agg["wind_gust_kmh"]
         else:
             per_model_snow: list[float] = []
+            per_model_names: list[str] = []
             per_model_precip: list[float] = []
             per_model_tmean: list[float] = []
             per_model_tmin: list[float] = []
@@ -1512,6 +1565,7 @@ def band_daily_rows(
                 # Native model snowfall (cm), not precip × our SLR ladder.
                 snow_member = float(snow) if snow is not None else 0.0
                 per_model_snow.append(snow_member)
+                per_model_names.append(model)
                 per_model_precip.append(float(precip))
                 per_model_tmean.append(t_mean)
                 # The vendor's own daily extremes, 2 m downscaled. Unlike the
@@ -1574,6 +1628,8 @@ def band_daily_rows(
             temp_source = "vendor_daily"
             n_models = len(per_model_snow)
             snow_method = "vendor_daily"
+            snow_prov = quantile_provenance(per_model_snow, per_model_names,
+                                            "vendor_daily")
             # ---- one calculation for the whole horizon (see UNIFY_D8_THERMODYNAMICS) ----
             # The wet-bulb pass over this date's hourly data has ALREADY run a few
             # lines above — it was computed and discarded as a shadow. Adopting it
@@ -1607,6 +1663,12 @@ def band_daily_rows(
                 temp_source = shadow_agg["temp_source"]
                 n_models = shadow_agg["n_models"]
                 snow_method = "band_thermodynamic"
+                # Rebuilt from the ADOPTED array, not the vendor-daily one: the
+                # two can hold different models, which is exactly the gap that
+                # made served values unreconstructible.
+                snow_prov = quantile_provenance(shadow_agg["candidates"],
+                                                shadow_agg["candidate_models"],
+                                                "band_thermodynamic")
             # Wind past the hourly window uses the SAME free-air calculation as
             # inside it, aggregated from the hourly profile over this date. That
             # removes a D7->D8 cliff which would otherwise be two cliffs at once:
@@ -1679,6 +1741,12 @@ def band_daily_rows(
                 "snow_cm_p50": snow_p50,
                 "snow_cm_p90": snow_p90,
                 "snow_cm_model_native": snow_native,
+                # How this row's snow_cm_p10/p50/p90 were produced. See
+                # quantile_provenance: models, the candidate array, and for each
+                # quantile the exact position, the two candidates it sits
+                # between, and whether the served value is one a model actually
+                # forecast. Additive; both apps decode by key.
+                "snow_candidates": snow_prov,
                 # Which calculation produced snow_cm_p*. Additive; both apps
                 # decode by key. band_thermodynamic = the model's hourly precip
                 # and snowfall re-partitioned by wet-bulb AT BAND ELEVATION;

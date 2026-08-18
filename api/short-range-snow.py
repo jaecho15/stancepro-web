@@ -99,7 +99,7 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 #
 # Feels-like follows automatically: wind_chill_c already reads the block's
 # aggregated wind, so it now uses the same source it displays.
-CONFIG_VERSION = "hybrid-tw-v3.6-index-identity"
+CONFIG_VERSION = "hybrid-tw-v3.7-candidate-provenance"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
@@ -619,6 +619,16 @@ def _archive_rows(resort_id: str, payload: dict, run_init_time: str) -> tuple[li
             "tmin_c": _num(day.get("tmin_c_p50")),
             "tmax_c": _num(day.get("tmax_c_p50")),
             "temp_source": day.get("temp_source") or None,
+            # The candidate array behind snow_cm_low/median/high. Written
+            # because the served value was NOT reconstructible from anything
+            # stored: forecast_diagnostics builds its member rows from the daily
+            # branch, which drops a model lacking daily precip/tmax/tmin, while
+            # the served quantile is taken over the HOURLY members — a served
+            # n_models of 3 against 2 diagnostic candidates has been seen live.
+            # `interpolated` inside it is the field the aggregation question
+            # turns on; n alone cannot answer it, since identical candidates
+            # interpolate to themselves and that is not synthetic.
+            "snow_candidates": day.get("snow_candidates") or None,
             # Ensemble quantiles over ~103 members. NULL at D1-8 by
             # construction (attach_ensemble starts at ROLLING_FROM_DAY_INDEX)
             # and NULL wherever no ensemble was attached — never 0.0, because
