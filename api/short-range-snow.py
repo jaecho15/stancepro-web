@@ -99,7 +99,7 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 #
 # Feels-like follows automatically: wind_chill_c already reads the block's
 # aggregated wind, so it now uses the same source it displays.
-CONFIG_VERSION = "hybrid-tw-v3.4-band-wind"
+CONFIG_VERSION = "hybrid-tw-v3.5-unified-band"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on

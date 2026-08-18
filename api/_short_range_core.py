@@ -796,6 +796,92 @@ WIND_STRONG_TRANSPORT_KMH = 110  # provisional (240-row sample)
 # disagreed, and they disagreed silently because nothing compares them.
 HOURLY_WINDOW_DAYS = 7
 
+# ---- one calculation for the whole horizon (Snow Phase A) ----
+# Inside HOURLY_WINDOW_DAYS a band's snow is built from the model's own hourly
+# precipitation and snowfall, re-partitioned by a wet-bulb temperature computed
+# AT BAND ELEVATION. Past it, the served number has been the vendor's daily
+# snowfall_sum with no phase step at all — and Open-Meteo downscales temperature
+# to the requested elevation but NOT snowfall, so out there base/mid/top serve
+# byte-identical snow for a 700 m elevation span. That is the discontinuity this
+# flag closes: not a better forecast, one forecast.
+#
+# WHAT IT DOES NOT TOUCH, DELIBERATELY
+# Snow, precipitation and temperature only. Wind keeps the D8+ aggregation
+# shipped in v3.4 — `day_agg`'s wind is NOT interchangeable with it (day_agg
+# pools every model-hour and takes gust from the hourly field; the D8+ branch
+# averages per-model daily means and takes gust from the vendor's daily max), so
+# adopting day_agg wholesale would silently move the wind baseline that was just
+# verified. Model set, weighting and the 0.7 cm/mm density are also unchanged.
+#
+# WHAT IS PROVISIONAL
+# The conversion runs on temperature Open-Meteo downscaled at a fixed 6.5 C/km.
+# That rate is verified as Open-Meteo's transform — measured to 6.500 with zero
+# non-linear hours — and is NOT verified as this terrain's actual lapse rate.
+# It is adopted here for one reason: D1-7 already uses it, so extending it is
+# the smallest change that makes the horizon consistent. 4.0 and 8.0 stay in
+# lapse_shadow_chain as a sensitivity diagnostic and are not optimised here.
+UNIFY_D8_THERMODYNAMICS = True
+
+# ---- input QC: which bands may use the unified path at all ----
+# Two INDEPENDENT reasons a band is held back, and they are not the same failure:
+#
+#   invalid_resort_elevation  the declared band is above the terrain the resort
+#                             actually owns, confirmed against BOTH the boundary
+#                             polygon and a buffered version of it. One source
+#                             alone is not enough — an OSM polygon can under-map
+#                             an upper sector, so it reads too low; the earlier
+#                             point-centred box samples a different mountain
+#                             whenever the coordinate itself is wrong, and
+#                             measured against the polygon pair it produced 11
+#                             flags of which 1 survived.
+#
+#   coordinate_qc_fail        the resort point lies kilometres outside its own
+#                             polygon. Every band elevation here is fine; what is
+#                             wrong is the LOCATION, and resort lat/lon is the
+#                             query coordinate for every upstream request with
+#                             cell_selection=nearest pinning the grid cell to it.
+#                             The unified path reads that grid cell's hourly
+#                             series far more finely than the daily path does, so
+#                             it is held back until the coordinate is fixed —
+#                             which is a separate track, not something to correct
+#                             silently inside a snow change.
+#
+# This is input QC, not a terrain correction: nothing here adjusts a forecast, it
+# only decides whether the new calculation is allowed to run on this input. A
+# blocked band keeps the existing production path and says so in snow_source.
+_BAND_QC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "_band_elevation_qc.json")
+_BAND_QC_CACHE: dict[str, Any] | None = None
+
+
+def _band_qc() -> dict[str, Any]:
+    global _BAND_QC_CACHE
+    if _BAND_QC_CACHE is None:
+        try:
+            with open(_BAND_QC_PATH, "r", encoding="utf-8") as fh:
+                _BAND_QC_CACHE = (json.load(fh) or {}).get("resorts") or {}
+        except (OSError, ValueError):
+            # Absent or unreadable asset must not block serving. It degrades to
+            # "no resort is quarantined", which is exactly today's behaviour.
+            _BAND_QC_CACHE = {}
+    return _BAND_QC_CACHE
+
+
+def unified_block_reason(resort_id: str | None, band: str) -> str | None:
+    """Why this (resort, band) may not use the unified path, or None.
+
+    Elevation is checked per BAND and coordinate per RESORT, because that is how
+    each failure actually scopes: one bad `top` does not invalidate `base`, while
+    a coordinate 20 km from the polygon invalidates every band at once.
+    """
+    row = _band_qc().get(resort_id or "")
+    if not row:
+        return None
+    if band in (row.get("quarantined_bands") or {}):
+        return "invalid_resort_elevation"
+    return row.get("unified_fallback") or None
+
+
 
 def lead_band(day_index: int) -> str:
     """Two zones, per DECISIONS.md #1.
@@ -1270,6 +1356,7 @@ def band_daily_rows(
     profile_hourly: dict[str, Any] | None = None,
     members_out: list[dict[str, Any]] | None = None,
     grid_elevations: dict[str, float] | None = None,
+    unified_block: str | None = None,
 ) -> list[dict[str, Any]]:
     """`members_out`, when given, collects one PER-MODEL row per (band, day)
     BEFORE the quantile reduction below folds the members away.
@@ -1326,10 +1413,11 @@ def band_daily_rows(
         # difference between recording a counterfactual and shipping it.
         shadow_by_model: dict[str, dict[str, Any]] = {}
         lapse_by_model: dict[str, dict[str, Any]] = {}
+        shadow_agg: dict[str, Any] | None = None
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
                                               profile_temps, free_air_wind)
-        elif members_out is not None:
+        elif members_out is not None or UNIFY_D8_THERMODYNAMICS:
             # Gated on members_out because this is pure cost with no served
             # effect: if nobody is persisting diagnostics, nobody can read it.
             _, shadow_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
@@ -1344,6 +1432,7 @@ def band_daily_rows(
                     lapse_by_model[model_name] = chain
 
         if day_agg:
+            snow_method = "band_thermodynamic"
             if members_out is not None:
                 for member in day_agg.get("members") or []:
                     members_out.append({
@@ -1484,6 +1573,40 @@ def band_daily_rows(
             tmax_p50 = round(_median(per_model_tmax), 1)
             temp_source = "vendor_daily"
             n_models = len(per_model_snow)
+            snow_method = "vendor_daily"
+            # ---- one calculation for the whole horizon (see UNIFY_D8_THERMODYNAMICS) ----
+            # The wet-bulb pass over this date's hourly data has ALREADY run a few
+            # lines above — it was computed and discarded as a shadow. Adopting it
+            # is therefore not a new physics path, it is the same function the
+            # D1-7 rows are built from, stopping being thrown away.
+            #
+            # Snow, precipitation and temperature move together or not at all:
+            # taking snow from the band calculation while leaving precip_mm_p50 and
+            # tmean_c_p50 on the vendor dailies would put a row on the card whose
+            # own fields disagree — 0 cm beside 12 mm at -4 C.
+            #
+            # The member set can differ from the daily one, and that is not a bug
+            # to hide: a model with no usable hourly data at this lead is absent
+            # here while still voting in the vendor-daily quantile. n_models
+            # follows the calculation that produced the number, so a reader can
+            # see it. Falls back untouched when the hour path returns nothing.
+            if unified_block:
+                # Held back by input QC. The served numbers below are exactly
+                # what production serves today; only the label changes, so a
+                # reader can tell a quarantined row from an ordinary one
+                # instead of inferring it from a resort list somewhere else.
+                snow_method = unified_block
+            elif UNIFY_D8_THERMODYNAMICS and shadow_agg is not None:
+                snow_p10 = shadow_agg["snow_cm_p10"]
+                snow_p50 = shadow_agg["snow_cm_p50"]
+                snow_p90 = shadow_agg["snow_cm_p90"]
+                precip_p50 = shadow_agg["precip_mm_p50"]
+                temp_p50 = shadow_agg["tmean_c_p50"]
+                tmin_p50 = shadow_agg["tmin_c_p50"]
+                tmax_p50 = shadow_agg["tmax_c_p50"]
+                temp_source = shadow_agg["temp_source"]
+                n_models = shadow_agg["n_models"]
+                snow_method = "band_thermodynamic"
             # Wind past the hourly window uses the SAME free-air calculation as
             # inside it, aggregated from the hourly profile over this date. That
             # removes a D7->D8 cliff which would otherwise be two cliffs at once:
@@ -1556,6 +1679,13 @@ def band_daily_rows(
                 "snow_cm_p50": snow_p50,
                 "snow_cm_p90": snow_p90,
                 "snow_cm_model_native": snow_native,
+                # Which calculation produced snow_cm_p*. Additive; both apps
+                # decode by key. band_thermodynamic = the model's hourly precip
+                # and snowfall re-partitioned by wet-bulb AT BAND ELEVATION;
+                # vendor_daily = the vendor's daily snowfall_sum at ITS OWN grid
+                # cell, which carries no band elevation and is identical across
+                # base/mid/top. Pairs with temp_source, and the two can disagree.
+                "snow_source": snow_method,
                 "precip_mm_p50": precip_p50,
                 "tmean_c_p50": temp_p50,
                 # Additive only — both apps decode by key, so a new field is
@@ -2405,7 +2535,9 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                                     freezing_by_date, freezing_by_block,
                                     HOURLY_WINDOW_DAYS,
                                     profile_hourly, members_out=members,
-                                    grid_elevations=grid_cells)
+                                    grid_elevations=grid_cells,
+                                    unified_block=unified_block_reason(
+                                        resort.get("resort_id"), band))
         attach_ensemble(band_rows, ensembles.get(band) or {})
         daily_rows.extend(band_rows)
     for row in daily_rows:

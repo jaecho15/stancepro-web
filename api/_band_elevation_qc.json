@@ -1,0 +1,558 @@
+{
+ "_meta": {
+  "buffer_m": 750.0,
+  "coordinate_fallback_m": 1000.0,
+  "coordinate_rule": "coordinate_qc_fail when the resort point lies more than 1000 m outside its own boundary polygon. Those resorts also fall back off the unified path, NOT because their elevations are wrong (all 11 pass elevation QC) but because resort lat/lon is the query coordinate for every upstream request and cell_selection=nearest pins the model grid cell to it. Coordinates are NOT auto-corrected here; that is a separate track with its own full-forecast regression.",
+  "elevation_rule": "quarantine iff declared > polygon_dem_max + tolerance AND declared > buffered_polygon_dem_max + tolerance. Two sources that fail in OPPOSITE directions: an OSM polygon can under-map an upper sector (reads too low), and a point-centred box samples a different mountain when the coordinate is wrong. The earlier point-centred +/-3 km box is NOT an input here \u2014 measured against the polygon pair it produced 11 flags of which 1 survived, a 91% false-positive rate.",
+  "generated_utc": "2026-08-18",
+  "no_polygon": "qc_unverified_no_polygon: never quarantined. The box alone cannot separate a real error from its own leakage, so absence of evidence is recorded as such.",
+  "quarantine_tolerance_m": 500.0,
+  "regenerate": "Re-run when the boundary cache, the curated elevations, or the resort coordinates change. Nothing detects those automatically.",
+  "resorts": 58,
+  "thresholds_are_provisional": "quarantine_tolerance_m and buffer_m are fleet-QC tuning values set from one fleet snapshot. They are not physical constants and must not be treated as such.",
+  "what": "Per-resort, per-band input QC for the unified band-thermodynamic snow path. Two INDEPENDENT axes: elevation_qc asks whether a declared band exists on this mountain, coordinate_qc asks whether this is the right mountain. They are not merged, because a wrong coordinate misdirects every upstream request while a wrong band elevation biases one number."
+ },
+ "resorts": {
+  "manual-farellones": {
+   "bbox_point_dem_max_m": 3225.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "manual-ski_arpa": {
+   "bbox_point_dem_max_m": 3871.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "manual-vallecitos": {
+   "bbox_point_dem_max_m": 2515.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-node-2574552473": {
+   "bbox_point_dem_max_m": 2410.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-node-2641613980": {
+   "bbox_point_dem_max_m": 571.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-node-290050323": {
+   "bbox_point_dem_max_m": 3531.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-node-290050547": {
+   "bbox_point_dem_max_m": 3845.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-node-290057440": {
+   "bbox_point_dem_max_m": 3499.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-relation-12475343": {
+   "bbox_point_dem_max_m": 1892.0,
+   "buffered_polygon_dem_max_m": 1925.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1869.0,
+   "polygon_dem_min_m": 1469.0
+  },
+  "osm-relation-14756845": {
+   "bbox_point_dem_max_m": 1244.0,
+   "buffered_polygon_dem_max_m": 1242.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 13.2,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1177.0,
+   "polygon_dem_min_m": 245.0
+  },
+  "osm-relation-19839568": {
+   "bbox_point_dem_max_m": 2031.0,
+   "buffered_polygon_dem_max_m": 2035.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 6.9,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2035.0,
+   "polygon_dem_min_m": 1280.0
+  },
+  "osm-way-1020172394": {
+   "bbox_point_dem_max_m": 2192.0,
+   "buffered_polygon_dem_max_m": 2086.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 9449.7,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2067.0,
+   "polygon_dem_min_m": 1655.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-1056651738": {
+   "bbox_point_dem_max_m": 2241.0,
+   "buffered_polygon_dem_max_m": 1683.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 1875.2,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1597.0,
+   "polygon_dem_min_m": 1105.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-1210011762": {
+   "bbox_point_dem_max_m": 1789.0,
+   "buffered_polygon_dem_max_m": 1782.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1768.0,
+   "polygon_dem_min_m": 1410.0
+  },
+  "osm-way-1225428207": {
+   "bbox_point_dem_max_m": 1871.0,
+   "buffered_polygon_dem_max_m": 1871.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1850.0,
+   "polygon_dem_min_m": 1459.0
+  },
+  "osm-way-1225432526": {
+   "bbox_point_dem_max_m": 1774.0,
+   "buffered_polygon_dem_max_m": 1779.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1779.0,
+   "polygon_dem_min_m": 1188.0
+  },
+  "osm-way-1360038350": {
+   "bbox_point_dem_max_m": 2102.0,
+   "buffered_polygon_dem_max_m": 2044.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1924.0,
+   "polygon_dem_min_m": 1750.0
+  },
+  "osm-way-1362374789": {
+   "bbox_point_dem_max_m": 1960.0,
+   "buffered_polygon_dem_max_m": 2162.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 2823.8,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2107.0,
+   "polygon_dem_min_m": 1682.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-1388302700": {
+   "bbox_point_dem_max_m": 1779.0,
+   "buffered_polygon_dem_max_m": 1663.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1516.0,
+   "polygon_dem_min_m": 1057.0
+  },
+  "osm-way-1412281678": {
+   "bbox_point_dem_max_m": 2353.0,
+   "buffered_polygon_dem_max_m": 2781.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 521.2,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2433.0,
+   "polygon_dem_min_m": 1449.0
+  },
+  "osm-way-1448331027": {
+   "bbox_point_dem_max_m": 139.0,
+   "buffered_polygon_dem_max_m": 123.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 97.0,
+   "polygon_dem_min_m": 51.0
+  },
+  "osm-way-1458944068": {
+   "bbox_point_dem_max_m": 2078.0,
+   "buffered_polygon_dem_max_m": 1866.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1507.0,
+   "polygon_dem_min_m": 1328.0
+  },
+  "osm-way-1517729401": {
+   "bbox_point_dem_max_m": 3523.0,
+   "buffered_polygon_dem_max_m": 3484.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 3411.0,
+   "polygon_dem_min_m": 2726.0
+  },
+  "osm-way-178133225": {
+   "bbox_point_dem_max_m": 2044.0,
+   "buffered_polygon_dem_max_m": 2033.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2025.0,
+   "polygon_dem_min_m": 1605.0
+  },
+  "osm-way-274760683": {
+   "bbox_point_dem_max_m": 1730.0,
+   "buffered_polygon_dem_max_m": 1978.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 2994.4,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1933.0,
+   "polygon_dem_min_m": 1272.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-28707473": {
+   "bbox_point_dem_max_m": 2117.0,
+   "buffered_polygon_dem_max_m": 2147.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 403.5,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2080.0,
+   "polygon_dem_min_m": 1048.0
+  },
+  "osm-way-378344849": {
+   "bbox_point_dem_max_m": 2153.0,
+   "buffered_polygon_dem_max_m": 2153.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 294.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2112.0,
+   "polygon_dem_min_m": 1407.0
+  },
+  "osm-way-387979660": {
+   "bbox_point_dem_max_m": 439.0,
+   "buffered_polygon_dem_max_m": 442.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 407.0,
+   "polygon_dem_min_m": 292.0
+  },
+  "osm-way-482928467": {
+   "bbox_point_dem_max_m": 1922.0,
+   "buffered_polygon_dem_max_m": 1916.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1916.0,
+   "polygon_dem_min_m": 1280.0
+  },
+  "osm-way-482928468": {
+   "bbox_point_dem_max_m": 2250.0,
+   "buffered_polygon_dem_max_m": 2165.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2008.0,
+   "polygon_dem_min_m": 1480.0
+  },
+  "osm-way-482928475": {
+   "bbox_point_dem_max_m": 1603.0,
+   "buffered_polygon_dem_max_m": 1622.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1594.0,
+   "polygon_dem_min_m": 1165.0
+  },
+  "osm-way-499034347": {
+   "bbox_point_dem_max_m": 2144.0,
+   "buffered_polygon_dem_max_m": 2107.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 120.7,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2047.0,
+   "polygon_dem_min_m": 1368.0
+  },
+  "osm-way-499036978": {
+   "bbox_point_dem_max_m": 2727.0,
+   "buffered_polygon_dem_max_m": 2727.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 141.4,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2339.0,
+   "polygon_dem_min_m": 1567.0
+  },
+  "osm-way-556105072": {
+   "bbox_point_dem_max_m": 1598.0,
+   "buffered_polygon_dem_max_m": 1606.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 5.3,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1592.0,
+   "polygon_dem_min_m": 1007.0
+  },
+  "osm-way-616029504": {
+   "bbox_point_dem_max_m": 2492.0,
+   "buffered_polygon_dem_max_m": 2595.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 270.7,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2333.0,
+   "polygon_dem_min_m": 1574.0
+  },
+  "osm-way-627625381": {
+   "bbox_point_dem_max_m": 2161.0,
+   "buffered_polygon_dem_max_m": 2076.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2067.0,
+   "polygon_dem_min_m": 1420.0
+  },
+  "osm-way-665125669": {
+   "bbox_point_dem_max_m": 2609.0,
+   "buffered_polygon_dem_max_m": 2132.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 106.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1986.0,
+   "polygon_dem_min_m": 1356.0
+  },
+  "osm-way-682231907": {
+   "bbox_point_dem_max_m": 3356.0,
+   "buffered_polygon_dem_max_m": 3335.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 3335.0,
+   "polygon_dem_min_m": 2547.0
+  },
+  "osm-way-705875874": {
+   "bbox_point_dem_max_m": 1873.0,
+   "buffered_polygon_dem_max_m": 1655.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 11760.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1640.0,
+   "polygon_dem_min_m": 1538.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-739168515": {
+   "bbox_point_dem_max_m": 2886.0,
+   "buffered_polygon_dem_max_m": 2801.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 528.2,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2717.0,
+   "polygon_dem_min_m": 1693.0
+  },
+  "osm-way-771668333": {
+   "bbox_point_dem_max_m": 1712.0,
+   "buffered_polygon_dem_max_m": 1996.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1836.0,
+   "polygon_dem_min_m": 766.0
+  },
+  "osm-way-917040354": {
+   "bbox_point_dem_max_m": 1920.0,
+   "buffered_polygon_dem_max_m": 1914.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1838.0,
+   "polygon_dem_min_m": 1825.0
+  },
+  "osm-way-934033486": {
+   "bbox_point_dem_max_m": 1649.0,
+   "buffered_polygon_dem_max_m": 1764.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 2395.3,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1764.0,
+   "polygon_dem_min_m": 1054.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-934046989": {
+   "bbox_point_dem_max_m": 1047.0,
+   "buffered_polygon_dem_max_m": 990.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 964.0,
+   "polygon_dem_min_m": 203.0
+  },
+  "osm-way-934096931": {
+   "bbox_point_dem_max_m": 855.0,
+   "buffered_polygon_dem_max_m": 1840.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 19979.2,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1733.0,
+   "polygon_dem_min_m": 1089.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-934098320": {
+   "bbox_point_dem_max_m": 1327.0,
+   "buffered_polygon_dem_max_m": 2048.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 5349.4,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1964.0,
+   "polygon_dem_min_m": 1255.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-934099771": {
+   "bbox_point_dem_max_m": 455.0,
+   "buffered_polygon_dem_max_m": 2229.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 11322.1,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1829.0,
+   "polygon_dem_min_m": 1239.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-934101794": {
+   "bbox_point_dem_max_m": 2653.0,
+   "buffered_polygon_dem_max_m": 1970.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 2764.1,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1668.0,
+   "polygon_dem_min_m": 1188.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-934103782": {
+   "bbox_point_dem_max_m": 3427.0,
+   "buffered_polygon_dem_max_m": 3594.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.2,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 3410.0,
+   "polygon_dem_min_m": 2219.0
+  },
+  "osm-way-934285904": {
+   "bbox_point_dem_max_m": 4256.0,
+   "buffered_polygon_dem_max_m": 4132.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 3425.0,
+   "polygon_dem_min_m": 2612.0
+  },
+  "osm-way-937384810": {
+   "bbox_point_dem_max_m": 2095.0,
+   "buffered_polygon_dem_max_m": 1991.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1937.0,
+   "polygon_dem_min_m": 1664.0
+  },
+  "osm-way-955246841": {
+   "bbox_point_dem_max_m": 1335.0,
+   "buffered_polygon_dem_max_m": 1249.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "invalid_resort_elevation",
+   "polygon_dem_max_m": 881.0,
+   "polygon_dem_min_m": 488.0,
+   "quarantined_bands": {
+    "top": {
+     "declared_m": 1924.0,
+     "over_buffered_max_m": 675.0,
+     "over_polygon_max_m": 1043.0,
+     "reason": "invalid_resort_elevation"
+    }
+   }
+  },
+  "osm-way-97509064": {
+   "bbox_point_dem_max_m": 3044.0,
+   "buffered_polygon_dem_max_m": null,
+   "coordinate_qc": "qc_unverified_no_polygon",
+   "distance_point_to_polygon_m": null,
+   "elevation_qc": "qc_unverified_no_polygon",
+   "polygon_dem_max_m": null,
+   "polygon_dem_min_m": null
+  },
+  "osm-way-976135206": {
+   "bbox_point_dem_max_m": 2086.0,
+   "buffered_polygon_dem_max_m": 2077.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1868.0,
+   "polygon_dem_min_m": 1491.0
+  },
+  "osm-way-987040066": {
+   "bbox_point_dem_max_m": 1943.0,
+   "buffered_polygon_dem_max_m": 1897.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1825.0,
+   "polygon_dem_min_m": 1296.0
+  },
+  "osm-way-987242424": {
+   "bbox_point_dem_max_m": 2869.0,
+   "buffered_polygon_dem_max_m": 2766.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 0.0,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 2581.0,
+   "polygon_dem_min_m": 1947.0
+  },
+  "osm-way-991056806": {
+   "bbox_point_dem_max_m": 1601.0,
+   "buffered_polygon_dem_max_m": 1979.0,
+   "coordinate_qc": "coordinate_qc_fail",
+   "distance_point_to_polygon_m": 4179.1,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1919.0,
+   "polygon_dem_min_m": 1424.0,
+   "unified_fallback": "coordinate_qc_fail"
+  },
+  "osm-way-997044732": {
+   "bbox_point_dem_max_m": 1352.0,
+   "buffered_polygon_dem_max_m": 1352.0,
+   "coordinate_qc": "ok",
+   "distance_point_to_polygon_m": 45.7,
+   "elevation_qc": "ok",
+   "polygon_dem_max_m": 1295.0,
+   "polygon_dem_min_m": 915.0
+  }
+ }
+}
