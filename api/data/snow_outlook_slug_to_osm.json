@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updated": "2026-07-16",
-  "notes": "Maps snow_outlook_resorts.resort_id (slug) → OSM / gapfill index id used by Ride Tracker ski-resort index. Built from active curated resorts matched to landuse=winter_sports where possible; unmatched outdoor resorts injected as gapfill pins (osm-node-* when a real OSM feature exists, else manual-*). Includes by_osm_id inverse for shared-weather alias UI.",
+  "updated": "2026-08-18",
+  "notes": "Maps snow_outlook_resorts.resort_id (slug) → OSM / gapfill index id used by Ride Tracker ski-resort index. Built from active curated resorts matched to landuse=winter_sports where possible; unmatched outdoor resorts injected as gapfill pins (osm-node-* when a real OSM feature exists, else manual-*). Includes by_osm_id inverse for shared-weather alias UI. 2026-08-18: roundhill was gapfill_inject onto osm-node-2641613980, an isolated node on farmland 42.7 km from the ski field (ground 517-571 m against declared bands of 1350-2133 m). The real Roundhill Ski Field, osm-way-506960983, is in the map index; the mapping now points there. Forecast rows built from the farm coordinate were deleted rather than kept, since they describe a place with no ski area.",
   "by_slug": {
     "ordino_arcalis": {
       "osm_id": "osm-way-987242424",
@@ -1559,9 +1559,9 @@
       "match": "already_in_index"
     },
     "roundhill": {
-      "osm_id": "osm-node-2641613980",
-      "display_name": "Roundhill Ski Area",
-      "match": "gapfill_inject"
+      "osm_id": "osm-way-506960983",
+      "display_name": "Roundhill Ski Field",
+      "match": "corrected_2026-08-18"
     },
     "arctic_valley": {
       "osm_id": "osm-relation-10517367",
@@ -3363,12 +3363,6 @@
         "display_name": "Mt Dobson"
       }
     ],
-    "osm-node-2641613980": [
-      {
-        "slug": "roundhill",
-        "display_name": "Roundhill Ski Area"
-      }
-    ],
     "osm-relation-10517367": [
       {
         "slug": "arctic_valley",
@@ -3379,6 +3373,12 @@
       {
         "slug": "northstar_california",
         "display_name": "Northstar California Resort"
+      }
+    ],
+    "osm-way-506960983": [
+      {
+        "slug": "roundhill",
+        "display_name": "Roundhill Ski Field"
       }
     ]
   }
