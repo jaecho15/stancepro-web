@@ -1479,6 +1479,21 @@ def hourly_band_day(
             "hybrid_hours": hybrid_hours,
             "hybrid_applied": applied,
             "fallback_reason": reason,
+            # Where THIS model's display temperature came from, per model rather
+            # than per day. Both numbers were already counted here and then
+            # summed away into the day-level temp_source, so a day reading
+            # "mixed_hourly" said nothing about WHICH model fell back.
+            #
+            # The internal name is misleading and the emitted one is not:
+            # day_temp_profile_hours counts EVERY hour, and the fallback count
+            # is the subset that could not be bracketed by the pressure profile
+            # and used the 2 m series instead.
+            #
+            # Diagnostic only. Nothing here changes a phase calculation — the
+            # snow physics reads the 2 m band temperature on every path and
+            # never these arrays.
+            "temp_hours_total": day_temp_profile_hours[model],
+            "temp_hours_surface_fallback": day_temp_fallback_hours[model],
         })
     # Extremes of the SAME series tmean_c_p50 is built from, so the triple is
     # always internally coherent. Deliberately NOT the vendor's daily

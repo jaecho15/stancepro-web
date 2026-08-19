@@ -99,7 +99,7 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 #
 # Feels-like follows automatically: wind_chill_c already reads the block's
 # aggregated wind, so it now uses the same source it displays.
-CONFIG_VERSION = "hybrid-tw-v3.8-ensemble-phase-aligned"
+CONFIG_VERSION = "hybrid-tw-v3.9-temp-provenance"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
@@ -856,6 +856,19 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
                 # wet-bulb — writing the daily mean temperature here would put a
                 # different physical quantity in the column.
                 "tw_c": None,
+                # Where this MODEL's display temperature came from. The
+                # day-level temp_source on the archive row is an aggregate: a
+                # day reading "mixed_hourly" does not say which model fell back,
+                # and the pressure profile's availability is not uniform across
+                # models or leads. These two make the pattern queryable by
+                # model x lead x cycle without another fetch.
+                #
+                # Diagnostic only — the phase calculation is untouched. Snow
+                # physics reads the 2 m band temperature on every path and never
+                # the profile-interpolated display series.
+                "temp_hours_total": _small_int(member.get("temp_hours_total")),
+                "temp_hours_surface_fallback":
+                    _small_int(member.get("temp_hours_surface_fallback")),
             })
         result["rows_skipped"] = skipped
         if skipped:
