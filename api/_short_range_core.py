@@ -1639,6 +1639,15 @@ def band_daily_rows(
                         "rain_candidate_mm": member["rain_candidate_mm"],
                         "contributing_hours": member["contributing_hours"],
                         "hybrid_hours": member["hybrid_hours"],
+                        # Carried, not recomputed. hourly_band_day counted these
+                        # per model while building the day; this copy is a
+                        # whitelist, so a field it does not name is silently
+                        # dropped in transit — which is exactly what happened to
+                        # these two between v3.9 shipping and 2026-08-19, when
+                        # the columns read NULL on every stored row and the
+                        # feature looked undeployed.
+                        "temp_hours_total": member["temp_hours_total"],
+                        "temp_hours_surface_fallback": member["temp_hours_surface_fallback"],
                         # Null by definition here: inside the window the
                         # hybrid is not a counterfactual, it is what snow_cm
                         # already is. A non-null shadow on a D1-7 row would mean
@@ -1690,6 +1699,11 @@ def band_daily_rows(
                             "rain_candidate_mm": None,
                             "contributing_hours": None,
                             "hybrid_hours": None,
+                            # Nothing was measured for this model, so these are
+                            # missing rather than zero — 0 would claim we looked
+                            # at 0 hours of profile temperature and found none.
+                            "temp_hours_total": None,
+                            "temp_hours_surface_fallback": None,
                             "hybrid_applied": False,
                             # The model contributed nothing usable: this is the
                             # one case 'model_unavailable' genuinely describes.
@@ -1738,6 +1752,16 @@ def band_daily_rows(
                         "rain_candidate_mm": (shadow or {}).get("rain_candidate_mm"),
                         "contributing_hours": (shadow or {}).get("contributing_hours"),
                         "hybrid_hours": (shadow or {}).get("hybrid_hours"),
+                        # From the shadow pass, like the two above. Expect
+                        # fallback == total on most of these rows and do not
+                        # read that as a bug: fetch_pressure_profile stops at 7
+                        # days, so out here every hour the shadow looked at fell
+                        # back to the 2 m series. That IS the provenance answer
+                        # for D8-16, and it is per model rather than per day,
+                        # which is the whole point of the pair.
+                        "temp_hours_total": (shadow or {}).get("temp_hours_total"),
+                        "temp_hours_surface_fallback":
+                            (shadow or {}).get("temp_hours_surface_fallback"),
                         # What the wet-bulb repartition WOULD have produced at
                         # this band elevation. None when the model had no usable
                         # hourly data out here — ICON, for instance, returns 1 of
