@@ -2206,7 +2206,18 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     map.once("load", () => setTimeout(fire, 1200));
     setTimeout(fire, 4000);   // absolute backstop if "load" is also delayed
   });
-  firstIdle.then(hideLoading);   // first settled 3D frame → drop the loading overlay
+  // The mesh is armed by bootTerrain() below — resolved there, so the overlay can
+  // wait for the one thing the user opened this screen for.
+  let _armTerrainReady;
+  const terrainReady = new Promise(res => { _armTerrainReady = res; });
+  // Overlay dismissal = first settled frame AND the mesh actually armed.
+  // firstIdle alone used to win on its 4 s backstop while setTerrain had not run
+  // yet (it sat behind map "load", i.e. behind every decorative source), so the
+  // spinner lifted over a FLAT 2D map — the exact dishonest state this overlay
+  // exists to prevent. Absolute release at 15 s so a fault can never trap the
+  // user under a spinner; the copy already switches to "slow network" at 8 s.
+  Promise.all([firstIdle, terrainReady]).then(hideLoading);
+  setTimeout(hideLoading, 15000);
 
   // ---- Unified post-load camera reveal --------------------------------------
   // Two motions used to race each other: the zoom-out ease to the true fit
@@ -3263,7 +3274,23 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     map.triggerRepaint();
   };
 
-  map.on("load", () => {
+  // ---- 3D activation --------------------------------------------------------
+  // Camera framing + setTerrain as ONE idempotent step, deliberately NOT inside
+  // map "load". MapLibre fires "load" only after EVERY style source has loaded,
+  // including two with nothing to do with the mesh: the ~900 KB hillshade drape
+  // image (hsdrape) and the third-party OpenFreeMap vector source (ofm — water
+  // fills + peak labels). Measured 2026-08-19 (headless, Jackson Hole): DEM ready
+  // at 1.1 s but setTerrain at 1.4 s on a warm link — and NEVER, with the mesh
+  // fully loaded, when the drape request merely hangs instead of failing. What
+  // the user saw was a flat 2D map with the spinner already gone; tapping the
+  // 2D/3D chip twice fixed it, because that handler calls setTerrain OUTSIDE this
+  // gate. "style.load" fires as soon as the style spec is parsed (dem is a plain
+  // tiles array — no TileJSON round-trip), so the mesh arms at once and the
+  // decorative sources drape in whenever they arrive.
+  let terrainArmed = false;
+  const bootTerrain = () => {
+    if (terrainArmed) return;
+    terrainArmed = true;
     // Frame CLOSE first (zoom ≥ 14), then enable terrain, then (if the resort
     // is larger) ease out to the true fit — so the first 3D paint only needs a
     // handful of near DEM tiles instead of the old edge-tile storm at overview
@@ -3303,6 +3330,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
       setTimeout(startReveal, 600);   // backstop: an all-cache-hit load may emit no dem loading event
     }
     map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
+    _armTerrainReady();
+  };
+  map.once("style.load", bootTerrain);   // style spec parsed → arm the mesh NOW
+
+  map.on("load", () => {
+    bootTerrain();   // backstop; style.load has armed it already in practice
     if (focusPt && focusPt.marker !== false) {   // marker:false = frame-only focus (e.g. whole-session view)
       // Display-only event marker — deliberately NOT a waypoint: the host's
       // post-ready loadWaypoints(reset:true) push would clear it, and waypoint
