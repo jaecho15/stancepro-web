@@ -945,11 +945,24 @@ def _write_archive(payload: object, fallback_resort_id: str, now: datetime) -> d
       rows_dropped   submitted minus stored: rows an existing row already owned.
       rows_skipped   daily entries the archive refused to key or trust.
 
+    On the error path every counter is 0 and status is "error"; that is "the
+    write did not complete", not "0 of 48 stored" — submitted reads 0 there too,
+    so the dict cannot be misread as a measured zero. -1 is the OTHER case: a
+    reply arrived and passed raise_for_status but could not be counted.
+
     SUBMITTED AND STORED DIFFER ROUTINELY, and the gap is not a fault. Writes
     use ON CONFLICT DO NOTHING so the FIRST compute in a 3-hour cycle owns that
-    cycle's rows; every later refresh inside it re-sends a full row set and
-    stores none. That append-only rule is what lets the table answer "what did
-    we serve at cycle T" — an archive that overwrote itself could not.
+    cycle's rows; a later refresh inside the same cycle re-sends its full row
+    set and stores almost none of it. ALMOST none, not none: when the resort's
+    local midnight falls inside the cycle, the later compute emits one extra day
+    at the tail of each band, and those rows have no owner yet, so they insert
+    cleanly — the KNOWN LIMITATION block in _archive_rows works through the same
+    case. A small nonzero stored on a same-cycle refresh is therefore EXPECTED,
+    and is not evidence that cycle bucketing broke. Reading it as a break would
+    start exactly the investigation these counters exist to prevent.
+
+    That append-only rule is what lets the table answer "what did we serve at
+    cycle T" — an archive that overwrote itself could not.
 
     An earlier revision of this docstring recorded that the true count could not
     be obtained from here, having considered only `count=exact`. That was too
