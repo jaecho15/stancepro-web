@@ -661,6 +661,38 @@ def _archive_rows(resort_id: str, payload: dict, run_init_time: str) -> tuple[li
     return rows, skipped
 
 
+def _stored_rows(response, submitted: int) -> tuple[int, int]:
+    """(stored, dropped) from a `return=representation` insert. NEVER raises.
+
+    Both writers post with `resolution=ignore-duplicates`, which PostgREST
+    translates to ON CONFLICT DO NOTHING. Under `return=minimal` that replies
+    201 with an empty body whether it inserted every row or none — measured
+    2026-08-19 against the live table by re-posting a row that already existed:
+    HTTP 201, body ''. `return=representation` echoes back exactly the rows it
+    actually inserted, so the same no-op replies `[]`. That is the whole reason
+    for the header: the drop becomes countable instead of invisible.
+
+    A dropped row is NOT an error. The archive is append-only on purpose — the
+    first compute in a 3-hour cycle records what we served, and later refreshes
+    inside that cycle must not rewrite history. What was wrong was reporting a
+    silent no-op as a successful write, which cost real investigation time more
+    than once.
+
+    Telemetry posture: a malformed or unexpected body must never break a serve,
+    so anything unparseable degrades to "stored unknown" (-1) rather than
+    raising. -1 is deliberately not 0 — "we could not tell" and "nothing was
+    stored" are different claims and must not be charted as the same one.
+    """
+    try:
+        body = response.json()
+    except Exception:  # noqa: BLE001 — telemetry must never break a serve
+        return -1, -1
+    if not isinstance(body, list):
+        return -1, -1
+    stored = len(body)
+    return stored, max(0, submitted - stored)
+
+
 def _write_member_diagnostics(payload: object, members: list, fallback_resort_id: str,
                               now: datetime) -> dict:
     """Persist the PER-MODEL members behind each served quantile.
@@ -674,7 +706,8 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
     quietly, nothing here may raise into the response, and nothing here may
     change the forecast.
     """
-    result: dict = {"status": "error", "rows_submitted": 0, "rows_skipped": 0}
+    result: dict = {"status": "error", "rows_submitted": 0, "rows_skipped": 0,
+                    "rows_stored": 0, "rows_dropped": 0}
     resort_label = "<unknown>"
     try:
         data = payload if isinstance(payload, dict) else {}
@@ -884,14 +917,17 @@ def _write_member_diagnostics(payload: object, members: list, fallback_resort_id
                 "apikey": WRITE_KEY,
                 "Authorization": f"Bearer {WRITE_KEY}",
                 "Content-Type": "application/json",
-                "Prefer": "resolution=ignore-duplicates,return=minimal",
+                "Prefer": "resolution=ignore-duplicates,return=representation",
             },
             data=json.dumps(rows),
             timeout=ARCHIVE_TIMEOUT_S,
         )
         response.raise_for_status()
+        stored, dropped = _stored_rows(response, len(rows))
         result["status"] = "ok"
         result["rows_submitted"] = len(rows)
+        result["rows_stored"] = stored
+        result["rows_dropped"] = dropped
         return result
     except Exception as exc:  # noqa: BLE001 — telemetry must never break a serve
         print(f"[diagnostics] {resort_label}: {_scrub(type(exc).__name__)}", file=sys.stderr)
@@ -904,23 +940,33 @@ def _write_archive(payload: object, fallback_resort_id: str, now: datetime) -> d
 
     Returns a status dict, reported verbatim in the response body:
       status         "ok" | "no_rows" | "disabled_no_write_key" | "error"
-      rows_submitted rows SENT to PostgREST. NOT an insert count — see below.
+      rows_submitted rows SENT to PostgREST — a liveness signal only.
+      rows_stored    rows ACTUALLY inserted (-1 = could not be determined).
+      rows_dropped   submitted minus stored: rows an existing row already owned.
       rows_skipped   daily entries the archive refused to key or trust.
 
-    ROWS_SUBMITTED IS NOT ROWS INSERTED. The request below carries
-    `Prefer: resolution=ignore-duplicates,return=minimal`, so PostgREST replies
-    201 with an empty body whether it inserted every row or none of them: a
-    second FRESH compute inside the same 3h cycle re-sends its full row set,
-    inserts nothing (PK collision -> DO NOTHING), and would still report its
-    full count. The field is therefore NAMED for what it measures rather than
-    made exact — chosen deliberately over adding `count=exact`, because the
-    claim "PostgREST's exact count on an ON CONFLICT DO NOTHING insert equals
-    rows actually inserted" cannot be verified from here without writing to the
-    live database. Treat this number as "the writer ran and submitted N rows",
-    i.e. a liveness signal, never as archive growth. Real insert counts come
-    from counting rows in short_range_forecast_archive itself.
+    SUBMITTED AND STORED DIFFER ROUTINELY, and the gap is not a fault. Writes
+    use ON CONFLICT DO NOTHING so the FIRST compute in a 3-hour cycle owns that
+    cycle's rows; every later refresh inside it re-sends a full row set and
+    stores none. That append-only rule is what lets the table answer "what did
+    we serve at cycle T" — an archive that overwrote itself could not.
+
+    An earlier revision of this docstring recorded that the true count could not
+    be obtained from here, having considered only `count=exact`. That was too
+    pessimistic: `return=representation` echoes back the rows actually inserted,
+    and it is verifiable without polluting anything, because re-posting a row
+    that already exists is a no-op. Measured 2026-08-19 against the live table —
+    `return=minimal` replied 201 with body '', `return=representation` replied
+    201 with body '[]' for the identical no-op write. See _stored_rows.
+
+    Why it was worth changing: an invisible drop reads as a successful write.
+    Three separate investigations in this project began with `archive_status:
+    ok` next to an empty table, most recently v3.9's temperature-provenance
+    columns, which were assumed undeployed when in fact they were live and
+    their rows were landing in a cycle another version already owned.
     """
-    result: dict = {"status": "error", "rows_submitted": 0, "rows_skipped": 0}
+    result: dict = {"status": "error", "rows_submitted": 0, "rows_skipped": 0,
+                    "rows_stored": 0, "rows_dropped": 0}
     resort_label = "<unknown>"
     try:
         # Resolved INSIDE the guard on purpose: the caller passes the raw
@@ -961,14 +1007,17 @@ def _write_archive(payload: object, fallback_resort_id: str, now: datetime) -> d
                 "apikey": WRITE_KEY,
                 "Authorization": f"Bearer {WRITE_KEY}",
                 "Content-Type": "application/json",
-                "Prefer": "resolution=ignore-duplicates,return=minimal",
+                "Prefer": "resolution=ignore-duplicates,return=representation",
             },
             data=json.dumps(rows),
             timeout=ARCHIVE_TIMEOUT_S,
         )
         response.raise_for_status()
+        stored, dropped = _stored_rows(response, len(rows))
         result["status"] = "ok"
         result["rows_submitted"] = len(rows)
+        result["rows_stored"] = stored
+        result["rows_dropped"] = dropped
         return result
     except Exception as exc:  # noqa: BLE001 — telemetry must never break a serve
         # NEVER interpolate the exception itself. A credential carrying a
@@ -1128,15 +1177,21 @@ def _build(resort_id: str, max_age_s: int, refresh: bool,
         "resort_id": weather_id,
         "cached": False,
         "cache_written": wrote,
-        # SUBMITTED, not inserted (ignore-duplicates + return=minimal cannot
-        # tell them apart) — see _write_archive. Do not chart this as archive
-        # growth. `archive_status` is the writer's liveness signal:
-        # "disabled_no_write_key" means history is being lost right now.
+        # submitted = the writer ran; stored = the table grew. They differ
+        # whenever an earlier compute already owns this 3-hour cycle, which is
+        # normal and not an error — see _write_archive. `archive_status` remains
+        # the liveness signal: "disabled_no_write_key" means history is being
+        # lost right now. rows_stored == -1 means the reply could not be read,
+        # which is "unknown", NOT "nothing stored".
         "archive_status": archive["status"],
         "archive_rows_submitted": archive["rows_submitted"],
+        "archive_rows_stored": archive["rows_stored"],
+        "archive_rows_dropped": archive["rows_dropped"],
         "archive_rows_skipped": archive["rows_skipped"],
         "diagnostics_status": diagnostics["status"],
         "diagnostics_rows_submitted": diagnostics["rows_submitted"],
+        "diagnostics_rows_stored": diagnostics["rows_stored"],
+        "diagnostics_rows_dropped": diagnostics["rows_dropped"],
         "config_version": CONFIG_VERSION,
         "generated_at": payload.get("generated_utc"),
         "age_seconds": 0,
