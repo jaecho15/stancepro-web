@@ -99,7 +99,7 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 #
 # Feels-like follows automatically: wind_chill_c already reads the block's
 # aggregated wind, so it now uses the same source it displays.
-CONFIG_VERSION = "hybrid-tw-v3.7-candidate-provenance"
+CONFIG_VERSION = "hybrid-tw-v3.8-ensemble-phase-aligned"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
@@ -374,7 +374,21 @@ def _read_cache(resort_id: str) -> dict | None:
     )
     response.raise_for_status()
     rows = response.json()
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    row = rows[0]
+    # A row computed by a DIFFERENT config is a miss regardless of age.
+    #
+    # Until 2026-08-19 freshness was age alone, so for up to max_age_s after
+    # every deploy the endpoint kept serving payloads built by the previous
+    # physics — long enough that verifying a rollout meant waiting out the TTL
+    # and hoping. A missing config_version is treated the same way: it predates
+    # the field, so nothing can vouch for what produced it.
+    #
+    # `refresh=1` is unaffected; it already bypasses this function.
+    if row.get("config_version") != CONFIG_VERSION:
+        return None
+    return row
 
 
 def _single_band(payload: dict) -> bool:

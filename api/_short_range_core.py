@@ -2020,6 +2020,151 @@ def fetch_ensemble_daily(
 # spread — and the 3-day sum assumes perfect day-to-day correlation, so it
 # OVERSTATES width. Smearing a day that does not need smearing is a loss, not a
 # gain. It stays at 9.
+# ---- phase-aligned ensemble (2026-08-19) ----
+# The ensemble used to serve the provider's daily snowfall_sum per member. The
+# deterministic path stopped doing that at v3.5 — it treats the supplied
+# snowfall as a phase prior and re-partitions at band elevation — so the two
+# paths were answering the same question with different physics, and the screen
+# showed it: at Cardrona the deterministic median read 5.5 cm on days the
+# ensemble median read 0.0.
+#
+# Measured over 58 resorts, the deterministic value sat at the 82nd-97th
+# percentile of the OLD ensemble distribution and at the 52nd-82nd of the
+# aligned one. Four deterministic models landing in the top tenth of a
+# 103-member ensemble is not a forecast disagreement, it is two different
+# calculations.
+#
+# THE CAP IS AN INPUT BOUND, NOT A TUNING KNOB
+# Some provider member-hours ship a snowfall whose water equivalent exceeds the
+# precipitation on the same member-hour — 14 member-days fleet-wide, ECMWF and
+# GEM. The hybrid does not create that: it keeps the prior when the band is
+# cold, so it inherits the excess. min(supplied/0.7, precip) asserts only that
+# snow water cannot exceed the water it fell as. Fleet effect: violations 14 to
+# 0, and the median served value moves on 17 of 2,288 rows by at most 0.21 cm.
+#
+# ONE REQUEST FOR EVERY BAND
+# Bands share a coordinate and differ only in elevation, and the API takes
+# parallel lists. Measured: three separate requests and one multi-location
+# request transfer the SAME 0.304 MB on the wire and return byte-identical
+# values across 164,736 samples, but the single request costs 2.9 s against
+# 7.1 s. Splitting by family horizon was measured too and rejected — it saves 5%
+# of bytes for three extra calls and +5.6 s.
+ENSEMBLE_PHASE_ALIGNED = True
+ENSEMBLE_FAMILIES = {"ecmwf_ifs025_ensemble": "ECMWF", "ncep_gefs025": "GEFS",
+                     "icon_global_eps": "ICON", "gem_global_ensemble": "GEM"}
+ENSEMBLE_PROB_THRESHOLDS_CM = (1, 5, 10, 20)
+
+
+def _ensemble_family(key: str) -> str:
+    for suffix, label in ENSEMBLE_FAMILIES.items():
+        if key.endswith(suffix):
+            return label
+    return "other"
+
+
+def hybrid_capped_snow_cm(api_snow_cm: float, precip_mm: float,
+                          temp_c: float, rh_pct: float | None) -> float:
+    """hybrid_hourly_snow_cm with the supplied prior capped at its own water.
+
+    Identical to the deterministic rule except that the prior cannot claim more
+    water than fell. Where the provider is self-consistent — the overwhelming
+    majority of member-hours — this returns exactly what the uncapped function
+    returns."""
+    if rh_pct is None:
+        return api_snow_cm
+    swe_prior = min(api_snow_cm / OM_SNOW_CM_PER_MM, precip_mm)
+    prior_cm = swe_prior * OM_SNOW_CM_PER_MM
+    remaining = max(0.0, precip_mm - swe_prior)
+    t_wet = wet_bulb_stull(temp_c, float(rh_pct))
+    return (prior_cm * _tw_keep_fraction(t_wet)
+            + remaining * _tw_convert_fraction(t_wet) * OM_SNOW_CM_PER_MM)
+
+
+def fetch_ensemble_members(lat: float, lon: float,
+                           band_elevations: dict[str, float | None],
+                           ) -> dict[str, dict[str, dict[str, Any]]]:
+    """{band: {date: aggregate}} from ONE multi-location request.
+
+    Best-effort like the daily version it replaces: any failure returns {} and
+    the caller keeps the deterministic band, because the ensemble is an
+    enrichment on top of a forecast that already exists."""
+    bands = [b for b, e in band_elevations.items() if isinstance(e, (int, float))]
+    if not bands:
+        return {}
+    params = {
+        "latitude": ",".join(f"{lat:.5f}" for _ in bands),
+        "longitude": ",".join(f"{lon:.5f}" for _ in bands),
+        "elevation": ",".join(str(round(float(band_elevations[b]))) for b in bands),
+        "hourly": "precipitation,temperature_2m,relative_humidity_2m,snowfall",
+        "models": ENSEMBLE_MODELS, "forecast_days": 16,
+        "timezone": "auto", "cell_selection": "nearest",
+    }
+    try:
+        response = requests.get(ENSEMBLE_URL, params=open_meteo_params(params),
+                                timeout=REQUEST_TIMEOUT_S)
+        response.raise_for_status()
+        body = response.json()
+    except Exception:  # noqa: BLE001 — enrichment must never sink the forecast
+        return {}
+    # A single location returns an object, several return a list. Normalising
+    # here keeps the band loop from having to know which it asked for.
+    locations = body if isinstance(body, list) else [body]
+    if len(locations) != len(bands):
+        return {}
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for band, location in zip(bands, locations):
+        hourly = location.get("hourly") or {}
+        stamps = hourly.get("time") or []
+        snow_keys = [k for k in hourly if k.startswith("snowfall")]
+        by_date: dict[str, list[int]] = {}
+        for i, stamp in enumerate(stamps):
+            by_date.setdefault(stamp[:10], []).append(i)
+        days: dict[str, dict[str, Any]] = {}
+        for date, idx in by_date.items():
+            totals: list[float] = []
+            families: dict[str, int] = {}
+            for key in snow_keys:
+                tail = key[len("snowfall"):]
+                pk, tk, rk = ("precipitation" + tail, "temperature_2m" + tail,
+                              "relative_humidity_2m" + tail)
+                if pk not in hourly or tk not in hourly or rk not in hourly:
+                    continue
+                total = 0.0
+                usable = False
+                for i in idx:
+                    precip = hourly[pk][i] if i < len(hourly[pk]) else None
+                    temp = hourly[tk][i] if i < len(hourly[tk]) else None
+                    if precip is None or temp is None:
+                        continue
+                    usable = True
+                    snow = hourly[key][i] if i < len(hourly[key]) else None
+                    rh = hourly[rk][i] if i < len(hourly[rk]) else None
+                    total += hybrid_capped_snow_cm(float(snow or 0.0), float(precip),
+                                                   float(temp), rh)
+                if not usable:
+                    continue
+                totals.append(total)
+                fam = _ensemble_family(key)
+                families[fam] = families.get(fam, 0) + 1
+            if len(totals) < ENSEMBLE_MIN_MEMBERS:
+                continue
+            ordered = sorted(totals)
+            n = len(ordered)
+            days[date] = {
+                "p10": round(_quantile(ordered, 0.10), 1),
+                "p25": round(_quantile(ordered, 0.25), 1),
+                "p50": round(_quantile(ordered, 0.50), 1),
+                "p75": round(_quantile(ordered, 0.75), 1),
+                "p90": round(_quantile(ordered, 0.90), 1),
+                "members": n,
+                "families": families,
+                "prob": {str(t): round(100.0 * sum(1 for v in ordered if v >= t) / n, 1)
+                         for t in ENSEMBLE_PROB_THRESHOLDS_CM},
+            }
+        out[band] = days
+    return out
+
+
 ENSEMBLE_FROM_DAY_INDEX = 8
 
 
@@ -2037,9 +2182,21 @@ def attach_ensemble(rows: list[dict[str, Any]],
         found = ensemble.get(row.get("date"))
         if not found:
             continue
-        p10, p50, p90, members = found
-        row["ens_cm_p10"], row["ens_cm_p50"] = p10, p50
-        row["ens_cm_p90"], row["ens_members"] = p90, members
+        if isinstance(found, dict):
+            # Phase-aligned path. p25/p75, threshold probabilities and family
+            # availability are additive: both apps decode by key, so an older
+            # build simply ignores them.
+            row["ens_cm_p10"], row["ens_cm_p50"] = found["p10"], found["p50"]
+            row["ens_cm_p90"], row["ens_members"] = found["p90"], found["members"]
+            row["ens_cm_p25"], row["ens_cm_p75"] = found["p25"], found["p75"]
+            row["ens_prob_cm"] = found["prob"]
+            row["ens_families"] = found["families"]
+            row["ens_source"] = "phase_aligned"
+        else:
+            p10, p50, p90, members = found
+            row["ens_cm_p10"], row["ens_cm_p50"] = p10, p50
+            row["ens_cm_p90"], row["ens_members"] = p90, members
+            row["ens_source"] = "api_supplied"
 
 
 # ---- D9-16 episode view (DECISIONS.md #1, step 1) ----
@@ -2696,13 +2853,22 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         # the answer genuinely differs — measured 2026-08-02 at Chillan, the
         # 16-day member total moved 12,066 -> 14,992 cm between the grid height
         # and 2,500 m.
-        ensemble_futures = {
-            band: pool.submit(fetch_ensemble_daily,
-                              float(resort["lat"]), float(resort["lon"]), bands[band])
-            for band in bands
-        }
+        # ONE request covering every band when phase-aligned (see
+        # fetch_ensemble_members); the per-band daily fetch is the fallback.
+        if ENSEMBLE_PHASE_ALIGNED:
+            ensemble_future = pool.submit(
+                fetch_ensemble_members, float(resort["lat"]), float(resort["lon"]), bands)
+            ensemble_futures = {}
+        else:
+            ensemble_future = None
+            ensemble_futures = {
+                band: pool.submit(fetch_ensemble_daily,
+                                  float(resort["lat"]), float(resort["lon"]), bands[band])
+                for band in bands
+            }
         band_payloads = {band: future.result() for band, future in band_futures.items()}
-        ensembles = {band: future.result() for band, future in ensemble_futures.items()}
+        ensembles = (ensemble_future.result() if ensemble_future is not None
+                     else {band: future.result() for band, future in ensemble_futures.items()})
         tendency = tendency_future.result() if tendency_future else []
         season_series, grid_elev = season_future.result()
         station = station_future.result() if station_future else None
