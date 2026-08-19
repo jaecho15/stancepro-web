@@ -95,7 +95,9 @@ export interface DailyRow {
    * the archive. Preferred over roll3_* when present.
    */
   ens_cm_p10?: number;
+  ens_cm_p25?: number;
   ens_cm_p50?: number;
+  ens_cm_p75?: number;
   ens_cm_p90?: number;
   /** Members behind the row. Falls with lead as models reach their horizons. */
   ens_members?: number;

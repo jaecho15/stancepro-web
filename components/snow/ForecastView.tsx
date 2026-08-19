@@ -1214,6 +1214,15 @@ function SnowFanChart({ days, tint, labelScale = 1, rolling = false }:
   const p90 = days.map((d, i) => ({ x: x(i), y: y(hi(d)) }));
   const p10 = days.map((d, i) => ({ x: x(i), y: y(lo(d)) }));
   const p50 = days.map((d, i) => ({ x: x(i), y: y(mid(d)) }));
+  // Inner band, only when EVERY day carries one. p10-p90 over a zero-inflated
+  // membership pins its floor at zero whenever a tenth of members forecast
+  // nothing — true, but it leaves a band reading "0 to 21 cm" that says little.
+  // p25-p75 shows where the mass sits WITHOUT replacing the outer band, because
+  // narrowing what is drawn would hide the quarter forecasting nothing and the
+  // tenth forecasting a lot, and the tail is the half a rider plans around.
+  const hasInner = useEns && days.every((d) => d.ens_cm_p25 != null && d.ens_cm_p75 != null);
+  const p75 = hasInner ? days.map((d, i) => ({ x: x(i), y: y(d.ens_cm_p75 ?? 0) })) : null;
+  const p25 = hasInner ? days.map((d, i) => ({ x: x(i), y: y(d.ens_cm_p25 ?? 0) })) : null;
   // Most of this window runs on 2 models or fewer.
   // Still keyed on member count, not on the width that came out: a 3-day sum of
   // two-model days is a wider number but not a better-supported one.
@@ -1239,6 +1248,17 @@ function SnowFanChart({ days, tint, labelScale = 1, rolling = false }:
         strokeWidth={degenerateFan ? 1 : 0}
         strokeDasharray={degenerateFan ? "3 3" : undefined}
       />
+      {/* Same hue, denser fill, drawn over the outer so the opacities add: the
+          two read as one distribution thickening toward the middle rather than
+          as two separate quantities. */}
+      {p75 && p25 && (
+        <path
+          d={fanBandPath(p75, p25)}
+          fill={tint}
+          fillOpacity={degenerateFan ? 0.14 : 0.22}
+          stroke="none"
+        />
+      )}
       {/* No centre line in rolling mode. DECISIONS.md #1 makes D9-16 range-only,
           and a p50 curve is a point estimate drawn as a line — removing the
           number but keeping the line would have kept the claim and lost only
