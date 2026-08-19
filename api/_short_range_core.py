@@ -1753,12 +1753,19 @@ def band_daily_rows(
                         "contributing_hours": (shadow or {}).get("contributing_hours"),
                         "hybrid_hours": (shadow or {}).get("hybrid_hours"),
                         # From the shadow pass, like the two above. Expect
-                        # fallback == total on most of these rows and do not
-                        # read that as a bug: fetch_pressure_profile stops at 7
-                        # days, so out here every hour the shadow looked at fell
-                        # back to the 2 m series. That IS the provenance answer
-                        # for D8-16, and it is per model rather than per day,
-                        # which is the whole point of the pair.
+                        # fallback 0 here, not fallback == total: the profile
+                        # fetch runs forecast_days 16 (pinned there for band
+                        # wind, so there is no D7->D8 cliff), so profile_temps
+                        # has stamps this far out and the shadow resolves them.
+                        # Measured 2026-08-19 at osm-way-987040066: every D8-16
+                        # row with a shadow read total 24, fallback 0.
+                        #
+                        # NULL is the informative value out here, and it means
+                        # the SHADOW was absent, not that the profile was: the
+                        # model had no usable hourly data at that lead. Same
+                        # run, same resort — gfs 27/27 rows, ecmwf 24/27, gem
+                        # 9/27, icon 3/27. That per-model split at a fixed lead
+                        # is what these two exist to make queryable.
                         "temp_hours_total": (shadow or {}).get("temp_hours_total"),
                         "temp_hours_surface_fallback":
                             (shadow or {}).get("temp_hours_surface_fallback"),
