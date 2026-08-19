@@ -783,6 +783,10 @@ window.OffpisteDraw = (function(){
   function endFly(){
     flying=false; flySeek=null; flyPauseToggle=null;
     setFlyPauseBtn(false,false);
+    // Replay over (finished, stopped from the Fly button, or bailed out of on a
+    // terrain fault — all of them land here) → every session pin visible again,
+    // matching the 2D maps at rest. A no-op for the fly modes, which never hide.
+    setSessionReveal(null);
     if(flyRAF){ cancelAnimationFrame(flyRAF); flyRAF=null; }
     setFlyGestures(true);
     if(el.flyCursor) el.flyCursor.classList.remove("show");
@@ -915,14 +919,60 @@ window.OffpisteDraw = (function(){
     halo.appendChild(disc);
     return halo;
   }
+  // Records, not bare markers: {marker, el, distM, always}. `distM` is the pin's
+  // distance ALONG the track — the key the replay reveals pins by (see
+  // sessionRevealD) — and `el` is the marker's own DOM node (maplibre uses the
+  // element it is handed verbatim), so a display toggle never fights the
+  // transform maplibre writes onto it.
   var sessionEventMarkers = [];
+  // Never hidden: the 2D session maps draw start/end statically too.
+  var STATIC_EVENTS = { start:1, end:1 };
+  // Replay reveal cutoff in metres along the track — pins beyond it are hidden.
+  // null = not replaying, so everything shows (the 2D maps' at-rest state).
+  // The wire payload carries NO timestamps (`t` is the event TYPE string), so
+  // distance is the only ordering available; it is also the right one, because
+  // the cue is distance-driven as well (cueAt(d)) — "the cue has passed it" and
+  // "it is visible" end up being the same predicate.
+  var sessionRevealD = null;
   function clearSessionEvents(){
-    sessionEventMarkers.forEach(function(m){ try{ m.remove(); }catch(e){} });
+    sessionEventMarkers.forEach(function(r){ try{ r.marker.remove(); }catch(e){} });
     sessionEventMarkers = [];
   }
+  // Distance along `coords` (cumulative lengths `cum`) of the point nearest
+  // [lng,lat], by perpendicular projection onto each segment in a local
+  // equirectangular frame. Over one session's span the planar error is metres,
+  // and only the pins' ORDER along the track can change what the reveal does.
+  function distAlongTrack(coords,cum,lng,lat){
+    var kx=Math.cos(lat*Math.PI/180), best=Infinity, at=0;
+    for(var i=1;i<coords.length;i++){
+      var ax=(coords[i-1][0]-lng)*kx, ay=coords[i-1][1]-lat;
+      var bx=(coords[i][0]-lng)*kx,   by=coords[i][1]-lat;
+      var dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy;
+      var f=L2>0 ? Math.max(0,Math.min(1,-(ax*dx+ay*dy)/L2)) : 0;
+      var px=ax+dx*f, py=ay+dy*f, d2=px*px+py*py;
+      if(d2<best){ best=d2; at=cum[i-1]+(cum[i]-cum[i-1])*f; }
+    }
+    return at;
+  }
+  // The ONE place that decides pin visibility. Every cue update runs through it,
+  // so scrubbing BACK re-hides pins with no extra bookkeeping.
+  function applySessionReveal(){
+    var d=sessionRevealD;
+    sessionEventMarkers.forEach(function(r){
+      if(!r.el) return;
+      r.el.style.display = (d==null || r.always || r.distM<=d) ? "flex" : "none";
+    });
+  }
+  function setSessionReveal(d){ sessionRevealD=d; applySessionReveal(); }
   function renderSessionEvents(list){
     clearSessionEvents();
     if(!Array.isArray(list) || !list.length) return;
+    // No track (or a degenerate one) → nothing to measure against: every pin is
+    // marked static and the reveal degrades to a no-op.
+    var coords=(sessionRoute && sessionRoute.coords) || null, cum=null;
+    if(coords && coords.length>=2){
+      cum=[0]; for(var i=1;i<coords.length;i++) cum[i]=cum[i-1]+distM(coords[i-1],coords[i]);
+    }
     list.forEach(function(ev){
       if(!ev || !isFinite(ev.lng) || !isFinite(ev.lat)) return;
       var wrap = document.createElement("div");
@@ -936,10 +986,14 @@ window.OffpisteDraw = (function(){
         wrap.appendChild(chip);
       }
       try {
-        sessionEventMarkers.push(
-          new maplibregl.Marker({element:wrap}).setLngLat([+ev.lng,+ev.lat]).addTo(map));
+        sessionEventMarkers.push({
+          marker: new maplibregl.Marker({element:wrap}).setLngLat([+ev.lng,+ev.lat]).addTo(map),
+          el: wrap,
+          always: !cum || !!STATIC_EVENTS[ev.t],
+          distM: cum ? distAlongTrack(coords,cum,+ev.lng,+ev.lat) : 0 });
       } catch(e){}
     });
+    applySessionReveal();   // a track re-injected mid-replay picks up the cutoff
   }
   function updateSavedSel(){
     var s=map.getSource("op-saved-sel"); if(!s) return;
@@ -1264,9 +1318,13 @@ window.OffpisteDraw = (function(){
     if(el.flyModeSel) el.flyModeSel.classList.remove("show");
     if(el.flyCursor){ el.flyCursor.classList.add("show"); updateFlyCursor(0); }
     if(active) toggle();                                   // leave draw mode during replay
+    setSessionReveal(0);          // hide the event pins; the cue reveals them as it passes
     var dur=flyDurMs(total);                               // pacing: FLY_SPEED_MPS
     var cueSrc=map.getSource("op-play-cue");
-    function cueAt(d){ if(cueSrc) cueSrc.setData(fc([{type:"Feature",properties:{},
+    // Pins reveal from the SAME distance that places the cue, so a scrub BACK
+    // (flySeek lowers d) hides everything past the new position again.
+    function cueAt(d){ setSessionReveal(d);
+      if(cueSrc) cueSrc.setData(fc([{type:"Feature",properties:{},
       geometry:{type:"Point",coordinates:pointAlong(coords,cum,d)}}])); }
     // One-time overview pose: cameraForBounds gives centre+zoom for the padded
     // track bbox; pitch is applied on top with a small zoom back-off so the
