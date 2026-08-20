@@ -2913,6 +2913,11 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                 for band in bands
             }
         band_payloads = {band: future.result() for band, future in band_futures.items()}
+        # Timezone travels with the band response (we send timezone=auto). Take
+        # the mid band when present so it matches the band the cards default to.
+        _tz_src = band_payloads.get("mid") or next(iter(band_payloads.values()), {}) or {}
+        _tz_name = _tz_src.get("timezone")
+        _tz_offset = _tz_src.get("utc_offset_seconds")
         ensembles = (ensemble_future.result() if ensemble_future is not None
                      else {band: future.result() for band, future in ensemble_futures.items()})
         tendency = tendency_future.result() if tendency_future else []
@@ -3011,6 +3016,15 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         "bands": bands,
         "models": models.split(","),
         "generated_utc": datetime.now(tz=timezone.utc).isoformat(),
+        # The resort's OWN timezone, straight from the Open-Meteo response we
+        # already request with timezone=auto. Every `date` in `daily` is a LOCAL
+        # calendar day, so without this the apps cannot tell whether day_index 1
+        # is today or a stale cache's yesterday — they only have lat/lon, and
+        # there is no coordinate->timezone API on either platform. Carried as
+        # the IANA name plus the offset so a client that cannot resolve the name
+        # still has something usable.
+        "timezone": _tz_name,
+        "utc_offset_seconds": _tz_offset,
         "daily": daily_rows,
         "depth": depth,
         "tendency_weekly": tendency,
