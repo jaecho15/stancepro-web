@@ -754,9 +754,16 @@ function WindTable({ days }: { days: DailyRow[] }) {
             </div>
           ))}
         </div>
-        {/* speed + gust */}
+        {/* Sustained speed is the free-air wind at THIS band's elevation and moves
+            with the band; gust is the model's native near-surface field and is the
+            same number for every band. The rule above the gust row stops the two
+            reading as one band-specific pair. */}
         {(["speed", "gust"] as const).map((kind) => (
-          <div key={kind} className="grid py-1" style={{ gridTemplateColumns: tpl }}>
+          <div
+            key={kind}
+            className={`grid py-1${kind === "gust" ? " mt-1 border-t border-slate-600/40 pt-1.5" : ""}`}
+            style={{ gridTemplateColumns: tpl }}
+          >
             <span className="text-[9px] font-medium text-slate-500 self-center">{kind === "gust" ? "GUST" : "SPD"}</span>
             {days.map((day, i) => (
               <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1`}>

@@ -1982,6 +1982,7 @@ def band_daily_rows(
                                 else "surface_10m" if wind_free_air_hours == 0
                                 else "mixed"),
                 "wind_dir_deg": wind_dir_deg,
+                # Resort-level, NOT this band's gust -- see wind_gust_scope.
                 "wind_gust_kmh": wind_gust_kmh,
                 "weather_code": day_weather_code,
                 "time_of_day": blocks,
@@ -3050,6 +3051,14 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         "lat": resort["lat"],
         "lon": resort["lon"],
         "bands": bands,
+        # Sustained wind in `daily` IS band-specific -- free air interpolated to
+        # that band's elevation. GUST is NOT: wind_gusts_10m is the model's own
+        # near-surface field at its own grid cell, with no band elevation in it,
+        # so wind_gust_kmh repeats unchanged across low/base/mid/top for the same
+        # day and block. Measured at Cardrona 2026-08-24: identical on 16/16 days.
+        # Stated here so a client does not have to infer it from four equal
+        # numbers. Additive -- older clients ignore the key.
+        "wind_gust_scope": "near_surface_10m",
         "models": models.split(","),
         "generated_utc": datetime.now(tz=timezone.utc).isoformat(),
         # The resort's OWN timezone, straight from the Open-Meteo response we
