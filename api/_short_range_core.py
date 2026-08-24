@@ -1270,12 +1270,18 @@ def hourly_band_day(
     # when available, the 2m series otherwise (see PRESSURE_PROFILE_LEVELS).
     # Snow/phase physics reads `temp` directly and never these arrays.
     block_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
-    day_wind: list[tuple[float, float, float]] = []
-    # Which wind source actually fed each model-day, so a served value is always
-    # traceable to free air or to the 10 m fallback.
-    day_free_air_hours: dict[str, int] = defaultdict(int)
-    day_surface_fallback_hours: dict[str, int] = defaultdict(int)
-    block_wind: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
+    # Sustained wind is served from ONE source per aggregate, never a blend
+    # (2026-08-24). Free-air samples and 10 m samples are collected apart and
+    # the free-air set wins whenever it is non-empty. Before this, a model with
+    # no bracket for the band put its own 10 m value into the SAME mean as
+    # another model's free-air value -- and ECMWF, which can never bracket a
+    # mountain band (900 and 800 hPa are absent from ifs025), was a surface
+    # member of every mean. GUST is unaffected: it is the native field on every
+    # sample and is still the max over ALL of them.
+    day_wind_free_air: list[tuple[float, float, float]] = []
+    day_wind_surface: list[tuple[float, float, float]] = []
+    block_wind_free_air: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
+    block_wind_surface: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
 
     for model in models:
@@ -1345,7 +1351,8 @@ def hourly_band_day(
             block_temps[block_index][model].append(disp_temp)
             # SPEED and DIRECTION come from the free atmosphere at band
             # elevation where that is valid; the 10 m surface value is the
-            # per-hour fallback, not a per-resort one. GUST is always the native
+            # fallback for the WHOLE aggregate, taken only when no model in it
+            # produced free air. GUST is always the native
             # field — sustained and gust fail differently by model and must not
             # share a correction (measured: ECMWF sustained 4x low with gust
             # ~1.2x, GFS sustained 1.9x low with gust 4.2x low and nearly
@@ -1353,16 +1360,18 @@ def hourly_band_day(
             fa = (free_air_wind or {}).get(model, {}).get(stamp)
             if fa is not None:
                 wspd, wdir = fa[0], fa[1]
-                day_free_air_hours[model] += 1
             else:
                 wspd = wspd_series[index] if index < len(wspd_series) else None
                 wdir = wdir_series[index] if index < len(wdir_series) else None
-                day_surface_fallback_hours[model] += 1
             if wspd is not None and wdir is not None:
                 wgst = wgst_series[index] if index < len(wgst_series) else None
                 sample = (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
-                day_wind.append(sample)
-                block_wind[block_index].append(sample)
+                if fa is not None:
+                    day_wind_free_air.append(sample)
+                    block_wind_free_air[block_index].append(sample)
+                else:
+                    day_wind_surface.append(sample)
+                    block_wind_surface[block_index].append(sample)
             wx = wx_series[index] if index < len(wx_series) else None
             if wx is not None:
                 block_wx[block_index].append(int(wx))
@@ -1412,7 +1421,12 @@ def hourly_band_day(
         precip_p50 = round(_median([block_precip[block_index][m] for m in present]), 1)
         temp_means = [sum(block_temps[block_index][m]) / len(block_temps[block_index][m]) for m in present]
         temp_p50 = _median(temp_means)
-        wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(block_wind[block_index])
+        # Sustained speed/direction from the homogeneous set; gust from EVERY
+        # sample, so this rule cannot move a gust value.
+        wind_kmh, wind_dir_deg, _ = _wind_aggregate(
+            block_wind_free_air[block_index] or block_wind_surface[block_index])
+        _, _, wind_gust_kmh = _wind_aggregate(
+            block_wind_free_air[block_index] + block_wind_surface[block_index])
         feels_p50 = wind_chill_c(temp_p50, wind_kmh)
         # precip_type follows the EMITTED hybrid numbers (snow cm ÷ 0.7 → SWE mm
         # share of the block precip) so a block can never show fresh cm labeled
@@ -1448,7 +1462,9 @@ def hourly_band_day(
         )
 
     temp_means = [sum(day_temps[m]) / len(day_temps[m]) for m in day_present]
-    day_wind_kmh, day_wind_dir_deg, day_wind_gust_kmh = _wind_aggregate(day_wind)
+    day_wind_used = day_wind_free_air or day_wind_surface
+    day_wind_kmh, day_wind_dir_deg, _ = _wind_aggregate(day_wind_used)
+    _, _, day_wind_gust_kmh = _wind_aggregate(day_wind_free_air + day_wind_surface)
     # Per-member values carried out alongside the aggregate, keyed by MODEL
     # NAME. `day_present` is the hourly path's member set; the caller persists
     # these before the p10/p50/p90 below discard which model said what. These
@@ -1527,8 +1543,10 @@ def hourly_band_day(
         "wind_kmh": day_wind_kmh,
         "wind_dir_deg": day_wind_dir_deg,
         "wind_gust_kmh": day_wind_gust_kmh,
-        "wind_free_air_hours": sum(day_free_air_hours.values()),
-        "wind_surface_fallback_hours": sum(day_surface_fallback_hours.values()),
+        # Provenance of the SERVED value, not of what was merely available:
+        # these must agree with day_wind_used or wind_source would lie.
+        "wind_free_air_hours": len(day_wind_free_air),
+        "wind_surface_fallback_hours": 0 if day_wind_free_air else len(day_wind_surface),
     }
     return blocks, day_agg
 
@@ -1848,7 +1866,16 @@ def band_daily_rows(
             # The daily max/dominant fields remain the fallback for a band the
             # profile cannot bracket, and gust still comes from the native daily
             # max in every case — sustained and gust are not corrected together.
-            wind_samples: list[tuple[float, float, float]] = []
+            # Same one-source rule as the hourly window: a model that produced
+            # no free-air hour for this date does NOT get to put its daily 10 m
+            # MAX into the same mean as another model's free-air hourly MEAN.
+            # Measured over 51 station-days at Coronet/Treble Cone, GEM's
+            # free-air day mean was 18.1 km/h against its own 10 m daily max of
+            # 5.7 -- substituting one for the other moved the served day by
+            # 12 km/h. Gust is untouched: still the native daily max over every
+            # model.
+            wind_free_air: list[tuple[float, float, float]] = []
+            wind_surface: list[tuple[float, float, float]] = []
             fa_hours = 0
             for model in models:
                 gust_daily = (daily.get(f"wind_gusts_10m_max_{model}")
@@ -1861,7 +1888,7 @@ def band_daily_rows(
                     mean_speed = sum(sp for sp, _ in hours) / len(hours)
                     u = sum(sp * math.sin(math.radians(dr)) for sp, dr in hours)
                     v = sum(sp * math.cos(math.radians(dr)) for sp, dr in hours)
-                    wind_samples.append((
+                    wind_free_air.append((
                         mean_speed, math.degrees(math.atan2(u, v)) % 360.0,
                         float(gust_daily) if gust_daily is not None else mean_speed,
                     ))
@@ -1870,13 +1897,14 @@ def band_daily_rows(
                 wdir = (daily.get(f"wind_direction_10m_dominant_{model}")
                         or [None] * len(times))[index]
                 if wspd is not None and wdir is not None:
-                    wind_samples.append((
+                    wind_surface.append((
                         float(wspd), float(wdir),
                         float(gust_daily) if gust_daily is not None else float(wspd),
                     ))
-            wind_kmh, wind_dir_deg, wind_gust_kmh = _wind_aggregate(wind_samples)
-            wind_free_air_hours = fa_hours
-            wind_surface_fallback_hours = 0 if fa_hours else len(wind_samples)
+            wind_kmh, wind_dir_deg, _ = _wind_aggregate(wind_free_air or wind_surface)
+            _, _, wind_gust_kmh = _wind_aggregate(wind_free_air + wind_surface)
+            wind_free_air_hours = fa_hours if wind_free_air else 0
+            wind_surface_fallback_hours = 0 if wind_free_air else len(wind_surface)
 
         # Day-level sky code (2026-08-06): within the hourly window the day's
         # code is the MODE OF ITS OWN BLOCK CODES, not Open-Meteo's daily
@@ -1940,9 +1968,17 @@ def band_daily_rows(
                 # apps decode by key so an unknown one is ignored. free_air =
                 # pressure levels interpolated to band elevation; surface_10m =
                 # the model's own smoothed-terrain wind, used only where the
-                # profile could not bracket the band; mixed = some hours each,
-                # normal near a level boundary.
-                "wind_source": ("free_air" if wind_surface_fallback_hours == 0
+                # profile could not bracket the band. mixed is retained in the
+                # contract for older clients but is now UNREACHABLE: since
+                # 2026-08-24 an aggregate is all free-air or all surface.
+                # None when the day produced NO sustained-wind sample at all
+                # (wind_kmh is None too): labelling that row free_air would
+                # claim a source for a value that does not exist. The field is
+                # additive and absent from the non-optional contract lists, so
+                # null decodes cleanly on both apps.
+                "wind_source": (None if not wind_free_air_hours
+                                and not wind_surface_fallback_hours
+                                else "free_air" if wind_surface_fallback_hours == 0
                                 else "surface_10m" if wind_free_air_hours == 0
                                 else "mixed"),
                 "wind_dir_deg": wind_dir_deg,
