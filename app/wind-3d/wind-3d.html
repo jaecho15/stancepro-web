@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Wind by altitude</title>
+<style>
+  :root{
+    --ink:#E8EEF7; --ink-2:#9AA9BF; --ink-3:#6B7A91;
+    --panel:rgba(11,17,28,.90); --rule:rgba(154,169,191,.20); --rule-2:rgba(154,169,191,.34);
+    --c850:#38BDF8; --c700:#C084FC; --csum:#FB923C;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#060B14;color:var(--ink);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:14px;-webkit-font-smoothing:antialiased}
+  .mono{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+  #scene{position:absolute;inset:0}
+  #scene canvas{display:block}
+  #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .lab{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;
+    font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:3px 8px;border-radius:6px;
+    background:rgba(6,11,20,.80);border:1px solid var(--rule)}
+  .lab.c850{color:var(--c850);border-color:rgba(56,189,248,.45)}
+  .lab.c700{color:var(--c700);border-color:rgba(192,132,252,.45)}
+  .lab.csum{color:var(--csum);border-color:rgba(251,146,60,.5)}
+
+  .bar{position:absolute;top:0;left:0;right:0;z-index:10;display:flex;gap:15px;align-items:center;flex-wrap:wrap;
+    padding:10px 14px;background:linear-gradient(180deg,rgba(6,11,20,.95),rgba(6,11,20,.6) 70%,transparent)}
+  .brand{font-size:12.5px;font-weight:660;letter-spacing:-.01em}
+  .brand small{display:block;font-size:10px;color:var(--ink-3);font-weight:400;letter-spacing:.06em;text-transform:uppercase}
+  .grp{display:flex;align-items:center;gap:6px}
+  .lbl{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+  .seg{display:flex;border:1px solid var(--rule-2);border-radius:8px;overflow:hidden}
+  .seg button{appearance:none;border:0;border-right:1px solid var(--rule);background:transparent;color:var(--ink-2);
+    font:inherit;font-size:12px;padding:5px 11px;cursor:pointer}
+  .seg button:last-child{border-right:0}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:#0B111C;font-weight:640}
+  .tgl{appearance:none;border:1px solid var(--rule-2);background:transparent;color:var(--ink-2);font:inherit;
+    font-size:12px;padding:5px 11px;border-radius:8px;cursor:pointer}
+  .tgl[aria-pressed="true"]{background:var(--ink);color:#0B111C;border-color:var(--ink);font-weight:640}
+  .tgl.s850[aria-pressed="true"]{background:var(--c850);border-color:var(--c850);color:#04121C}
+  .tgl.s700[aria-pressed="true"]{background:var(--c700);border-color:var(--c700);color:#1A0A26}
+  button:focus-visible{outline:2px solid var(--c850);outline-offset:2px}
+
+  .read{position:absolute;right:14px;top:60px;width:296px;z-index:10;background:var(--panel);
+    border:1px solid var(--rule);border-radius:12px;padding:14px;max-height:calc(100% - 150px);overflow-y:auto}
+  .read{padding:0}
+  .read-head{display:flex;align-items:center;gap:8px;width:100%;padding:11px 13px;
+    background:transparent;border:0;color:inherit;font:inherit;cursor:pointer;text-align:left}
+  .read-title{font-size:13.5px;font-weight:660;color:var(--ink)}
+  .read-peek{margin-left:auto;font-size:11.5px;color:var(--ink-2);display:none}
+  .chev{font-size:11px;color:var(--ink-3);transition:transform .18s}
+  .read-body{padding:0 13px 13px}
+  .read.collapsed .read-body{display:none}
+  .read.collapsed .read-peek{display:inline}
+  .read.collapsed .chev{transform:rotate(-90deg)}
+  .read-head:focus-visible{outline:2px solid var(--c850);outline-offset:-2px}
+  .read h2{margin:0 0 3px;font-size:13.5px;font-weight:660}
+  .read .sub{font-size:10.5px;color:var(--ink-3);margin-bottom:11px;line-height:1.5}
+  table.pf{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.pf td{padding:4px 0}
+  table.pf td:nth-child(2),table.pf td:nth-child(3){text-align:right}
+  table.pf tr.sum td{color:var(--csum);font-weight:640}
+  table.pf tr.sfc td{color:var(--ink-3)}
+  .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .note{font-size:11px;color:var(--ink-2);line-height:1.6;margin:11px 0 0;border-top:1px solid var(--rule);padding-top:10px}
+  .note b{color:var(--ink)}
+  .warn{margin-top:9px;padding:9px 10px;border-radius:9px;background:rgba(251,146,60,.13);
+    border:1px solid rgba(251,146,60,.34);font-size:11px;line-height:1.6;color:#FFD9B8}
+  .warn b{color:#FFC28A}
+  .cells{margin-top:10px;border-top:1px solid var(--rule);padding-top:10px}
+  .cells h3{margin:0 0 7px;font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:400}
+  .cg{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+  .cg div{padding:5px 2px;text-align:center;border-radius:5px;background:rgba(154,169,191,.08);
+    font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  .cg div.mid{outline:1.5px solid var(--csum);color:#FFC28A}
+
+  .time{position:absolute;left:14px;right:14px;bottom:12px;z-index:10;display:flex;align-items:center;gap:12px;
+    padding:9px 13px;background:var(--panel);border:1px solid var(--rule);border-radius:12px}
+  .time input[type=range]{flex:1 1 auto;accent-color:var(--c850);min-width:120px}
+  .time .stamp{font-size:12px;min-width:180px}
+  .hint{position:absolute;left:14px;bottom:66px;z-index:10;font-size:11px;color:var(--ink-3);
+    background:var(--panel);border:1px solid var(--rule);border-radius:9px;padding:8px 10px;line-height:1.7}
+  .hint i{display:inline-block;width:14px;height:2px;border-radius:2px;margin-right:5px;vertical-align:3px}
+  .status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;background:var(--panel);
+    border:1px solid var(--rule);border-radius:12px;padding:16px 22px;font-size:13px;text-align:center;line-height:1.6}
+  .status.err{border-color:rgba(248,113,113,.5);color:#FCA5A5}
+  .status[hidden]{display:none}
+  .spin{display:inline-block;width:13px;height:13px;margin-right:8px;vertical-align:-2px;
+    border:2px solid var(--rule-2);border-top-color:var(--c850);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media (max-width:900px){ .read{left:8px;right:8px;top:auto;bottom:70px;width:auto;max-height:40%} .hint{display:none} }
+  @media (prefers-reduced-motion: reduce){ .spin{animation:none} }
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+<div id="labels"></div>
+
+<div class="bar">
+  <div class="grp">
+    <span class="lbl">ECMWF 0.25° · 2× vert</span>
+  </div>
+  <div class="grp">
+    <span class="lbl">View</span>
+    <div class="seg" role="group" aria-label="View">
+      <button type="button" id="vCells" aria-pressed="true">9 cells</button>
+      <button type="button" id="vResort" aria-pressed="false">Resort</button>
+    </div>
+  </div>
+  <div class="grp">
+    <span class="lbl">Sheets</span>
+    <button class="tgl s850" id="t850" aria-pressed="true">850 hPa</button>
+    <button class="tgl s700" id="t700" aria-pressed="true">700 hPa</button>
+  </div>
+  <div class="grp">
+    <button class="tgl" id="tMap" aria-pressed="true">Runs</button>
+    <button class="tgl" id="tPlay" aria-pressed="true">Pause</button>
+  </div>
+</div>
+
+<div class="read" id="read" hidden>
+  <button type="button" class="read-head" id="readToggle" aria-expanded="true">
+    <span class="read-title">Where this mountain sits</span>
+    <span class="read-peek mono" id="readPeek"></span>
+    <span class="chev" aria-hidden="true">▾</span>
+  </button>
+  <div class="read-body" id="readBody">
+  <div class="sub" id="sub">—</div>
+  <table class="pf"><tbody id="pf"></tbody></table>
+  <p class="note" id="note"></p>
+
+  <div class="cells">
+    <h3>9 cells · selected level</h3>
+    <div class="cg" id="cg"></div>
+    <p class="note" id="cellNote" style="border-top:0;padding-top:8px;margin-top:8px"></p>
+  </div>
+
+  <div class="warn">
+    The sheets are <b>flat</b>, and they <b>step at cell edges</b>. That is the point:
+    a 0.25° grid cannot resolve this mountain, so bending the flow over the ridge
+    would draw a model we do not have. 850/700 hPa are <b>free-atmosphere</b> winds —
+    no ridge speed-up, no lee sheltering.
+  </div>
+  </div>
+</div>
+
+<div class="hint">
+  Drag to orbit · scroll to zoom<br>
+  <i style="background:#2870C9"></i>Easy <i style="background:#D72D27"></i>Intermediate
+  <i style="background:#C3CCD8"></i>Advanced <i style="background:#FFFFFF"></i>Expert<br>
+  <i style="background:#FDE68A"></i>Lifts · <i style="background:#FB923C"></i>Boundary (OSM, ODbL)<br>
+  Terrain: terrain_v2 LiDAR + Mapzen Terrarium
+</div>
+
+<div class="time">
+  <span class="stamp mono" id="stamp">—</span>
+  <input type="range" id="tSlider" min="0" max="47" value="0" step="1" aria-label="Forecast hour">
+  <span class="lbl" id="tRange">—</span>
+</div>
+
+<div class="status" id="status"><span class="spin"></span>Loading terrain, runs and ECMWF wind…</div>
+
+<script>__THREE_JS__</script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   REAL CONSTANTS
+   ============================================================ */
+/* Injected by Resort3DWindSheetView (Swift). Keep the shape in sync with
+   ShortRangeWindSheetPayload.resortJSON(). */
+const RESORT = __RESORT__;
+const RING = __RESORT_RING__;
+const GEO_URL = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/" +
+                "ride-tracker-static/terrain_offpiste_v1/" + RESORT.osm + "/geometry.json";
+
+const STEP = 0.25;                     // ECMWF IFS native grid
+/* A resort can sit exactly ON a cell edge (Cardrona does: lat -44.875), so the
+   "containing" cell is a tie. Round half up, the same way the 2D lab does, and
+   then take the 3x3 block around it — which contains BOTH straddled cells. */
+const CENTER_LAT = Math.round(RESORT.lat / STEP) * STEP;
+const CENTER_LON = Math.round(RESORT.lon / STEP) * STEP;
+const CELL_LATS = [CENTER_LAT - STEP, CENTER_LAT, CENTER_LAT + STEP];   // south -> north
+const CELL_LONS = [CENTER_LON - STEP, CENTER_LON, CENTER_LON + STEP];   // west  -> east
+
+const BBOX = {
+  w: CELL_LONS[0] - STEP/2, e: CELL_LONS[2] + STEP/2,
+  s: CELL_LATS[0] - STEP/2, n: CELL_LATS[2] + STEP/2
+};
+const rad = d => d * Math.PI / 180;
+const M_PER_DEG_LAT = 110574;
+const M_PER_DEG_LON = 111320 * Math.cos(rad(CENTER_LAT));
+const SPAN_X = (BBOX.e - BBOX.w) * M_PER_DEG_LON;      // ~59 km
+const SPAN_Z = (BBOX.n - BBOX.s) * M_PER_DEG_LAT;      // ~83 km
+const MID_LON = (BBOX.w + BBOX.e) / 2, MID_LAT = (BBOX.s + BBOX.n) / 2;
+
+/* scene metres, origin at bbox centre, +X east, +Z south */
+function toScene(lon, lat){
+  return { x: (lon - MID_LON) * M_PER_DEG_LON, z: -(lat - MID_LAT) * M_PER_DEG_LAT };
+}
+
+const LEVELS = [
+  { key:"sfc", ko:"Surface 10 m", spd:"wind_speed_10m",    dir:"wind_direction_10m",    gh:null,                         col:"#64748B" },
+  { key:"850", ko:"850 hPa",   spd:"wind_speed_850hPa", dir:"wind_direction_850hPa", gh:"geopotential_height_850hPa", col:"#38BDF8" },
+  { key:"700", ko:"700 hPa",   spd:"wind_speed_700hPa", dir:"wind_direction_700hPa", gh:"geopotential_height_700hPa", col:"#C084FC" }
+];
+
+/* 4x, not 1x, by default. The 3x3 block is 59 x 83 km wide but only ~1.5 km
+   separates the 850 and 700 sheets — at true scale that is 1.8% of the frame
+   and the vertical story this page exists to tell is invisible. The exaggeration
+   is labelled on screen, and terrain + sheets always scale together. */
+/* One fixed vertical exaggeration, no control. 2x, not 1.5x: the block is
+   59 x 83 km wide and the 850 -> 700 gap is only ~1.5 km, so 1.5x is visually
+   indistinguishable from true scale and buys nothing. 2x is a small, honest,
+   disclosed distortion — and because there is no longer anything to toggle,
+   terrain and sheets cannot drift out of sync the way they did with buttons. */
+const EXAG = 2;
+const S = { t:0, playing:true, exag:EXAG, show:{"850":true,"700":true}, showMap:true,
+            view:"cells", data:null, dem:null };
+
+/* ============================================================
+   TILES / DEM
+   ============================================================ */
+const DEM_Z = 11;
+function lon2tile(lon, z){ return (lon + 180) / 360 * Math.pow(2, z); }
+function lat2tile(lat, z){
+  const r = rad(lat);
+  return (1 - Math.log(Math.tan(r) + 1/Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z);
+}
+function loadImage(url){
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error("DEM tile " + url.split("/").slice(-3).join("/")));
+    img.src = url;
+  });
+}
+/* ---- terrain_v2: the app's own LiDAR DEM ----
+   The wide block runs on AWS Terrarium at z11 (54 m/px) because V2 only
+   publishes z14 and z15 — a z11 request can never match, which is why this
+   page was silently on the app's FALLBACK source the whole time.
+   V2 tiles are byte-compatible with AWS (same terrarium encoding, 256 px), so
+   the only change is the URL. The app has no 404 fallback for V2; this page
+   adds one, because our inset asks for tiles outside the resort's own slice. */
+const V2_DEM = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/" +
+               "ride-tracker-static/terrain_v2/dem/";
+const V2_MANIFEST = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/" +
+                    "ride-tracker-static/terrain_offpiste_v1/" + RESORT.osm + "/v2_tiles.json";
+const META_URL = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/" +
+                 "ride-tracker-static/terrain_offpiste_v1/" + RESORT.osm + "/meta.json";
+const INSET_Z = 15;
+let v2Have = new Set();
+const v2Key = (x, y) => x + "/" + y;
+
+function awsTile(z, x, y){
+  return "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/" + z + "/" + x + "/" + y + ".png";
+}
+function demTile(z, x, y){
+  return (z === 14 || z === 15) && v2Have.has(v2Key(x, y))
+    ? V2_DEM + z + "/" + x + "/" + y + ".png"
+    : awsTile(z, x, y);
+}
+/* Stitch a tile range into one height grid. Falls back to AWS per tile when a
+   V2 tile 404s, and leaves the tile blank if both fail rather than aborting. */
+async function loadDEMRange(z, x0, x1, y0, y1){
+  const TS = 256, nx = x1 - x0 + 1, ny = y1 - y0 + 1;
+  const cv = document.createElement("canvas");
+  cv.width = nx * TS; cv.height = ny * TS;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  const jobs = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++){
+    const x = x0 + i, y = y0 + j;
+    jobs.push(
+      loadImage(demTile(z, x, y))
+        .catch(() => loadImage(awsTile(z, x, y)))
+        .then(img => ctx.drawImage(img, i * TS, j * TS))
+        .catch(() => {})
+    );
+  }
+  await Promise.all(jobs);
+  const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
+  const H = new Float32Array(cv.width * cv.height);
+  for (let k = 0, p = 0; k < H.length; k++, p += 4)
+    H[k] = px[p] * 256 + px[p+1] + px[p+2] / 256 - 32768;
+  return { H, w: cv.width, h: cv.height, x0, y0, TS, z, tiles: nx * ny };
+}
+function demHeightAt(dem, lon, lat){
+  const fx = (lon2tile(lon, dem.z) - dem.x0) * dem.TS;
+  const fy = (lat2tile(lat, dem.z) - dem.y0) * dem.TS;
+  const x = Math.max(0, Math.min(dem.w - 1.001, fx)), y = Math.max(0, Math.min(dem.h - 1.001, fy));
+  const i = Math.floor(x), j = Math.floor(y), tx = x - i, ty = y - j;
+  const at = (a,b) => dem.H[b * dem.w + a];
+  return (at(i,j)*(1-tx) + at(i+1,j)*tx)*(1-ty) + (at(i,j+1)*(1-tx) + at(i+1,j+1)*tx)*ty;
+}
+
+async function loadDEM(){
+  const TS = 256;
+  const x0 = Math.floor(lon2tile(BBOX.w, DEM_Z)), x1 = Math.floor(lon2tile(BBOX.e, DEM_Z));
+  const y0 = Math.floor(lat2tile(BBOX.n, DEM_Z)), y1 = Math.floor(lat2tile(BBOX.s, DEM_Z));
+  const nx = x1 - x0 + 1, ny = y1 - y0 + 1;
+  if (nx * ny > 80) throw new Error("DEM tile count " + (nx*ny) + " too high");
+  const cv = document.createElement("canvas");
+  cv.width = nx * TS; cv.height = ny * TS;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  const jobs = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++){
+    const url = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/" +
+                DEM_Z + "/" + (x0 + i) + "/" + (y0 + j) + ".png";
+    jobs.push(loadImage(url).then(img => ctx.drawImage(img, i * TS, j * TS)).catch(() => {}));
+  }
+  await Promise.all(jobs);
+  const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
+  const H = new Float32Array(cv.width * cv.height);
+  for (let k = 0, p = 0; k < H.length; k++, p += 4)
+    H[k] = px[p] * 256 + px[p+1] + px[p+2] / 256 - 32768;   // terrarium
+  return { H, w: cv.width, h: cv.height, x0, y0, TS, tiles: nx * ny };
+}
+function demHeight(dem, lon, lat){
+  const fx = (lon2tile(lon, DEM_Z) - dem.x0) * dem.TS;
+  const fy = (lat2tile(lat, DEM_Z) - dem.y0) * dem.TS;
+  const x = Math.max(0, Math.min(dem.w - 1.001, fx)), y = Math.max(0, Math.min(dem.h - 1.001, fy));
+  const i = Math.floor(x), j = Math.floor(y), tx = x - i, ty = y - j;
+  const at = (a,b) => dem.H[b * dem.w + a];
+  return (at(i,j)*(1-tx) + at(i+1,j)*tx)*(1-ty) + (at(i,j+1)*(1-tx) + at(i+1,j+1)*tx)*ty;
+}
+
+/* ============================================================
+   WIND — all 9 cell centres, every level
+   ============================================================ */
+async function loadWind(){
+  const lat = [], lon = [];
+  for (const la of CELL_LATS) for (const lo of CELL_LONS){ lat.push(la.toFixed(2)); lon.push(lo.toFixed(2)); }
+  const vars = [];
+  for (const L of LEVELS){ vars.push(L.spd, L.dir); if (L.gh) vars.push(L.gh); }
+  const q = new URLSearchParams({
+    latitude: lat.join(","), longitude: lon.join(","),
+    hourly: vars.join(","), models: "ecmwf_ifs025", forecast_days: "2", timezone: "UTC"
+  });
+  const res = await fetch("https://api.open-meteo.com/v1/forecast?" + q.toString());
+  if (!res.ok) throw new Error("Open-Meteo " + res.status);
+  const arr = await res.json();
+  if (!Array.isArray(arr) || arr.length !== 9) throw new Error("expected 9 grid points, got " + (arr.length||"?"));
+
+  const nT = arr[0].hourly.time.length;
+  const cells = [];                     // cells[i][j], i = south->north
+  for (let i = 0; i < 3; i++){
+    cells.push([]);
+    for (let j = 0; j < 3; j++){
+      const a = arr[i * 3 + j];
+      const c = { lat: a.latitude, lon: a.longitude, elev: a.elevation, lev: {} };
+      for (const L of LEVELS){
+        const spd = a.hourly[L.spd], dir = a.hourly[L.dir], gh = L.gh ? a.hourly[L.gh] : null;
+        c.lev[L.key] = {
+          kmh: spd.map(v => v == null ? 0 : v),
+          deg: dir.map(v => v == null ? 0 : v),
+          alt: gh ? gh.map(v => v == null ? 0 : v) : spd.map(() => 10)
+        };
+      }
+      // summit: interpolate the 850/700 VECTORS to the summit, never the bearings
+      const A = c.lev["850"], B = c.lev["700"], sum = { kmh:[], deg:[], alt:[] };
+      for (let t = 0; t < nT; t++){
+        const f = Math.max(0, Math.min(1, (RESORT.summit - A.alt[t]) / ((B.alt[t] - A.alt[t]) || 1)));
+        const uv = lv => { const ms = lv.kmh[t]/3.6, to = rad(lv.deg[t] + 180);
+                           return [ms*Math.sin(to), ms*Math.cos(to)]; };
+        const [ua,va] = uv(A), [ub,vb] = uv(B);
+        const u = ua + (ub-ua)*f, v = va + (vb-va)*f;
+        sum.kmh.push(Math.hypot(u,v)*3.6);
+        sum.deg.push(((Math.atan2(u,v)*180/Math.PI - 180) % 360 + 360) % 360);
+        sum.alt.push(RESORT.summit);
+      }
+      c.lev.summit = sum;
+      cells[i].push(c);
+    }
+  }
+  return { hours: arr[0].hourly.time, nT, cells };
+}
+/* the cell the resort's centroid falls in, as [i,j] */
+function resortCell(){
+  const j = Math.max(0, Math.min(2, Math.floor((RESORT.lon - BBOX.w) / STEP)));
+  const i = Math.max(0, Math.min(2, Math.floor((RESORT.lat - BBOX.s) / STEP)));
+  return [i, j];
+}
+
+/* ============================================================
+   THREE
+   ============================================================ */
+const host = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#060B14");
+/* Without fog the far edge of a 59 x 83 km sheet stays fully lit right up to
+   the horizon, where perspective compresses it into a hard bright line across
+   the sky. Fog gives that edge somewhere to dissolve into — and it is the same
+   colour as the background, so the plane simply runs out instead of ending. */
+scene.fog = new THREE.Fog("#060B14", SPAN_Z * 0.55, SPAN_Z * 1.45);
+const camera = new THREE.PerspectiveCamera(42, 1, 20, 600000);
+const cam = { az: -0.5, el: 0.42, dist: SPAN_Z * 1.35, target: new THREE.Vector3(0, 1200, 0) };
+function applyCamera(){
+  const ce = Math.cos(cam.el), se = Math.sin(cam.el);
+  camera.position.set(cam.target.x + cam.dist*ce*Math.sin(cam.az),
+                      cam.target.y + cam.dist*se,
+                      cam.target.z + cam.dist*ce*Math.cos(cam.az));
+  camera.lookAt(cam.target);
+}
+scene.add(new THREE.HemisphereLight(0xBFD4EA, 0x16202E, 1.05));
+const sun = new THREE.DirectionalLight(0xFFF3E0, 1.2);
+sun.position.set(-SPAN_X, SPAN_Z, SPAN_Z * 0.5);
+scene.add(sun);
+
+let terrain = null, insetMesh = null, sheets = {}, mapGroup = null, boundaryLine = null, summitGroup = null, summitRing = null;
+
+/* One sampler for everything draped on the ground. Prefers the 3.4 m inset
+   inside its box and falls back to the 54 m block outside, so runs and the
+   boundary sit on the SAME surface the viewer is looking at. */
+let insetDem = null, insetBox = null, coarseDem = null;
+function sampleH(lon, lat){
+  if (insetDem && insetBox){
+    const p = toScene(lon, lat);
+    if (p.x >= insetBox.x0 && p.x <= insetBox.x1 && p.z >= insetBox.z0 && p.z <= insetBox.z1)
+      return demHeightAt(insetDem, lon, lat);
+  }
+  return demHeightAt(coarseDem, lon, lat);
+}
+
+const terrainColor = (h, c) => {
+  const f = Math.max(0, Math.min(1, (h - 300) / 1700));
+  c.setRGB(0.13 + 0.62*f, 0.17 + 0.63*f, 0.23 + 0.62*f);
+  return c;
+};
+
+/* The coarse block samples every ~296 m, so it would throw away the inset's
+   3.4 m detail anyway. Cut a hole in it instead of letting two meshes fight
+   for the same depth values. */
+function punchHole(geo, box){
+  const idx = geo.getIndex();
+  if (!idx || !box) return;
+  const pos = geo.attributes.position;
+  const keep = [];
+  for (let t = 0; t < idx.count; t += 3){
+    let inside = 0;
+    for (let v = 0; v < 3; v++){
+      const k = idx.getX(t + v);
+      const x = pos.getX(k), z = pos.getZ(k);
+      if (x >= box.x0 && x <= box.x1 && z >= box.z0 && z <= box.z1) inside++;
+    }
+    if (inside < 3) keep.push(idx.getX(t), idx.getX(t+1), idx.getX(t+2));
+  }
+  geo.setIndex(keep);
+}
+
+/* High-resolution inset over the resort, from terrain_v2 z15 (3.4 m/px). */
+function buildInset(dem, box){
+  const SEG = 320;
+  const spanX = box.x1 - box.x0, spanZ = box.z1 - box.z0;
+  const geo = new THREE.PlaneGeometry(spanX, spanZ, SEG, SEG);
+  geo.rotateX(-Math.PI/2);
+  geo.translate((box.x0 + box.x1)/2, 0, (box.z0 + box.z1)/2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let k = 0; k < pos.count; k++){
+    const lon = MID_LON + pos.getX(k) / M_PER_DEG_LON;
+    const lat = MID_LAT - pos.getZ(k) / M_PER_DEG_LAT;
+    const h = demHeightAt(dem, lon, lat);
+    pos.setY(k, h);
+    terrainColor(h, c);
+    colors[k*3] = c.r; colors[k*3+1] = c.g; colors[k*3+2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  scene.add(mesh);
+  return mesh;
+}
+
+function buildTerrain(dem, hole){
+  const SEGX = 200, SEGZ = Math.round(200 * SPAN_Z / SPAN_X);
+  const geo = new THREE.PlaneGeometry(SPAN_X, SPAN_Z, SEGX, SEGZ);
+  geo.rotateX(-Math.PI/2);
+  punchHole(geo, hole);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let k = 0; k < pos.count; k++){
+    const x = pos.getX(k), z = pos.getZ(k);
+    const lon = MID_LON + x / M_PER_DEG_LON, lat = MID_LAT - z / M_PER_DEG_LAT;
+    const h = demHeight(dem, lon, lat);
+    pos.setY(k, h);
+    const f = Math.max(0, Math.min(1, (h - 300) / 1700));
+    c.setRGB(0.13 + 0.62*f, 0.17 + 0.63*f, 0.23 + 0.62*f);
+    colors[k*3] = c.r; colors[k*3+1] = c.g; colors[k*3+2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  scene.add(mesh);
+  return mesh;
+}
+
+/* ---- wind sheets as REAL 3D LINES ----
+   The first cut painted particles into a CanvasTexture and stretched it over
+   the sheet. Two things were wrong with that. Speed was computed as
+   metres-per-second divided by the scene's metres-per-pixel, so widening the
+   scene from 12 km to 59 km silently cut particle speed by 6.5x — 2 px/s, with
+   a 1.4 px tail. And a 384 px texture over 59 km is 154 m per texel, so every
+   streak was a blurry lozenge no matter how it moved.
+   Vector line segments have neither problem: crisp at any zoom, and the speed
+   is set from the CAMERA distance so streaks keep a constant on-screen length
+   the way Windy's do. */
+/* Density budget. A 2D canvas gets its trail free from the fade buffer — one
+   short stroke per particle. Here the trail IS geometry, so a particle costs
+   (TRAIL-1)*2 vertices. 560 particles was ~5x sparser on screen than the 2D
+   mockup; trading trail length for count buys most of that back at the same
+   vertex cost: 1900 x 17 segs beats 560 x 25 segs for perceived density. */
+const TRAIL = 22;                     // history points per particle
+const PARTS_PER_SHEET = 1300;
+/* Same WebGL wall as the piste ribbons: every GL line is 1 device pixel, so a
+   3D streak can never be as fat as the 2D mockup's 1.6 px stroke. Draw each
+   trail as STRANDS parallel copies offset perpendicular to its own flow, with
+   the offset in metres scaled to the camera so it stays ~1 px wide at any zoom.
+   Fewer particles x wider streaks covers more of the frame than the reverse. */
+const STRANDS = 3;
+/* Sample the trail at 30 Hz instead of every frame. The visual weight of a
+   field is streak LENGTH x count, and length is (points x sample interval).
+   Sampling every other frame doubles the streak for zero extra vertices —
+   22 points at 1/30 s covers 0.73 s, versus 0.30 s when it followed rAF. */
+const HIST_DT = 1 / 30;
+
+function cellAtWorld(x, z){
+  const lon = MID_LON + x / M_PER_DEG_LON;
+  const lat = MID_LAT - z / M_PER_DEG_LAT;
+  const j = Math.max(0, Math.min(2, Math.floor((lon - BBOX.w) / STEP)));
+  const i = Math.max(0, Math.min(2, Math.floor((lat - BBOX.s) / STEP)));
+  return [i, j];
+}
+/* The ground footprint the camera actually covers, clamped to the scene.
+   Particles are seeded INSIDE it rather than across the whole 59 x 83 km, so
+   the on-screen density stays constant: zoom in and the same budget lands in a
+   smaller area, which is exactly "density rises with magnification". Spreading
+   a fixed count over the full scene made the resort view look almost empty. */
+function viewBox(){
+  const half = Math.min(Math.max(cam.dist * 0.72, 900), Math.max(SPAN_X, SPAN_Z));
+  return {
+    cx: Math.max(-SPAN_X/2, Math.min(SPAN_X/2, cam.target.x)),
+    cz: Math.max(-SPAN_Z/2, Math.min(SPAN_Z/2, cam.target.z)),
+    half
+  };
+}
+function spawn(p){
+  const b = viewBox();
+  p.x = Math.max(-SPAN_X/2, Math.min(SPAN_X/2, b.cx + (Math.random() - 0.5) * 2 * b.half));
+  p.z = Math.max(-SPAN_Z/2, Math.min(SPAN_Z/2, b.cz + (Math.random() - 0.5) * 2 * b.half));
+  p.age = 0;
+  p.acc = Math.random() * HIST_DT;   // stagger sampling so trails don't pulse in lockstep
+  p.life = 2.4 + Math.random() * 3.2;
+  for (let k = 0; k < TRAIL; k++){ p.hx[k] = p.x; p.hz[k] = p.z; }
+  return p;
+}
+function makeSheet(key, colorHex){
+  const N = PARTS_PER_SHEET, segs = TRAIL - 1;
+  const verts = N * segs * 2 * STRANDS;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts*3), 3));
+  geo.setAttribute("color",    new THREE.BufferAttribute(new Float32Array(verts*3), 3));
+  // additive on a near-black ground: ramping RGB toward 0 reads as a clean
+  // fade without needing a per-vertex alpha attribute.
+  const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+  const lines = new THREE.LineSegments(geo, mat);
+  lines.frustumCulled = false;
+  scene.add(lines);
+
+  // faint pane so the sheet reads as a surface, plus its 3x3 cell edges
+  const paneGeo = new THREE.PlaneGeometry(SPAN_X, SPAN_Z).rotateX(-Math.PI/2);
+  const pane = new THREE.Mesh(paneGeo, new THREE.MeshBasicMaterial({
+    color: new THREE.Color(colorHex), transparent: true, opacity: 0.035,
+    depthWrite: false, side: THREE.DoubleSide }));
+  scene.add(pane);
+
+  const gpts = [];
+  for (let k = 1; k < 3; k++){
+    const gx = -SPAN_X/2 + k*SPAN_X/3, gz = -SPAN_Z/2 + k*SPAN_Z/3;
+    gpts.push(new THREE.Vector3(gx, 0, -SPAN_Z/2), new THREE.Vector3(gx, 0, SPAN_Z/2));
+    gpts.push(new THREE.Vector3(-SPAN_X/2, 0, gz), new THREE.Vector3(SPAN_X/2, 0, gz));
+  }
+  const grid = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(gpts),
+    new THREE.LineBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.34, depthWrite: false }));
+  scene.add(grid);
+
+  const parts = [];
+  for (let i = 0; i < N; i++)
+    parts.push(spawn({ hx: new Float32Array(TRAIL), hz: new Float32Array(TRAIL) }));
+
+  return { lines, pane, grid, geo, parts, N, segs, color: new THREE.Color(colorHex) };
+}
+
+function drawSheet(sh, key, dt){
+  const d = S.data;
+  // Constant on-screen streak length: tie the display rate to how far the
+  // camera is, not to the scene's fixed extent.
+  // Raised with TRAIL cut 26 -> 18 so the streak keeps the same on-screen
+  // length: trail length = speed x boost x (TRAIL/60), so boost x 26/18.
+  const boost = cam.dist * 0.0075;
+  const pos = sh.geo.attributes.position.array;
+  const col = sh.geo.attributes.color.array;
+  const y = sh.pane.position.y;
+  // Recomputed every frame so a zoom re-seeds the field on the NEXT frame
+  // instead of waiting out each particle's 2.4-5.6 s life.
+  const box = viewBox(), margin = box.half * 1.3;
+  // Keep some particles when edge-on — they are the only cue left — but stop
+  // them stacking into an opaque bar.
+  const edgeDim = 0.35 + 0.65 * edgeOnFactor();
+  // strand spacing in metres, sized so it stays ~1 device px at any zoom
+  const off = cam.dist * 0.0013;
+  let o = 0;
+
+  for (const p of sh.parts){
+    const [ci, cj] = cellAtWorld(p.x, p.z);
+    const lv = d.cells[ci][cj].lev[key];
+    const ms = lv.kmh[S.t] / 3.6, to = rad(lv.deg[S.t] + 180);
+    const u = Math.sin(to) * ms, v = Math.cos(to) * ms;   // east, north (m/s)
+
+    p.x += u * boost * dt;
+    p.z -= v * boost * dt;                                 // +Z is south
+    p.age += dt;
+    p.acc += dt;
+    // Two bounds, and the scene one is not optional: `margin` follows the view
+    // box, which can reach ~107 km while the scene is 59 x 83 km. Without the
+    // hard extent test a particle keeps flowing — and drawing — past the edge
+    // of the terrain and the sheet it is supposed to belong to.
+    const outOfScene = Math.abs(p.x) > SPAN_X / 2 || Math.abs(p.z) > SPAN_Z / 2;
+    if (p.age > p.life || outOfScene ||
+        Math.abs(p.x - box.cx) > margin || Math.abs(p.z - box.cz) > margin) spawn(p);
+    else if (p.acc >= HIST_DT){
+      p.acc -= HIST_DT;
+      for (let k = TRAIL - 1; k > 0; k--){ p.hx[k] = p.hx[k-1]; p.hz[k] = p.hz[k-1]; }
+      p.hx[0] = p.x; p.hz[0] = p.z;
+    } else { p.hx[0] = p.x; p.hz[0] = p.z; }   // head always tracks the particle
+
+    const fade = Math.min(1, p.age * 2.4, (p.life - p.age) * 2.0);
+    for (let k = 0; k < sh.segs; k++){
+      const ax = p.hx[k], az = p.hz[k], bx = p.hx[k+1], bz = p.hz[k+1];
+      // perpendicular to this segment, in the horizontal plane
+      let dx = bx - ax, dz = bz - az;
+      const len = Math.hypot(dx, dz) || 1;
+      const nx = -dz / len * off, nz = dx / len * off;
+      // ^0.55 rather than linear: a straight ramp spends most of the streak
+      // near black, which is why the field read as sparse dashes instead of
+      // the woven texture a 2D fade buffer produces.
+      // 0.78: additive blending at this density blew out over the terrain once
+      // the strands went in — three overlapping copies add three times.
+      const b0 = Math.pow(1 - k / sh.segs, 0.55) * Math.max(0, fade) * 0.78 * edgeDim;
+      const b1 = Math.pow(1 - (k+1) / sh.segs, 0.55) * Math.max(0, fade) * 0.78 * edgeDim;
+      for (let s = 0; s < STRANDS; s++){
+        const t = s - (STRANDS - 1) / 2;          // -1, 0, +1 for 3 strands
+        const ox = nx * t, oz = nz * t;
+        pos[o]   = ax + ox; pos[o+1] = y; pos[o+2] = az + oz;
+        pos[o+3] = bx + ox; pos[o+4] = y; pos[o+5] = bz + oz;
+        col[o]   = sh.color.r * b0; col[o+1] = sh.color.g * b0; col[o+2] = sh.color.b * b0;
+        col[o+3] = sh.color.r * b1; col[o+4] = sh.color.g * b1; col[o+5] = sh.color.b * b1;
+        o += 6;
+      }
+    }
+  }
+  sh.geo.attributes.position.needsUpdate = true;
+  sh.geo.attributes.color.needsUpdate = true;
+}
+
+/* ---- resort map: real pistes + lifts, draped on the terrain ---- */
+/* The app's own difficulty palette (resort3d.html piste layer). It is the
+   European/NZ convention, NOT the North American one: easy is BLUE and
+   intermediate is RED. A first cut here invented green/blue/white and would
+   have taught the wrong colour language.
+     novice #2BAA52 · easy #2870C9 · intermediate #D72D27
+     advanced #1F2530 · expert #05070A · fallback #8A94A0
+   Two deliberate deviations, both forced by the ground this page draws on:
+   `advanced`/`expert` are near-black, which is correct over the app's light
+   basemap and invisible over dark terrain. They are lifted to light
+   achromatics, preserving the semantic that the hardest runs carry no hue.
+   `freeride`/`extreme` have no colour in the app at all (0 hits) and fall to
+   its own grey fallback — Cardrona has 8 such runs. */
+const PISTE_COLOR = {
+  novice: 0x2BAA52, easy: 0x2870C9, intermediate: 0xD72D27,
+  advanced: 0xC3CCD8, expert: 0xFFFFFF,
+  freeride: 0x8A94A0, extreme: 0x8A94A0
+};
+const PISTE_FALLBACK = 0x8A94A0;
+/* The app draws lifts as #2A2F38 dashed — also near-black, also invisible here.
+   Warm yellow is used instead: it is absent from the piste palette above, so it
+   cannot be mistaken for a difficulty. */
+const LIFT_COLOR = 0xFDE68A;
+/* WebGL ignores LineBasicMaterial.linewidth — every THREE.Line is exactly one
+   device pixel, which is why the runs and the boundary all but vanished. Build
+   real geometry instead: a triangle ribbon whose width is specified in METRES,
+   so it survives both the 59 km overview and a close-in look.
+   `lift` is drawn ABOVE the deck it serves, and everything is drawn with
+   depthTest off so a coarse 296 m terrain mesh cannot swallow a draped line
+   that dips a few tens of metres into it. */
+function ribbon(dem, coords, widthM, color, y0, order){
+  const n = coords.length;
+  if (n < 2) return null;
+  const pts = coords.map(([lon, lat]) => {
+    const p = toScene(lon, lat);
+    return { x: p.x, y: sampleH(lon, lat) + y0, z: p.z };
+  });
+  const half = widthM / 2;
+  const pos = new Float32Array(n * 2 * 3);
+  for (let i = 0; i < n; i++){
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    let dx = b.x - a.x, dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len; dz /= len;
+    const nx = -dz, nz = dx;                  // perpendicular in the XZ plane
+    const p = pts[i], o = i * 6;
+    pos[o]   = p.x + nx*half; pos[o+1] = p.y; pos[o+2] = p.z + nz*half;
+    pos[o+3] = p.x - nx*half; pos[o+4] = p.y; pos[o+5] = p.z - nz*half;
+  }
+  const idx = [];
+  for (let i = 0; i < n - 1; i++){
+    const a = i*2, b = a+1, c = a+2, d = a+3;
+    idx.push(a, b, c, b, d, c);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color, side: THREE.DoubleSide, depthTest: false, depthWrite: false,
+    transparent: true, opacity: 0.95 }));
+  mesh.renderOrder = order || 5;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+function buildResortMap(dem, geojson){
+  const g = new THREE.Group();
+  for (const f of geojson.features){
+    if (!f.geometry || f.geometry.type !== "LineString") continue;
+    const p = f.properties || {};
+    if (p.aerialway) g.add(ribbon(dem, f.geometry.coordinates, 55, LIFT_COLOR, 130, 7));
+    else g.add(ribbon(dem, f.geometry.coordinates, 42,
+                      PISTE_COLOR[p["piste:difficulty"]] ?? PISTE_FALLBACK, 90, 6));
+  }
+  scene.add(g);
+  return g;
+}
+
+function buildBoundary(dem){
+  const m = ribbon(dem, RING, 110, 0xFB923C, 110, 8);
+  scene.add(m);
+  return m;
+}
+function buildSummit(dem){
+  const g = new THREE.Group();
+  const hb = sampleH(RESORT.lon, RESORT.lat);
+  const p = toScene(RESORT.lon, RESORT.lat);
+  const post = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(p.x, hb, p.z), new THREE.Vector3(p.x, RESORT.summit, p.z)]),
+    new THREE.LineDashedMaterial({ color: 0xFB923C, dashSize: 120, gapSize: 80 }));
+  post.computeLineDistances();
+  g.add(post);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(700, 900, 56).rotateX(-Math.PI/2),
+    new THREE.MeshBasicMaterial({ color: 0xFB923C, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
+  ring.position.set(p.x, RESORT.summit, p.z);
+  g.add(ring);
+  scene.add(g);
+  return g;
+}
+
+/* ============================================================
+   LABELS
+   ============================================================ */
+const labelHost = document.getElementById("labels");
+const labels = {};
+for (const [k, cls] of [["850","c850"],["700","c700"],["sum","csum"]]){
+  const el = document.createElement("div");
+  el.className = "lab " + cls;
+  labelHost.appendChild(el);
+  labels[k] = el;
+}
+const v3 = new THREE.Vector3();
+function placeLabel(key, x, y, z, text, visible){
+  const el = labels[key];
+  if (!visible){ el.style.display = "none"; return; }
+  v3.set(x, y, z).project(camera);
+  if (v3.z > 1){ el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.style.left = ((v3.x*0.5 + 0.5) * window.innerWidth) + "px";
+  el.style.top = ((-v3.y*0.5 + 0.5) * window.innerHeight) + "px";
+  el.textContent = text;
+}
+
+/* ============================================================
+   INTERACTION
+   ============================================================ */
+let drag = null;
+const el = renderer.domElement;
+el.addEventListener("pointerdown", e => { drag = {x:e.clientX,y:e.clientY}; el.setPointerCapture(e.pointerId); });
+el.addEventListener("pointermove", e => {
+  if (!drag) return;
+  cam.az -= (e.clientX - drag.x) * 0.005;
+  cam.el = Math.max(0.05, Math.min(1.45, cam.el + (e.clientY - drag.y) * 0.004));
+  drag = {x:e.clientX,y:e.clientY};
+  applyCamera();
+});
+el.addEventListener("pointerup", e => { drag = null;
+  if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); });
+el.addEventListener("wheel", e => {
+  e.preventDefault();
+  cam.dist = Math.max(2500, Math.min(SPAN_Z * 3, cam.dist * (1 + Math.sign(e.deltaY) * 0.12)));
+  applyCamera();
+}, { passive: false });
+
+function resize(){
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  applyCamera();
+}
+window.addEventListener("resize", resize);
+
+/* ============================================================
+   UI
+   ============================================================ */
+function press(e, on){ e.setAttribute("aria-pressed", String(on)); }
+function setView(v){
+  S.view = v;
+  press(document.getElementById("vCells"), v === "cells");
+  press(document.getElementById("vResort"), v === "resort");
+  const p = toScene(RESORT.lon, RESORT.lat);
+  if (v === "cells"){ cam.target.set(0, 1200 * S.exag, 0); cam.dist = SPAN_Z * 1.25; cam.el = 0.62; }
+  else { cam.target.set(p.x, RESORT.summit * S.exag * 0.75, p.z); cam.dist = 11000; cam.el = 0.30; }
+  applyCamera();
+}
+document.getElementById("vCells").onclick = () => setView("cells");
+document.getElementById("vResort").onclick = () => setView("resort");
+/* Flipping S.show alone only stops drawSheet from REFILLING the buffer — the
+   LineSegments object stays in the scene and keeps drawing whatever vertices
+   it last held, so the layer appeared to freeze rather than disappear.
+   Visibility lives in layoutSheets(), so the toggle has to go through it.
+   updateReadout() also re-picks which level the 9-cell grid reports. */
+function toggleSheet(btn, key){
+  S.show[key] = !S.show[key];
+  press(btn, S.show[key]);
+  updateReadout();          // -> layoutSheets() -> sets .visible on all three objects
+}
+document.getElementById("t850").onclick = function(){ toggleSheet(this, "850"); };
+document.getElementById("t700").onclick = function(){ toggleSheet(this, "700"); };
+document.getElementById("tMap").onclick = function(){
+  S.showMap = !S.showMap; press(this, S.showMap);
+  if (mapGroup) mapGroup.visible = S.showMap;
+  if (boundaryLine) boundaryLine.visible = S.showMap;
+};
+document.getElementById("tPlay").onclick = function(){
+  S.playing = !S.playing; press(this, S.playing); this.textContent = S.playing ? "Pause" : "Play";
+};
+/* Kept only so the scale is applied in exactly one place, at build time. The
+   three-button version desynced: S.exag defaulted to 4 and layoutSheets used
+   it immediately, but this function — which is what actually scales the
+   terrain, map, boundary and summit — only ran on a click. Terrain stayed at
+   1x while the sheets sat 4x too high, so BOTH sheets floated above the
+   mountain and the one relationship this page exists to show was wrong. */
+function applyExag(v){
+  S.exag = v;
+  // terrain, map, boundary and sheets scale together — exaggerating one alone
+  // would break the only relationship this page exists to show.
+  for (const o of [terrain, insetMesh, mapGroup, boundaryLine, summitGroup]) if (o) o.scale.y = v;
+  setView(S.view);
+  layoutSheets();
+}
+document.getElementById("tSlider").oninput = function(){ S.t = +this.value; updateReadout(); };
+
+/* The panel covers most of a phone screen, and this view exists to show the
+   mountain. Collapse to a one-line peek by default on narrow screens; the
+   numbers are one tap away. */
+const readEl = document.getElementById("read");
+const readToggle = document.getElementById("readToggle");
+function setReadCollapsed(on){
+  readEl.classList.toggle("collapsed", on);
+  readToggle.setAttribute("aria-expanded", String(!on));
+}
+readToggle.onclick = () => setReadCollapsed(!readEl.classList.contains("collapsed"));
+setReadCollapsed(window.innerWidth < 900);
+
+/* A horizontal plane seen from a low camera compresses to a bright line, and
+   over lower ground that line reads as a streak across the SKY. Fade the sheet
+   furniture as the view goes edge-on: at a steep look-down the pane and its
+   cell grid carry the altitude, at a shallow one the particles alone do.
+   Zero when truly edge-on, full above ~30 degrees. */
+function edgeOnFactor(){
+  const t = Math.max(0, Math.min(1, (Math.sin(cam.el) - 0.06) / (0.50 - 0.06)));
+  return t * t * (3 - 2 * t);          // smoothstep
+}
+
+function layoutSheets(){
+  const d = S.data; if (!d) return;
+  const [ri, rj] = resortCell();
+  for (const key of ["850","700"]){
+    const sh = sheets[key]; if (!sh) continue;
+    const y = d.cells[ri][rj].lev[key].alt[S.t] * S.exag;
+    sh.pane.position.y = y; sh.grid.position.y = y;
+    sh.pane.visible = S.show[key];
+    sh.grid.visible = S.show[key];
+    sh.lines.visible = S.show[key];   // particle Y comes from pane.position.y
+  }
+}
+
+/* Does this resort's footprint cross a 0.25 deg cell boundary? Cardrona does
+   (lat -44.875 is exactly an edge), and the 2D lab surfaced it — so the 3D view
+   must not quietly pick one side. Uses the real boundary ring when we have it
+   and falls back to "is the centre sitting on an edge?" when we do not. */
+const CELL_EDGE_EPS = 0.004;
+function straddleInfo(){
+  const half = STEP / 2;
+  const edgeOf = v => Math.round((v - half) / STEP) * STEP + half;
+  if (RING && RING.length){
+    let s = 90, n = -90, w = 180, e = -180;
+    for (const p of RING){
+      if (p[1] < s) s = p[1]; if (p[1] > n) n = p[1];
+      if (p[0] < w) w = p[0]; if (p[0] > e) e = p[0];
+    }
+    const eLat = edgeOf((s + n) / 2);
+    if (s < eLat && n > eLat) return { straddles: true, edgeLat: eLat };
+    const eLon = edgeOf((w + e) / 2);
+    if (w < eLon && e > eLon) return { straddles: true, edgeLat: eLon };
+    return { straddles: false, edgeLat: eLat };
+  }
+  const eLat = edgeOf(RESORT.lat);
+  return { straddles: Math.abs(RESORT.lat - eLat) < CELL_EDGE_EPS, edgeLat: eLat };
+}
+
+function updateReadout(){
+  const d = S.data; if (!d) return;
+  layoutSheets();
+  const [ri, rj] = resortCell();
+  const c = d.cells[ri][rj];
+  const rows = [
+    { key:"sfc", ko:"Surface 10 m", cls:"sfc", col:"#64748B" },
+    { key:"850", ko:"850 hPa",   cls:"",    col:"#38BDF8" },
+    { key:"summit", ko:"Summit",  cls:"sum", col:"#FB923C" },
+    { key:"700", ko:"700 hPa",   cls:"",    col:"#C084FC" }
+  ].map(r => { const L = c.lev[r.key];
+    return Object.assign({}, r, { alt: Math.round(L.alt[S.t]), kmh: Math.round(L.kmh[S.t]),
+                                  ms: Math.round(L.kmh[S.t]/3.6) }); })
+   .sort((a,b) => a.alt - b.alt);
+
+  document.getElementById("pf").innerHTML = rows.map(r => {
+    const lc = r.ms >= 17 ? "#F87171" : r.ms >= 11 ? "#F59E0B" : "#22C55E";
+    return "<tr class='" + r.cls + "'><td><i class='swatch' style='background:" + r.col + "'></i>" + r.ko + "</td>" +
+           "<td class='mono'>" + r.alt.toLocaleString() + " m</td>" +
+           "<td class='mono' style='color:" + lc + "'>" + r.kmh + " km/h</td></tr>";
+  }).join("");
+
+  const sfc = rows.find(r => r.key === "sfc"), sum = rows.find(r => r.key === "summit");
+  const lv = v => v >= 17 ? "Severe" : v >= 11 ? "Caution" : "OK";
+  document.getElementById("readPeek").textContent =
+    sfc.kmh + " → " + sum.kmh + " km/h";
+  document.getElementById("note").innerHTML =
+    "The card uses the top row: <b>surface " + sfc.kmh + " km/h</b> (" + lv(sfc.ms) + "). " +
+    "At the summit, " + RESORT.summit.toLocaleString() + " m, it is <b>" + sum.kmh + " km/h</b> (" + lv(sum.ms) + ").";
+  document.getElementById("sub").textContent =
+    "Resort cell " + c.lat.toFixed(2) + ", " + c.lon.toFixed(2) + " · model elevation " + Math.round(c.elev) + " m";
+
+  // 9-cell grid, north row first so it reads like the map
+  const key = S.show["850"] ? "850" : (S.show["700"] ? "700" : "sfc");
+  const cg = document.getElementById("cg");
+  let html = "", vals = [];
+  for (let i = 2; i >= 0; i--) for (let j = 0; j < 3; j++){
+    const v = Math.round(d.cells[i][j].lev[key].kmh[S.t]);
+    vals.push(v);
+    html += "<div class='" + (i === ri && j === rj ? "mid" : "") + "'>" + v + "</div>";
+  }
+  cg.innerHTML = html;
+  const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  const { straddles, edgeLat } = straddleInfo();
+  document.getElementById("cellNote").innerHTML =
+    (key === "sfc" ? "Surface" : key + " hPa") + ": the nine cells read <b>" + lo + "–" + hi + " km/h</b>. " +
+    (straddles
+      ? "This resort sits <b>on a cell edge</b> (lat " + edgeLat.toFixed(3) + "°), so its slopes fall in <b>two cells</b>."
+      : "");
+
+  const iso = d.hours[S.t];
+  const local = new Intl.DateTimeFormat("en-NZ", { timeZone: RESORT.tz || "UTC", month:"numeric", day:"numeric",
+    hour:"2-digit", minute:"2-digit", hour12:false }).format(new Date(iso + "Z"));
+  document.getElementById("stamp").innerHTML = "<b>" + local + "</b> local";
+  document.getElementById("tRange").textContent = "+" + S.t + "h / " + (d.nT - 1) + "h";
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+const statusEl = document.getElementById("status");
+function fail(msg){
+  statusEl.hidden = false; statusEl.classList.add("err");
+  statusEl.innerHTML = "Could not load.<br><span class='mono' style='font-size:11px'>" + msg + "</span>";
+}
+resize(); applyCamera();
+
+(async function boot(){
+  try {
+    // The resort map, meta and V2 manifest are all nice-to-haves: a failure in
+    // any of them degrades the page, it must not blank it.
+    const geoP  = fetch(GEO_URL).then(r => r.ok ? r.json() : null).catch(() => null);
+    const metaP = fetch(META_URL).then(r => r.ok ? r.json() : null).catch(() => null);
+    const manP  = fetch(V2_MANIFEST).then(r => r.ok ? r.json() : null).catch(() => null);
+    const [dem, wind, geo, meta, man] = await Promise.all([loadDEM(), loadWind(), geoP, metaP, manP]);
+    S.dem = dem; S.data = wind; coarseDem = dem;
+
+    // Seed V2 membership so demTile() can route z15 to the LiDAR tree.
+    if (man) for (const t of (man.z15 || [])) v2Have.add(v2Key(t[0], t[1]));
+
+    // Inset = the resort's own published extent (meta.bounds_3857 -> bbox_4326),
+    // which is exactly the area terrain_v2 covers. Widened 15% for context.
+    if (meta && meta.bbox_4326){
+      const [bw, bs, be, bn] = meta.bbox_4326;
+      const mx = (be - bw) * 0.15, my = (bn - bs) * 0.15;
+      const a = toScene(bw - mx, bn + my), b = toScene(be + mx, bs - my);
+      insetBox = { x0: a.x, x1: b.x, z0: a.z, z1: b.z };
+      const x0 = Math.floor(lon2tile(bw - mx, INSET_Z)), x1 = Math.floor(lon2tile(be + mx, INSET_Z));
+      const y0 = Math.floor(lat2tile(bn + my, INSET_Z)), y1 = Math.floor(lat2tile(bs - my, INSET_Z));
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 120)
+        insetDem = await loadDEMRange(INSET_Z, x0, x1, y0, y1);
+    }
+
+    terrain = buildTerrain(dem, insetDem ? insetBox : null);
+    if (insetDem) insetMesh = buildInset(insetDem, insetBox);
+    if (geo && geo.features) mapGroup = buildResortMap(dem, geo);
+    boundaryLine = buildBoundary(dem);
+    summitGroup = buildSummit(dem);
+    sheets["850"] = makeSheet("850", "#38BDF8");
+    sheets["700"] = makeSheet("700", "#C084FC");
+    applyExag(EXAG);   // MUST run after the objects exist — this is the desync fix
+
+    const sl = document.getElementById("tSlider");
+    sl.max = String(wind.nT - 1);
+    const now = Date.now();
+    let best = 0, bd = Infinity;
+    wind.hours.forEach((h, k) => { const dd = Math.abs(new Date(h + "Z").getTime() - now);
+                                   if (dd < bd){ bd = dd; best = k; } });
+    S.t = best; sl.value = String(best);
+
+    statusEl.hidden = true;
+    document.getElementById("read").hidden = false;
+    setView("cells");
+    updateReadout();
+  } catch (e){ fail(e && e.message ? e.message : String(e)); }
+})();
+
+const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (reduced){ S.playing = false; press(document.getElementById("tPlay"), false);
+  document.getElementById("tPlay").textContent = "Play"; }
+
+let last = 0;
+function frame(ts){
+  const raw = last ? (ts - last)/1000 : 0.016;
+  last = ts;
+  const dt = (S.playing && !reduced) ? Math.min(0.05, raw) : 0;
+  if (S.data){
+    const [ri, rj] = resortCell();
+    const edge = edgeOnFactor();
+    for (const key of ["850","700"]){
+      const sh = sheets[key];
+      if (!sh || !S.show[key]) continue;
+      sh.pane.material.opacity = 0.035 * edge;
+      sh.grid.material.opacity = 0.34 * edge;
+      drawSheet(sh, key, dt || 0.0001);
+    }
+    const halfX = SPAN_X * 0.42;
+    const c = S.data.cells[ri][rj];
+    placeLabel("850", -halfX, c.lev["850"].alt[S.t]*S.exag, 0,
+      "850 hPa · " + Math.round(c.lev["850"].alt[S.t]) + " m", S.show["850"]);
+    placeLabel("700", -halfX, c.lev["700"].alt[S.t]*S.exag, 0,
+      "700 hPa · " + Math.round(c.lev["700"].alt[S.t]) + " m", S.show["700"]);
+    const p = toScene(RESORT.lon, RESORT.lat);
+    placeLabel("sum", p.x, RESORT.summit*S.exag, p.z,
+      "Summit " + RESORT.summit.toLocaleString() + " m · " + Math.round(c.lev.summit.kmh[S.t]) + " km/h", true);
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+window.__w3d = { scene, camera, cam, S, sheets, applyCamera, SPAN_X, SPAN_Z, resortCell };
+
+})();
+</script>
+</body>
+</html>

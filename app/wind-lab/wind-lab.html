@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>바람장 해상도 랩 — A안 vs B안</title>
+<style>__MAPLIBRE_CSS__</style>
+<style>
+  :root{
+    --ink:#E8EEF7; --ink-2:#9AA9BF; --ink-3:#6B7A91;
+    --panel:rgba(11,17,28,.90); --panel-2:rgba(18,26,40,.94);
+    --rule:rgba(154,169,191,.20); --rule-2:rgba(154,169,191,.34);
+    --accent:#38BDF8; --resort:#FB923C;
+    --good:#22C55E; --moderate:#F59E0B; --poor:#F87171;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#070C15;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:14px;-webkit-font-smoothing:antialiased;overflow:hidden}
+  .mono{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+  #map{position:absolute;inset:0}
+  /* canvas is a REPLACED element: inset:0 alone leaves it at its intrinsic
+     300x150 and the field only paints the top-left corner. Size it explicitly. */
+  #fx{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+
+  /* ---------- top bar ---------- */
+  .bar{position:absolute;top:0;left:0;right:0;z-index:10;display:flex;gap:16px;align-items:center;
+    flex-wrap:wrap;padding:10px 14px;background:linear-gradient(180deg,rgba(7,12,21,.94),rgba(7,12,21,.62) 70%,transparent);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .brand{font-size:12.5px;font-weight:660;letter-spacing:-.01em}
+  .brand small{display:block;font-size:10px;color:var(--ink-3);font-weight:400;letter-spacing:.06em;text-transform:uppercase}
+  .grp{display:flex;align-items:center;gap:6px}
+  .lbl{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+  .seg{display:flex;border:1px solid var(--rule-2);border-radius:8px;overflow:hidden}
+  .seg button{appearance:none;border:0;border-right:1px solid var(--rule);background:transparent;color:var(--ink-2);
+    font:inherit;font-size:12px;padding:5px 12px;cursor:pointer}
+  .seg button:last-child{border-right:0}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:#0B111C;font-weight:640}
+  .seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .tgl{appearance:none;border:1px solid var(--rule-2);background:transparent;color:var(--ink-2);font:inherit;
+    font-size:12px;padding:5px 12px;border-radius:8px;cursor:pointer}
+  .tgl[aria-pressed="true"]{background:var(--ink);color:#0B111C;border-color:var(--ink);font-weight:640}
+  .tgl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---------- time scrubber ---------- */
+  .time{position:absolute;left:14px;right:14px;bottom:12px;z-index:10;display:flex;align-items:center;gap:12px;
+    padding:9px 13px;background:var(--panel);border:1px solid var(--rule);border-radius:12px;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .time input[type=range]{flex:1 1 auto;accent-color:var(--accent);min-width:120px}
+  .time .stamp{font-size:12px;min-width:186px}
+  .time .stamp b{font-weight:640}
+
+  /* ---------- readout ---------- */
+  .read{position:absolute;right:14px;top:62px;width:310px;max-height:calc(100% - 150px);overflow-y:auto;z-index:10;
+    background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:14px;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .read h2{margin:0 0 3px;font-size:13.5px;font-weight:660;letter-spacing:-.01em}
+  .read .sub{font-size:10.5px;color:var(--ink-3);margin-bottom:12px;line-height:1.5}
+  .read section{border-top:1px solid var(--rule);padding-top:11px;margin-top:11px}
+  .read section:first-of-type{border-top:0;padding-top:0;margin-top:0}
+  .read h3{margin:0 0 7px;font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:400}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px}
+  .kv dt{color:var(--ink-3)}
+  .kv dd{margin:0;text-align:right}
+  .big{font-size:26px;font-weight:660;letter-spacing:-.02em;line-height:1.1}
+  .big .u{font-size:11px;font-weight:400;color:var(--ink-2);margin-left:3px}
+  .row{display:flex;align-items:baseline;gap:9px;margin-bottom:5px}
+  .pill{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:640}
+  .note{font-size:11px;color:var(--ink-2);line-height:1.6;margin:8px 0 0}
+  .note b{color:var(--ink)}
+  .verdict{margin-top:9px;padding:9px 10px;border-radius:9px;background:rgba(251,146,60,.13);
+    border:1px solid rgba(251,146,60,.34);font-size:11.5px;line-height:1.6;color:#FFD9B8}
+  .verdict b{color:#FFC28A}
+  table.nb{width:100%;border-collapse:collapse;font-size:11px}
+  table.nb th{font-weight:400;color:var(--ink-3);text-align:right;padding:2px 0;font-size:10px}
+  table.nb th:first-child{text-align:left}
+  table.nb td{padding:2px 0;text-align:right}
+  table.nb td:first-child{text-align:left;color:var(--ink-2)}
+  table.nb tr.here td{color:var(--resort);font-weight:640}
+
+  /* ---------- status ---------- */
+  .status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;
+    background:var(--panel-2);border:1px solid var(--rule);border-radius:12px;padding:16px 22px;
+    font-size:13px;text-align:center;line-height:1.6}
+  .status.err{border-color:rgba(248,113,113,.5);color:#FCA5A5}
+  .status[hidden]{display:none}
+  .spin{display:inline-block;width:13px;height:13px;margin-right:8px;vertical-align:-2px;
+    border:2px solid var(--rule-2);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .legend{position:absolute;left:14px;bottom:66px;z-index:10;display:flex;flex-direction:column;gap:5px;
+    background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:9px 11px;font-size:11px;color:var(--ink-2)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  .sw{width:13px;height:3px;border-radius:2px;display:inline-block}
+  .sw.box{height:9px;border-radius:2px;background:transparent;border:1.5px solid var(--resort)}
+  .sw.cell{height:9px;border-radius:1px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.42)}
+
+  .maplibregl-ctrl-attrib{font-size:9px !important}
+  @media (max-width:820px){
+    .read{position:absolute;right:8px;left:8px;top:auto;bottom:70px;width:auto;max-height:38%}
+    .legend{display:none}
+  }
+  @media (prefers-reduced-motion: reduce){ .spin{animation:none} }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<canvas id="fx"></canvas>
+
+<div class="bar">
+  <div class="brand">바람장 해상도 랩<small>StancePro · A안 vs B안</small></div>
+  <div class="grp">
+    <span class="lbl">시점</span>
+    <div class="seg" role="group" aria-label="지도 시점">
+      <button type="button" id="vResort" aria-pressed="true">리조트 · 4 km</button>
+      <button type="button" id="vRegion" aria-pressed="false">광역 · 격자 전체</button>
+    </div>
+  </div>
+  <div class="grp">
+    <span class="lbl">고도</span>
+    <div class="seg" id="segLevel" role="group" aria-label="바람 고도"></div>
+  </div>
+  <div class="grp">
+    <span class="lbl">샘플링</span>
+    <div class="seg" role="group" aria-label="샘플링 방식">
+      <button type="button" id="sSmooth" aria-pressed="true">보간 (Windy식)</button>
+      <button type="button" id="sCell" aria-pressed="false">격자 원본</button>
+    </div>
+  </div>
+  <div class="grp">
+    <button class="tgl" id="tParts" aria-pressed="true">입자</button>
+    <button class="tgl" id="tGrid" aria-pressed="true">격자</button>
+    <button class="tgl" id="tPlay" aria-pressed="true">일시정지</button>
+  </div>
+</div>
+
+<div class="legend">
+  <span><i class="sw" style="background:#38BDF8"></i> 입자 = ECMWF IFS 0.25° 실측</span>
+  <span><i class="sw box"></i> 카드로나 경계 (OSM, 실제)</span>
+  <span><i class="sw cell"></i> 격자 1칸 = 0.25°</span>
+</div>
+
+<div class="read" id="read" hidden>
+  <h2>카드로나가 쓰는 값</h2>
+  <div class="sub" id="cellSub">—</div>
+
+  <section>
+    <h3>이 격자점의 바람</h3>
+    <div class="row">
+      <span class="big mono" id="wSpeed">—<span class="u">km/h</span></span>
+      <span class="pill" id="wPill">—</span>
+    </div>
+    <dl class="kv">
+      <dt>풍향</dt><dd class="mono" id="wDir">—</dd>
+      <dt>돌풍 기준</dt><dd class="mono" id="wMs">—</dd>
+      <dt>격자점 좌표</dt><dd class="mono" id="wLatLon">—</dd>
+      <dt>모델 표고</dt><dd class="mono" id="wElev">—</dd>
+    </dl>
+    <p class="note" id="elevNote"></p>
+  </section>
+
+  <section>
+    <h3>고도별 바람 (같은 격자점·같은 시각)</h3>
+    <table class="nb" id="lvTable"><tbody></tbody></table>
+    <div class="verdict" id="lvVerdict" style="background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.34);color:#CFEBFB"></div>
+  </section>
+
+  <section>
+    <h3>이웃 격자점 (같은 시각)</h3>
+    <table class="nb" id="nbTable"><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h3>실측 크기 비교</h3>
+    <dl class="kv">
+      <dt>카드로나 경계</dt><dd class="mono">2.99 × 3.03 km</dd>
+      <dt>격자 1칸</dt><dd class="mono" id="cellKm">—</dd>
+      <dt>면적비</dt><dd class="mono" id="areaRatio">—</dd>
+    </dl>
+    <p class="note" id="straddle"></p>
+    <div class="verdict" id="verdict"></div>
+  </section>
+</div>
+
+<div class="time">
+  <span class="stamp mono" id="stamp">—</span>
+  <input type="range" id="tSlider" min="0" max="47" value="0" step="1" aria-label="예보 시각">
+  <span class="lbl" id="tRange">—</span>
+</div>
+
+<div class="status" id="status"><span class="spin"></span>ECMWF 0.25° 실측 바람장을 받는 중…</div>
+
+<script>__MAPLIBRE_JS__</script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   REAL DATA
+   Boundary: OSM landuse=winter_sports way/482928467, ODbL 1.0,
+   simplified to 5 m, taken verbatim from the app's own artifact
+   (StancePro/Resources/data/resort_boundaries.json).
+   ============================================================ */
+const CARDRONA_RING = __CARDRONA_RING__;
+const CARDRONA = { lon: 168.949, lat: -44.875, base: 1670, top: 1860, name: "카드로나" };
+
+/* The ECMWF IFS grid we will ask Open-Meteo for. 0.25 deg is the model's
+   NATIVE resolution — not a downsample chosen for this page. */
+const STEP = 0.25;
+const LAT0 = -46.00, NLAT = 11;      // -46.00 .. -43.50
+const LON0 = 167.50, NLON = 13;      // 167.50 .. 170.50
+const LATS = Array.from({length: NLAT}, (_, i) => +(LAT0 + STEP * i).toFixed(2));
+const LONS = Array.from({length: NLON}, (_, j) => +(LON0 + STEP * j).toFixed(2));
+
+const state = {
+  // Opens on the resort at ~10 km radius on purpose: at that scale the WHOLE
+  // viewport sits inside one 0.25 deg cell, which is the entire argument.
+  // Interpolated sampling is the default because that is what Windy shows —
+  // flip to "격자 원본" to see what the model actually holds.
+  view: "resort", sampling: "smooth", parts: true, grid: true, playing: true,
+  level: "sfc",
+  t: 0, data: null, hours: [], cellIdx: null, overlap: null
+};
+const VIEW_RADIUS_KM = 4;
+
+/* Vertical axis. The app currently reads only `sfc` — but the model's
+   "surface" here is a 1,104 m smoothed cell, while Cardrona's summit is
+   1,860 m. 850/700 hPa are free-atmosphere winds (no terrain speed-up or
+   sheltering baked in), so they are not a drop-in truth either — they are
+   simply measured much closer to ridge height than a 10 m surface value. */
+const LEVELS = [
+  { key:"sfc",    ko:"지상 10 m", spd:"wind_speed_10m",      dir:"wind_direction_10m",      gh:null },
+  { key:"850",    ko:"850 hPa",   spd:"wind_speed_850hPa",   dir:"wind_direction_850hPa",   gh:"geopotential_height_850hPa" },
+  { key:"summit", ko:"정상 1,860 m", derived:true },
+  { key:"700",    ko:"700 hPa",   spd:"wind_speed_700hPa",   dir:"wind_direction_700hPa",   gh:"geopotential_height_700hPa" }
+];
+
+/* ============================================================
+   MAP — same sources the app's own 3D viewer uses
+   ============================================================ */
+const map = new maplibregl.Map({
+  container: "map",
+  center: [CARDRONA.lon, CARDRONA.lat],
+  zoom: 6.6,
+  attributionControl: true,
+  style: {
+    version: 8,
+    sources: {
+      dem: {
+        type: "raster-dem",
+        tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+        tileSize: 256, encoding: "terrarium", maxzoom: 15,
+        attribution: "Mapzen Terrain (AWS)"
+      },
+      // Same keyless vector source the app's 3D viewer uses — here only for
+      // water, so the coastline gives the regional view something to read
+      // against the hillshade.
+      ofm: {
+        type: "vector", url: "https://tiles.openfreemap.org/planet",
+        attribution: "© OpenStreetMap contributors · OpenFreeMap"
+      },
+      grid:    { type: "geojson", data: emptyFC() },
+      cell:    { type: "geojson", data: emptyFC() },
+      resort:  { type: "geojson", data: {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: {},
+          geometry: { type: "Polygon", coordinates: [CARDRONA_RING] } }]
+      }, attribution: "리조트 경계 © OpenStreetMap contributors (ODbL)" }
+    },
+    layers: [
+      { id: "bg", type: "background", paint: { "background-color": "#0A1220" } },
+      { id: "demshade", type: "hillshade", source: "dem",
+        paint: { "hillshade-exaggeration": 0.62,
+                 "hillshade-shadow-color": "#050A14",
+                 "hillshade-highlight-color": "#8FA6C0" } },
+      { id: "water", type: "fill", source: "ofm", "source-layer": "water",
+        paint: { "fill-color": "#123048", "fill-opacity": 0.85 } },
+      { id: "cellfill", type: "fill", source: "cell",
+        paint: { "fill-color": "#FFFFFF", "fill-opacity": 0.07 } },
+      { id: "cellline", type: "line", source: "cell",
+        paint: { "line-color": "rgba(255,255,255,0.62)", "line-width": 1.6 } },
+      { id: "gridline", type: "line", source: "grid",
+        paint: { "line-color": "rgba(255,255,255,0.22)", "line-width": 0.8 } },
+      { id: "resortfill", type: "fill", source: "resort",
+        paint: { "fill-color": "#FB923C", "fill-opacity": 0.32 } },
+      { id: "resortline", type: "line", source: "resort",
+        paint: { "line-color": "#FB923C", "line-width": 2 } }
+    ]
+  }
+});
+window.__wlMap = map;   // scratch page: keep the map reachable from the console
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 130, unit: "metric" }), "bottom-left");
+
+function emptyFC(){ return { type: "FeatureCollection", features: [] }; }
+
+/* ---- grid geometry ---- */
+function buildGrid(){
+  const feats = [];
+  // cell edges sit half a step off the sample points: a grid POINT is the
+  // centre of the box the model integrates over.
+  const half = STEP / 2;
+  const latEdges = LATS.map(v => v - half).concat([LATS[NLAT-1] + half]);
+  const lonEdges = LONS.map(v => v - half).concat([LONS[NLON-1] + half]);
+  for (const la of latEdges)
+    feats.push({ type:"Feature", properties:{}, geometry:{ type:"LineString",
+      coordinates:[[lonEdges[0], la], [lonEdges[lonEdges.length-1], la]] } });
+  for (const lo of lonEdges)
+    feats.push({ type:"Feature", properties:{}, geometry:{ type:"LineString",
+      coordinates:[[lo, latEdges[0]], [lo, latEdges[latEdges.length-1]]] } });
+  return { type:"FeatureCollection", features: feats };
+}
+function cellPolygons(cells){
+  const half = STEP / 2;
+  return { type:"FeatureCollection", features: cells.map(([i,j]) => {
+    const la = LATS[i], lo = LONS[j];
+    return { type:"Feature", properties:{},
+      geometry:{ type:"Polygon", coordinates:[[
+        [lo-half, la-half], [lo+half, la-half], [lo+half, la+half], [lo-half, la+half], [lo-half, la-half]
+      ]] } };
+  }) };
+}
+
+/* nearest grid indices for a lon/lat */
+function idxFor(lon, lat){
+  const i = Math.max(0, Math.min(NLAT-1, Math.round((lat - LAT0) / STEP)));
+  const j = Math.max(0, Math.min(NLON-1, Math.round((lon - LON0) / STEP)));
+  return [i, j];
+}
+
+/* Which cells does the real boundary actually overlap? Cardrona turns out to
+   sit ON a cell edge, so the answer is not one — and that is worth saying out
+   loud rather than quietly picking a nearest cell. */
+function ringBBox(ring){
+  let w = 180, e = -180, s = 90, n = -90;
+  for (const p of ring){ if (p[0]<w) w=p[0]; if (p[0]>e) e=p[0]; if (p[1]<s) s=p[1]; if (p[1]>n) n=p[1]; }
+  return { w, e, s, n };
+}
+function cellsOverlapped(ring){
+  const b = ringBBox(ring);
+  const [i0] = idxFor(b.w, b.s), [i1] = idxFor(b.w, b.n);
+  const [, j0] = idxFor(b.w, b.s), [, j1] = idxFor(b.e, b.s);
+  const cells = [];
+  for (let i = Math.min(i0,i1); i <= Math.max(i0,i1); i++)
+    for (let j = Math.min(j0,j1); j <= Math.max(j0,j1); j++) cells.push([i,j]);
+  return { bbox: b, cells };
+}
+
+/* ============================================================
+   DATA — live from Open-Meteo, ECMWF IFS at its native 0.25 deg
+   ============================================================ */
+const SUMMIT_M = 1860;
+
+async function loadWind(){
+  const lat = [], lon = [];
+  for (const la of LATS) for (const lo of LONS){ lat.push(la); lon.push(lo); }
+  const vars = [];
+  for (const L of LEVELS){ if (L.derived) continue; vars.push(L.spd, L.dir); if (L.gh) vars.push(L.gh); }
+  const q = new URLSearchParams({
+    latitude: lat.join(","), longitude: lon.join(","),
+    hourly: vars.join(","),
+    models: "ecmwf_ifs025", forecast_days: "2", timezone: "UTC"
+  });
+  const res = await fetch("https://api.open-meteo.com/v1/forecast?" + q.toString());
+  if (!res.ok) throw new Error("Open-Meteo " + res.status);
+  const arr = await res.json();
+  if (!Array.isArray(arr) || arr.length !== NLAT * NLON)
+    throw new Error("격자점 수가 맞지 않습니다 (" + (Array.isArray(arr) ? arr.length : "?") + ")");
+
+  const hours = arr[0].hourly.time;
+  const nT = hours.length;
+
+  function alloc(){
+    const A = [];
+    for (let t = 0; t < nT; t++){
+      A.push([]);
+      for (let i = 0; i < NLAT; i++) A[t].push(new Float32Array(NLON));
+    }
+    return A;
+  }
+  const lev = {};
+  for (const L of LEVELS) lev[L.key] = { U:alloc(), V:alloc(), SPD:alloc(), DIR:alloc(), ALT:alloc() };
+
+  const meta = [];
+  for (let i = 0; i < NLAT; i++){
+    meta.push([]);
+    for (let j = 0; j < NLON; j++){
+      const a = arr[i * NLON + j];
+      meta[i].push({ lat: a.latitude, lon: a.longitude, elev: a.elevation });
+      for (const L of LEVELS){
+        if (L.derived) continue;
+        const ws = a.hourly[L.spd], wd = a.hourly[L.dir];
+        const gh = L.gh ? a.hourly[L.gh] : null;
+        const S = lev[L.key];
+        for (let t = 0; t < nT; t++){
+          const kmh = ws && ws[t] != null ? ws[t] : 0;
+          const from = wd && wd[t] != null ? wd[t] : 0;
+          const ms = kmh / 3.6;
+          const to = (from + 180) * Math.PI / 180;
+          S.U[t][i][j] = ms * Math.sin(to);      // eastward
+          S.V[t][i][j] = ms * Math.cos(to);      // northward
+          S.SPD[t][i][j] = kmh;
+          S.DIR[t][i][j] = from;
+          S.ALT[t][i][j] = gh ? (gh[t] ?? 0) : 10;
+        }
+      }
+      // Summit level: interpolate the 850/700 WIND VECTORS (not the bearings —
+      // averaging degrees across 350/010 would give 180) to Cardrona's 1,860 m.
+      const A = lev["850"], B = lev["700"], C = lev["summit"];
+      for (let t = 0; t < nT; t++){
+        const z0 = A.ALT[t][i][j], z1 = B.ALT[t][i][j];
+        let f = (z1 - z0) === 0 ? 0 : (SUMMIT_M - z0) / (z1 - z0);
+        f = Math.max(0, Math.min(1, f));
+        const u = A.U[t][i][j] + (B.U[t][i][j] - A.U[t][i][j]) * f;
+        const v = A.V[t][i][j] + (B.V[t][i][j] - A.V[t][i][j]) * f;
+        C.U[t][i][j] = u; C.V[t][i][j] = v;
+        C.SPD[t][i][j] = Math.hypot(u, v) * 3.6;
+        let deg = Math.atan2(u, v) * 180 / Math.PI - 180;   // back to a "from" bearing
+        C.DIR[t][i][j] = ((deg % 360) + 360) % 360;
+        C.ALT[t][i][j] = SUMMIT_M;
+      }
+    }
+  }
+  return { hours, lev, meta, nT };
+}
+function cur(){ return state.data.lev[state.level]; }
+
+/* ---- sampling ---- */
+function sampleUV(lon, lat, t){
+  const d = state.data; if (!d) return [0,0];
+  const L = d.lev[state.level];
+  if (state.sampling === "cell"){
+    const [i,j] = idxFor(lon, lat);
+    return [L.U[t][i][j], L.V[t][i][j]];
+  }
+  // bilinear — what Windy draws, and what hides the real resolution
+  const fi = (lat - LAT0) / STEP, fj = (lon - LON0) / STEP;
+  const i0 = Math.max(0, Math.min(NLAT-2, Math.floor(fi)));
+  const j0 = Math.max(0, Math.min(NLON-2, Math.floor(fj)));
+  const ti = Math.max(0, Math.min(1, fi - i0)), tj = Math.max(0, Math.min(1, fj - j0));
+  const bl = (M) => (M[i0][j0]*(1-tj) + M[i0][j0+1]*tj) * (1-ti)
+                  + (M[i0+1][j0]*(1-tj) + M[i0+1][j0+1]*tj) * ti;
+  return [bl(L.U[t]), bl(L.V[t])];
+}
+
+/* ============================================================
+   PARTICLE OVERLAY
+   Screen-space advection with geographically correct direction —
+   the same trade Windy makes so the field reads at every zoom.
+   ============================================================ */
+const fx = document.getElementById("fx");
+let particles = [], W = 0, H = 0, DPR = 1;
+const PX_PER_MS = 4.4;          // px/s per m/s — a display rate, not a transport rate
+
+function sizeCanvas(){
+  const r = fx.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; H = r.height;
+  fx.width = Math.round(W * DPR); fx.height = Math.round(H * DPR);
+  const ctx = fx.getContext("2d");
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  seed();
+}
+function seed(){
+  // Fewer but fatter than a classic Windy field: at 10 km across, a hairline
+  // streak disappears against the hillshade.
+  const n = Math.round(Math.min(1700, (W * H) / 2100));
+  particles = [];
+  for (let k = 0; k < n; k++)
+    particles.push({ x: Math.random()*W, y: Math.random()*H, age: Math.random()*2, life: 1.1 + Math.random()*2.2 });
+}
+function fade(ctx, a){
+  ctx.save(); ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = "rgba(0,0,0," + a + ")"; ctx.fillRect(0,0,W,H); ctx.restore();
+}
+function speedColor(ms){
+  if (ms >= 17) return "#F87171";
+  if (ms >= 11) return "#F59E0B";
+  if (ms >= 6)  return "#7DD3FC";
+  return "#38BDF8";
+}
+
+function drawFrame(dt){
+  const ctx = fx.getContext("2d");
+  if (!state.data){ ctx.clearRect(0,0,W,H); return; }
+  // 0.032, not 0.085: the trail is what shows the FLOW. At 8.5%/frame a streak
+  // is gone in ~0.2 s (about 16 px) and the field reads as drifting confetti.
+  // At 3.2% it survives ~0.5 s, which is a legible streak at every zoom.
+  fade(ctx, dt > 0 ? 0.032 : 1);
+  if (dt <= 0) ctx.clearRect(0,0,W,H);
+
+  if (state.parts){
+    ctx.lineCap = "round";
+    // Thicker as you zoom in — a 10 km view needs a heavier stroke than a
+    // 300 km one for the same visual weight.
+    const zs = 0.85 + Math.max(0, Math.min(0.85, (map.getZoom() - 6.5) / 7));
+    for (const p of particles){
+      const ll = map.unproject([p.x, p.y]);
+      const [u, v] = sampleUV(ll.lng, ll.lat, state.t);
+      const mag = Math.hypot(u, v);
+      const px = p.x, py = p.y;
+      p.x += u * PX_PER_MS * dt;
+      p.y += -v * PX_PER_MS * dt;      // screen y grows downward
+      p.age += dt;
+      if (p.age > p.life || p.x < -8 || p.x > W+8 || p.y < -8 || p.y > H+8){
+        p.x = Math.random()*W; p.y = Math.random()*H;
+        p.age = 0; p.life = 1.1 + Math.random()*2.2;
+        continue;
+      }
+      const a = Math.min(p.age*3.0, (p.life-p.age)*2.4, 1) * 0.92;
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.strokeStyle = speedColor(mag);
+      ctx.lineWidth = (1.7 + Math.min(2.1, mag/8)) * zs;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(p.x, p.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (state.grid) drawGridValues(ctx);
+}
+
+/* Numbers and arrows drawn at each grid POINT — this is literally every value
+   the model has for this whole region. */
+function drawGridValues(ctx){
+  const d = state.data; if (!d) return;
+  const z = map.getZoom();
+  const stride = z < 5.6 ? 2 : 1;
+  // don't paint numbers underneath the readout panel
+  const panel = document.getElementById("read");
+  let pr = null;
+  if (panel && !panel.hidden){
+    const r = panel.getBoundingClientRect();
+    pr = { x0: r.left - 14, x1: r.right + 6, y0: r.top - 14, y1: r.bottom + 6 };
+  }
+  ctx.font = "600 10px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  let shown = 0;
+  for (let i = 0; i < NLAT; i += stride){
+    for (let j = 0; j < NLON; j += stride){
+      const pt = map.project([LONS[j], LATS[i]]);
+      if (pt.x < -40 || pt.x > W+40 || pt.y < -40 || pt.y > H+40) continue;
+      if (pr && pt.x > pr.x0 && pt.x < pr.x1 && pt.y > pr.y0 && pt.y < pr.y1) continue;
+      shown++;
+      const LV = d.lev[state.level];
+      const kmh = LV.SPD[state.t][i][j], from = LV.DIR[state.t][i][j];
+      const here = state.cellIdx && state.cellIdx[0] === i && state.cellIdx[1] === j;
+      const col = here ? "#FB923C" : "rgba(232,238,247,.85)";
+      // arrow: points where the wind GOES (from + 180)
+      const to = (from + 180) * Math.PI / 180;
+      const dx = Math.sin(to), dy = -Math.cos(to);
+      const L = here ? 19 : 13;
+      ctx.strokeStyle = col; ctx.lineWidth = here ? 2 : 1.2;
+      ctx.beginPath();
+      ctx.moveTo(pt.x - dx*L*0.5, pt.y - dy*L*0.5);
+      ctx.lineTo(pt.x + dx*L*0.5, pt.y + dy*L*0.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pt.x + dx*L*0.5, pt.y + dy*L*0.5);
+      ctx.lineTo(pt.x + dx*L*0.5 - dx*5 - dy*3.2, pt.y + dy*L*0.5 - dy*5 + dx*3.2);
+      ctx.lineTo(pt.x + dx*L*0.5 - dx*5 + dy*3.2, pt.y + dy*L*0.5 - dy*5 - dx*3.2);
+      ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+      // value
+      ctx.fillStyle = here ? "#FFC28A" : "rgba(232,238,247,.92)";
+      ctx.strokeStyle = "rgba(4,9,18,.85)"; ctx.lineWidth = 3;
+      const label = Math.round(kmh) + "";
+      ctx.strokeText(label, pt.x, pt.y + (here ? 20 : 15));
+      ctx.fillText(label, pt.x, pt.y + (here ? 20 : 15));
+    }
+  }
+
+  // Zoomed in past the grid: say so, because an empty map reads as "no data"
+  // when the truth is "the nearest number is 14 km away".
+  if (shown === 0){
+    const cx = (pr ? pr.x0 : W) / 2, cy = H * 0.30;
+    const msg = "이 화면 안에 격자점이 없습니다";
+    const sub = "가장 가까운 ECMWF 값은 여기서 약 14 km 밖에 있습니다";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "600 13px -apple-system, 'Apple SD Gothic Neo', sans-serif";
+    const w1 = ctx.measureText(msg).width;
+    ctx.font = "400 11px -apple-system, 'Apple SD Gothic Neo', sans-serif";
+    const w2 = ctx.measureText(sub).width;
+    const bw = Math.max(w1, w2) + 26, bh = 50;
+    ctx.fillStyle = "rgba(11,17,28,.86)";
+    ctx.strokeStyle = "rgba(154,169,191,.28)"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - bw/2, cy - bh/2, bw, bh, 10);
+    else ctx.rect(cx - bw/2, cy - bh/2, bw, bh);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#E8EEF7";
+    ctx.font = "600 13px -apple-system, 'Apple SD Gothic Neo', sans-serif";
+    ctx.fillText(msg, cx, cy - 9);
+    ctx.fillStyle = "#9AA9BF";
+    ctx.font = "400 11px -apple-system, 'Apple SD Gothic Neo', sans-serif";
+    ctx.fillText(sub, cx, cy + 10);
+  }
+}
+
+/* ============================================================
+   READOUT
+   ============================================================ */
+function kmPerDeg(lat){
+  return { x: 111.320 * Math.cos(lat * Math.PI/180), y: 110.574 };
+}
+function updateReadout(){
+  const d = state.data; if (!d || !state.cellIdx) return;
+  const [i, j] = state.cellIdx;
+  const m = d.meta[i][j];
+  const L = d.lev[state.level];
+  const kmh = L.SPD[state.t][i][j], from = L.DIR[state.t][i][j];
+  const ms = Math.round(kmh / 3.6);          // same rounding the app's msFromKmh does
+
+  document.getElementById("wSpeed").innerHTML = Math.round(kmh) + '<span class="u">km/h</span>';
+  const pill = document.getElementById("wPill");
+  if (ms >= 17){ pill.textContent = "위험"; pill.style.cssText = "background:rgba(248,113,113,.20);color:#F87171"; }
+  else if (ms >= 11){ pill.textContent = "주의"; pill.style.cssText = "background:rgba(245,158,11,.20);color:#F59E0B"; }
+  else { pill.textContent = "양호"; pill.style.cssText = "background:rgba(34,197,94,.18);color:#22C55E"; }
+
+  const PTS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  const cp = PTS[((Math.round(from/22.5) % 16) + 16) % 16];
+  document.getElementById("wDir").textContent = cp + " " + Math.round(from) + "°";
+  document.getElementById("wMs").textContent = ms + " m/s";
+  document.getElementById("wLatLon").textContent = m.lat.toFixed(4) + ", " + m.lon.toFixed(4);
+  document.getElementById("wElev").textContent = m.elev == null ? "—" : Math.round(m.elev) + " m";
+
+  const dz = Math.round(CARDRONA.top - (m.elev ?? 0));
+  document.getElementById("elevNote").innerHTML =
+    "모델이 이 칸을 <b>" + Math.round(m.elev ?? 0) + " m</b>로 봅니다. 카드로나 정상은 " +
+    CARDRONA.top.toLocaleString() + " m라 <b>" + dz + " m</b> 차이입니다. 능선 바람이 이 값과 같을 이유가 없습니다.";
+
+  document.getElementById("cellSub").innerHTML =
+    "ECMWF IFS 0.25° · " + d.meta[i][j].lat.toFixed(2) + ", " + d.meta[i][j].lon.toFixed(2) +
+    " 격자점 하나가 리조트 전체를 담당합니다.";
+
+  // vertical profile at this grid point — the axis the app does not have today
+  const lt = document.querySelector("#lvTable tbody");
+  lt.innerHTML = "";
+  const prof = LEVELS.map(Lv => {
+    const S = d.lev[Lv.key];
+    return { ko: Lv.ko, key: Lv.key,
+             alt: Math.round(S.ALT[state.t][i][j]),
+             kmh: Math.round(S.SPD[state.t][i][j]),
+             ms: Math.round(S.SPD[state.t][i][j] / 3.6) };
+  }).sort((a,b) => a.alt - b.alt);
+  for (const p of prof){
+    const tr = document.createElement("tr");
+    if (p.key === state.level) tr.className = "here";
+    const lvl = p.ms >= 17 ? "#F87171" : p.ms >= 11 ? "#F59E0B" : "#22C55E";
+    tr.innerHTML = "<td>" + p.ko + "</td>" +
+      "<td class='mono'>" + p.alt.toLocaleString() + " m</td>" +
+      "<td class='mono' style='color:" + lvl + "'>" + p.kmh + " km/h</td>";
+    lt.appendChild(tr);
+  }
+  const sfc = prof.find(p => p.key === "sfc"), sum = prof.find(p => p.key === "summit");
+  if (sfc && sum){
+    const mult = sfc.kmh > 0 ? (sum.kmh / sfc.kmh) : 0;
+    document.getElementById("lvVerdict").innerHTML =
+      "앱이 지금 카드에 쓰는 값은 맨 윗줄 <b>지상 " + sfc.kmh + " km/h</b>입니다. " +
+      "정상 고도로 올리면 <b>" + sum.kmh + " km/h</b>" +
+      (mult >= 1.6 ? " — <b>" + mult.toFixed(1) + "배</b>입니다. " : "입니다. ") +
+      "신호등도 <b>" + (sfc.ms >= 17 ? "위험" : sfc.ms >= 11 ? "주의" : "양호") + " → " +
+      (sum.ms >= 17 ? "위험" : sum.ms >= 11 ? "주의" : "양호") + "</b>로 바뀝니다. " +
+      "단, 850/700 hPa는 자유대기 값이라 능선 가속·바람그늘은 들어있지 않습니다.";
+  }
+
+  // neighbours
+  const tb = document.querySelector("#nbTable tbody");
+  tb.innerHTML = "";
+  const offs = [[-1,0,"북"],[0,0,"여기"],[1,0,"남"],[0,-1,"서"],[0,1,"동"]];
+  for (const [di,dj,name] of offs){
+    const ii = i+di, jj = j+dj;
+    if (ii < 0 || ii >= NLAT || jj < 0 || jj >= NLON) continue;
+    const s = Math.round(L.SPD[state.t][ii][jj]);
+    const f = Math.round(L.DIR[state.t][ii][jj]);
+    const tr = document.createElement("tr");
+    if (di === 0 && dj === 0) tr.className = "here";
+    tr.innerHTML = "<td>" + name + "</td><td class='mono'>" + s + " km/h</td><td class='mono'>" + f + "°</td>";
+    tb.appendChild(tr);
+  }
+
+  const k = kmPerDeg(LATS[i]);
+  const cw = STEP * k.x, ch = STEP * k.y;
+  document.getElementById("cellKm").textContent = cw.toFixed(2) + " × " + ch.toFixed(2) + " km";
+  const ratio = (cw * ch) / (2.99 * 3.03);
+  document.getElementById("areaRatio").textContent = "1 / " + Math.round(ratio);
+  const ov = state.overlap;
+  const sEl = document.getElementById("straddle");
+  if (ov && ov.cells.length > 1){
+    const vals = ov.cells.map(([a,b]) => Math.round(L.SPD[state.t][a][b]));
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    sEl.innerHTML = "그런데 카드로나는 격자 <b>경계 위에</b> 걸쳐 있습니다 — 위도 " +
+      "−44.875°가 정확히 셀 경계라, 슬로프 남쪽과 북쪽이 <b>서로 다른 칸</b>에 들어갑니다. " +
+      "지금 두 칸의 값은 <b>" + (lo === hi ? lo + " km/h로 같습니다" : lo + " / " + hi + " km/h") + "</b>. " +
+      "어느 쪽을 리조트 값으로 쓸지 모델은 답을 주지 않습니다.";
+  } else {
+    sEl.textContent = "";
+  }
+
+  const nCells = ov ? ov.cells.length : 1;
+  document.getElementById("verdict").innerHTML =
+    "리조트 전체가 격자 한 칸의 <b>" + Math.round(ratio) + "분의 1</b>입니다. " +
+    "지도를 끝까지 확대해도 이 산 전체에 대해 모델이 가진 숫자는 <b>" + nCells + "개</b>뿐입니다. " +
+    "A안은 그중 하나를 카드에 쓰고 있고, B안은 같은 숫자를 지도로 그릴 뿐입니다 — " +
+    "<b>새로 알게 되는 것이 없습니다.</b>";
+}
+
+function updateStamp(){
+  const d = state.data; if (!d) return;
+  const iso = d.hours[state.t];                     // UTC
+  const utc = new Date(iso + "Z");
+  const nz = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Pacific/Auckland", month: "numeric", day: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false
+  }).format(utc);
+  document.getElementById("stamp").innerHTML = "<b>" + nz + "</b> 현지 (NZ)";
+  document.getElementById("tRange").textContent = "+" + state.t + "h / " + (d.nT - 1) + "h";
+}
+
+/* ============================================================
+   CONTROLS
+   ============================================================ */
+function press(el, on){ el.setAttribute("aria-pressed", String(on)); }
+
+/* a radius in km around the resort, as a lon/lat bbox */
+function radiusBounds(km){
+  const dLat = km / 110.574;
+  const dLon = km / (111.320 * Math.cos(CARDRONA.lat * Math.PI/180));
+  return [[CARDRONA.lon - dLon, CARDRONA.lat - dLat],
+          [CARDRONA.lon + dLon, CARDRONA.lat + dLat]];
+}
+function gridBounds(){
+  const half = STEP / 2;
+  return [[LONS[0]-half, LATS[0]-half], [LONS[NLON-1]+half, LATS[NLAT-1]+half]];
+}
+function setView(v, instant){
+  state.view = v;
+  press(document.getElementById("vRegion"), v === "region");
+  press(document.getElementById("vResort"), v === "resort");
+  const opts = { padding: 48, duration: instant ? 0 : 900 };
+  map.fitBounds(v === "region" ? gridBounds() : radiusBounds(VIEW_RADIUS_KM), opts);
+}
+function setSampling(s){
+  state.sampling = s;
+  press(document.getElementById("sCell"), s === "cell");
+  press(document.getElementById("sSmooth"), s === "smooth");
+}
+const segLevel = document.getElementById("segLevel");
+function buildLevelSeg(){
+  segLevel.innerHTML = LEVELS.map(L =>
+    '<button type="button" data-k="' + L.key + '" aria-pressed="' + (state.level === L.key) + '">' + L.ko + '</button>'
+  ).join("");
+  segLevel.querySelectorAll("button").forEach(el => el.addEventListener("click", () => {
+    state.level = el.dataset.k;
+    buildLevelSeg();
+    updateReadout();
+  }));
+}
+buildLevelSeg();
+
+document.getElementById("vRegion").onclick = () => setView("region");
+document.getElementById("vResort").onclick = () => setView("resort");
+document.getElementById("sCell").onclick = () => setSampling("cell");
+document.getElementById("sSmooth").onclick = () => setSampling("smooth");
+document.getElementById("tParts").onclick = function(){ state.parts = !state.parts; press(this, state.parts); };
+document.getElementById("tGrid").onclick = function(){
+  state.grid = !state.grid; press(this, state.grid);
+  const vis = state.grid ? "visible" : "none";
+  for (const id of ["gridline","cellfill","cellline"]) map.setLayoutProperty(id, "visibility", vis);
+};
+document.getElementById("tPlay").onclick = function(){
+  state.playing = !state.playing; press(this, state.playing);
+  this.textContent = state.playing ? "일시정지" : "재생";
+};
+document.getElementById("tSlider").oninput = function(){
+  state.t = +this.value; updateStamp(); updateReadout();
+};
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+const statusEl = document.getElementById("status");
+function fail(msg){
+  statusEl.hidden = false;
+  statusEl.classList.add("err");
+  statusEl.innerHTML = "바람장을 불러오지 못했습니다.<br><span class='mono' style='font-size:11px'>" + msg + "</span>";
+}
+
+state.overlap = cellsOverlapped(CARDRONA_RING);
+state.cellIdx = idxFor(CARDRONA.lon, CARDRONA.lat);
+
+// The map half and the data half are independent. Chaining the fetch behind
+// `map.on("load")` meant a slow basemap tile held up the forecast request —
+// and if `load` never fired (it happens), the page sat on "loading" forever.
+let mapReady = false;
+function onMapReady(){
+  if (mapReady) return;
+  // getSource() is undefined until the style parses — retry rather than throw.
+  if (!map.getSource || !map.getSource("grid")){ setTimeout(onMapReady, 300); return; }
+  mapReady = true;
+  map.getSource("grid").setData(buildGrid());
+  map.getSource("cell").setData(cellPolygons(state.overlap.cells));
+  setView("resort", true);
+}
+
+async function loadData(){
+  try {
+    const d = await loadWind();
+    state.data = d;
+    const sl = document.getElementById("tSlider");
+    sl.max = String(d.nT - 1);
+    // start at the hour nearest to now
+    const now = Date.now();
+    let best = 0, bd = Infinity;
+    d.hours.forEach((h, k) => { const dd = Math.abs(new Date(h + "Z").getTime() - now); if (dd < bd){ bd = dd; best = k; } });
+    state.t = best; sl.value = String(best);
+    statusEl.hidden = true;
+    document.getElementById("read").hidden = false;
+    updateStamp(); updateReadout();
+  } catch (e){
+    fail(String(e && e.message ? e.message : e));
+  }
+}
+
+map.on("load", onMapReady);
+// `load` can be withheld when a basemap source stalls; `idle` and a timeout
+// both mean "the style is usable", which is all onMapReady actually needs.
+map.on("idle", onMapReady);
+setTimeout(onMapReady, 4000);
+// Tile errors are non-fatal for the wind field, but swallowing them silently
+// cost real debugging time — keep them where the console can see them.
+window.__wlErrors = [];
+map.on("error", (e) => {
+  const msg = (e && e.error && e.error.message) || String(e && e.error) || "unknown";
+  window.__wlErrors.push(msg);
+  if (window.__wlErrors.length < 6) console.warn("[wind-lab] map error:", msg);
+});
+loadData();
+
+sizeCanvas();
+window.addEventListener("resize", sizeCanvas);
+map.on("resize", sizeCanvas);
+// Trails are 8.5%-per-frame fades, so after a jump the previous view's streaks
+// hang around for a second — and if rAF is throttled (background tab) they
+// never clear at all. Wipe on view change instead of waiting them out.
+map.on("movestart", () => { const c = fx.getContext("2d"); c.clearRect(0,0,W,H); });
+map.on("zoomstart", () => { const c = fx.getContext("2d"); c.clearRect(0,0,W,H); });
+
+const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let last = 0;
+function frame(ts){
+  const raw = last ? (ts - last) / 1000 : 0.016;
+  last = ts;
+  const dt = (state.playing && !reduced) ? Math.min(0.05, raw) : 0;
+  drawFrame(dt);
+  requestAnimationFrame(frame);
+}
+if (reduced){ state.playing = false; press(document.getElementById("tPlay"), false);
+  document.getElementById("tPlay").textContent = "재생"; }
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
