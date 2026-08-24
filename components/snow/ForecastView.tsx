@@ -764,7 +764,14 @@ function WindTable({ days }: { days: DailyRow[] }) {
             className={`grid py-1${kind === "gust" ? " mt-1 border-t border-slate-600/40 pt-1.5" : ""}`}
             style={{ gridTemplateColumns: tpl }}
           >
-            <span className="text-[9px] font-medium text-slate-500 self-center">{kind === "gust" ? "GUST" : "SPD"}</span>
+            {kind === "gust" ? (
+              <span className="self-center leading-tight">
+                <span className="block text-[9px] font-medium text-slate-500">GUST</span>
+                <span className="block text-[8px] text-slate-500">near-surf</span>
+              </span>
+            ) : (
+              <span className="text-[9px] font-medium text-slate-500 self-center">SPD</span>
+            )}
             {days.map((day, i) => (
               <div key={day.date} className={`${dayCellClass(i)} grid grid-cols-4 gap-1`}>
                 {(day.time_of_day ?? []).map((b) => {
