@@ -102,7 +102,7 @@
 
 <div class="bar">
   <div class="grp">
-    <span class="lbl">ECMWF 0.25° · 2× vert</span>
+    <span class="lbl">ICON 0.125° · 2× vert</span>
   </div>
   <div class="grp">
     <span class="lbl">View</span>
@@ -162,7 +162,7 @@
   <span class="lbl" id="tRange">—</span>
 </div>
 
-<div class="status" id="status"><span class="spin"></span>Loading terrain, runs and ECMWF wind…</div>
+<div class="status" id="status"><span class="spin"></span>Loading terrain, runs and ICON wind…</div>
 
 <script>__THREE_JS__</script>
 <script>
@@ -179,7 +179,11 @@ const RING = __RESORT_RING__;
 const GEO_URL = "https://ryiitcblrrqvjvxkobpf.supabase.co/storage/v1/object/public/" +
                 "ride-tracker-static/terrain_offpiste_v1/" + RESORT.osm + "/geometry.json";
 
-const STEP = 0.25;                     // ECMWF IFS native grid
+const STEP = 0.125;                    // ICON serving grid — REAL at this
+                                       // spacing (41-point transect 2026-08-27:
+                                       // every snapped point a distinct 850 hPa
+                                       // value; GFS repeats values in pairs and
+                                       // ECMWF is honest but 2x coarser)
 /* A resort can sit exactly ON a cell edge (Cardrona does: lat -44.875), so the
    "containing" cell is a tie. Round half up, the same way the 2D lab does, and
    then take the 3x3 block around it — which contains BOTH straddled cells. */
@@ -340,7 +344,7 @@ async function loadWind(){
   for (const L of LEVELS){ vars.push(L.spd, L.dir); if (L.gh) vars.push(L.gh); }
   const q = new URLSearchParams({
     latitude: lat.join(","), longitude: lon.join(","),
-    hourly: vars.join(","), models: "ecmwf_ifs025", forecast_days: "2", timezone: "UTC"
+    hourly: vars.join(","), models: "icon_seamless", forecast_days: "2", timezone: "UTC"
   });
   const res = await fetch("https://api.open-meteo.com/v1/forecast?" + q.toString());
   if (!res.ok) throw new Error("Open-Meteo " + res.status);
@@ -535,12 +539,29 @@ const STRANDS = 3;
    22 points at 1/30 s covers 0.73 s, versus 0.30 s when it followed rAF. */
 const HIST_DT = 1 / 30;
 
-function cellAtWorld(x, z){
+/* Bilinear over the 3x3 cell CENTRES, interpolating u/v VECTORS (never the
+   bearings — the page's own summit interpolation set that precedent). This is
+   what Windy draws and what the 2D lab already did; nearest-cell advection made
+   every particle in the resort view move on one identical heading, which reads
+   as rain, and trails crossing a cell seam bent at a hard right angle. Fewer
+   real numbers are NOT invented here: the field between centres is a blend of
+   the same nine values the grid overlay shows. */
+function windAtWorld(key, x, z, t){
+  const d = S.data;
   const lon = MID_LON + x / M_PER_DEG_LON;
   const lat = MID_LAT - z / M_PER_DEG_LAT;
-  const j = Math.max(0, Math.min(2, Math.floor((lon - BBOX.w) / STEP)));
-  const i = Math.max(0, Math.min(2, Math.floor((lat - BBOX.s) / STEP)));
-  return [i, j];
+  const fi = Math.max(0, Math.min(1.999, (lat - CELL_LATS[0]) / STEP));
+  const fj = Math.max(0, Math.min(1.999, (lon - CELL_LONS[0]) / STEP));
+  const i0 = Math.floor(fi), j0 = Math.floor(fj);
+  const ti = fi - i0, tj = fj - j0;
+  let u = 0, v = 0;
+  for (let di = 0; di <= 1; di++) for (let dj = 0; dj <= 1; dj++){
+    const w = (di ? ti : 1 - ti) * (dj ? tj : 1 - tj);
+    const lv = d.cells[i0 + di][j0 + dj].lev[key];
+    const ms = lv.kmh[t] / 3.6, to = rad(lv.deg[t] + 180);
+    u += w * Math.sin(to) * ms; v += w * Math.cos(to) * ms;
+  }
+  return [u, v];
 }
 /* The ground footprint the camera actually covers, clamped to the scene.
    Particles are seeded INSIDE it rather than across the whole 59 x 83 km, so
@@ -604,6 +625,9 @@ function makeSheet(key, colorHex){
   return { lines, pane, grid, geo, parts, N, segs, color: new THREE.Color(colorHex) };
 }
 
+/* Speed ramp shared with the 2D lab / wind lights, in km/h (17/11/6 m/s). */
+const C_RED = new THREE.Color(0xF87171), C_AMB = new THREE.Color(0xF59E0B),
+      C_SKY = new THREE.Color(0x7DD3FC), C_CYN = new THREE.Color(0x38BDF8);
 function drawSheet(sh, key, dt){
   const d = S.data;
   // Constant on-screen streak length: tie the display rate to how far the
@@ -625,10 +649,8 @@ function drawSheet(sh, key, dt){
   let o = 0;
 
   for (const p of sh.parts){
-    const [ci, cj] = cellAtWorld(p.x, p.z);
-    const lv = d.cells[ci][cj].lev[key];
-    const ms = lv.kmh[S.t] / 3.6, to = rad(lv.deg[S.t] + 180);
-    const u = Math.sin(to) * ms, v = Math.cos(to) * ms;   // east, north (m/s)
+    const [u, v] = windAtWorld(key, p.x, p.z, S.t);       // east, north (m/s)
+    const kmh = Math.hypot(u, v) * 3.6;
 
     p.x += u * boost * dt;
     p.z -= v * boost * dt;                                 // +Z is south
@@ -648,6 +670,11 @@ function drawSheet(sh, key, dt){
     } else { p.hx[0] = p.x; p.hz[0] = p.z; }   // head always tracks the particle
 
     const fade = Math.min(1, p.age * 2.4, (p.life - p.age) * 2.0);
+    // Particle colour now encodes SPEED (same cut-offs as the app's wind
+    // lights and the 2D lab): today 850 ran 33 km/h while 700 ran 110, and a
+    // fixed per-sheet hue made that difference invisible. Sheet identity stays
+    // on the pane tint, its label and the toggle buttons.
+    const pc = kmh >= 61 ? C_RED : kmh >= 40 ? C_AMB : kmh >= 22 ? C_SKY : C_CYN;
     for (let k = 0; k < sh.segs; k++){
       const ax = p.hx[k], az = p.hz[k], bx = p.hx[k+1], bz = p.hz[k+1];
       // perpendicular to this segment, in the horizontal plane
@@ -666,8 +693,8 @@ function drawSheet(sh, key, dt){
         const ox = nx * t, oz = nz * t;
         pos[o]   = ax + ox; pos[o+1] = y; pos[o+2] = az + oz;
         pos[o+3] = bx + ox; pos[o+4] = y; pos[o+5] = bz + oz;
-        col[o]   = sh.color.r * b0; col[o+1] = sh.color.g * b0; col[o+2] = sh.color.b * b0;
-        col[o+3] = sh.color.r * b1; col[o+4] = sh.color.g * b1; col[o+5] = sh.color.b * b1;
+        col[o]   = pc.r * b0; col[o+1] = pc.g * b0; col[o+2] = pc.b * b0;
+        col[o+3] = pc.r * b1; col[o+4] = pc.g * b1; col[o+5] = pc.b * b1;
         o += 6;
       }
     }
@@ -702,14 +729,26 @@ const LIFT_COLOR = 0xFDE68A;
 /* WebGL ignores LineBasicMaterial.linewidth — every THREE.Line is exactly one
    device pixel, which is why the runs and the boundary all but vanished. Build
    real geometry instead: a triangle ribbon whose width is specified in METRES,
-   so it survives both the 59 km overview and a close-in look.
-   `lift` is drawn ABOVE the deck it serves, and everything is drawn with
-   depthTest off so a coarse 296 m terrain mesh cannot swallow a draped line
-   that dips a few tens of metres into it. */
+   so it survives both the overview and a close-in look.
+   Depth testing is ON. It was off to survive the coarse 296 m mesh, but every
+   ribbon this page draws lies inside the z15 LiDAR inset (3.4 m), and the
+   X-ray it caused was worse than the problem it solved: the boundary's far
+   side showed through the ridge and read as a second ring. Long straight
+   segments (lift lines) are subdivided so they follow the terrain instead of
+   tunnelling through a knoll between their two endpoints. */
 function ribbon(dem, coords, widthM, color, y0, order){
-  const n = coords.length;
-  if (n < 2) return null;
-  const pts = coords.map(([lon, lat]) => {
+  if (coords.length < 2) return null;
+  const dense = [coords[0]];
+  for (let i = 1; i < coords.length; i++){
+    const a = coords[i-1], b = coords[i];
+    const pa = toScene(a[0], a[1]), pb = toScene(b[0], b[1]);
+    const seg = Math.hypot(pb.x - pa.x, pb.z - pa.z);
+    const nSub = Math.max(1, Math.min(64, Math.ceil(seg / 45)));
+    for (let k = 1; k <= nSub; k++)
+      dense.push([a[0] + (b[0]-a[0])*k/nSub, a[1] + (b[1]-a[1])*k/nSub]);
+  }
+  const n = dense.length;
+  const pts = dense.map(([lon, lat]) => {
     const p = toScene(lon, lat);
     return { x: p.x, y: sampleH(lon, lat) + y0, z: p.z };
   });
@@ -735,8 +774,7 @@ function ribbon(dem, coords, widthM, color, y0, order){
   geo.setIndex(idx);
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    color, side: THREE.DoubleSide, depthTest: false, depthWrite: false,
-    transparent: true, opacity: 0.95 }));
+    color, side: THREE.DoubleSide }));
   mesh.renderOrder = order || 5;
   mesh.frustumCulled = false;
   return mesh;
@@ -746,23 +784,65 @@ function buildResortMap(dem, geojson){
   for (const f of geojson.features){
     if (!f.geometry || f.geometry.type !== "LineString") continue;
     const p = f.properties || {};
-    if (p.aerialway) g.add(ribbon(dem, f.geometry.coordinates, 55, LIFT_COLOR, 130, 7));
-    else g.add(ribbon(dem, f.geometry.coordinates, 42,
-                      PISTE_COLOR[p["piste:difficulty"]] ?? PISTE_FALLBACK, 90, 6));
+    // Mirror the app's own piste-layer filter (resort3d.html): geometry.json
+    // also carries access roads and a landuse line (4 of Cardrona's 91
+    // features), and drawn unfiltered they render as grey 42 m ski runs.
+    if (!p.aerialway && !(p["piste:type"] || p["piste:difficulty"])) continue;
+    // Offsets are metres above the LiDAR inset, so they only need to clear
+    // DEM noise: +6 keeps a run on the snow, +16 hangs a lift line above the
+    // runs it crosses. The old 90/130 were sized for the 296 m coarse mesh
+    // and floated the whole map when the inset arrived. A lift line is a
+    // cable, not a deck — 14 m wide reads as one.
+    const m = p.aerialway
+      ? ribbon(dem, f.geometry.coordinates, 14, LIFT_COLOR, 16, 7)
+      : ribbon(dem, f.geometry.coordinates, 42,
+               PISTE_COLOR[p["piste:difficulty"]] ?? PISTE_FALLBACK, 6, 6);
+    if (m) g.add(m);
   }
   scene.add(g);
   return g;
 }
 
 function buildBoundary(dem){
-  const m = ribbon(dem, RING, 110, 0xFB923C, 110, 8);
+  const m = ribbon(dem, RING, 30, 0xFB923C, 8, 8);
   scene.add(m);
   return m;
 }
+/* Highest DEM point INSIDE the boundary ring — the same rule the app's 3D
+   viewer uses for its summit pin. RESORT.lon/lat is the map index's
+   representative point, which for Cardrona lands mid-bowl; planting a
+   "Summit" post there put the label on a slope. Falls back to the centroid
+   when the ring is absent (iOS may inject an empty ring). */
+let SUMMIT_LL = { lon: RESORT.lon, lat: RESORT.lat };
+function highestInRing(){
+  if (!RING || RING.length < 3) return { lon: RESORT.lon, lat: RESORT.lat };
+  let w = Infinity, e = -Infinity, s = Infinity, nn = -Infinity;
+  for (const [lo, la] of RING){
+    w = Math.min(w, lo); e = Math.max(e, lo);
+    s = Math.min(s, la); nn = Math.max(nn, la);
+  }
+  const inside = (lo, la) => {
+    let c = false;
+    for (let i = 0, j = RING.length - 1; i < RING.length; j = i++){
+      const xi = RING[i][0], yi = RING[i][1], xj = RING[j][0], yj = RING[j][1];
+      if (((yi > la) !== (yj > la)) && lo < (xj - xi) * (la - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  let best = { h: -Infinity, lon: RESORT.lon, lat: RESORT.lat };
+  const N = 90;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++){
+    const lo = w + (e - w) * i / N, la = s + (nn - s) * j / N;
+    if (!inside(lo, la)) continue;
+    const h = sampleH(lo, la);
+    if (h > best.h) best = { h, lon: lo, lat: la };
+  }
+  return best;
+}
 function buildSummit(dem){
   const g = new THREE.Group();
-  const hb = sampleH(RESORT.lon, RESORT.lat);
-  const p = toScene(RESORT.lon, RESORT.lat);
+  const hb = sampleH(SUMMIT_LL.lon, SUMMIT_LL.lat);
+  const p = toScene(SUMMIT_LL.lon, SUMMIT_LL.lat);
   const post = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(p.x, hb, p.z), new THREE.Vector3(p.x, RESORT.summit, p.z)]),
@@ -1037,6 +1117,7 @@ resize(); applyCamera();
     if (insetDem) insetMesh = buildInset(insetDem, insetBox);
     if (geo && geo.features) mapGroup = buildResortMap(dem, geo);
     boundaryLine = buildBoundary(dem);
+    SUMMIT_LL = highestInRing();   // after the inset loads — sampleH is precise
     summitGroup = buildSummit(dem);
     sheets["850"] = makeSheet("850", "#38BDF8");
     sheets["700"] = makeSheet("700", "#C084FC");
@@ -1082,7 +1163,7 @@ function frame(ts){
       "850 hPa · " + Math.round(c.lev["850"].alt[S.t]) + " m", S.show["850"]);
     placeLabel("700", -halfX, c.lev["700"].alt[S.t]*S.exag, 0,
       "700 hPa · " + Math.round(c.lev["700"].alt[S.t]) + " m", S.show["700"]);
-    const p = toScene(RESORT.lon, RESORT.lat);
+    const p = toScene(SUMMIT_LL.lon, SUMMIT_LL.lat);
     placeLabel("sum", p.x, RESORT.summit*S.exag, p.z,
       "Summit " + RESORT.summit.toLocaleString() + " m · " + Math.round(c.lev.summit.kmh[S.t]) + " km/h", true);
   }

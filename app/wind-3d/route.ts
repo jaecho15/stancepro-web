@@ -24,7 +24,10 @@ const CARDRONA = {
   name: "Cardrona",
   lon: 168.949,
   lat: -44.875,
-  summit: 1860,
+  // bands.top from the map index — what the iOS caller injects (bands.max) and
+  // what the forecast card shows. 1860 was a stale hand-typed value; the same
+  // mountain must not have two summits in one product.
+  summit: 1904,
   tz: "Pacific/Auckland",
 };
 
