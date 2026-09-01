@@ -30,7 +30,21 @@ import fixture from "./fixture.json";
 /** Frozen fixture predates hourly slots. Synthesize 24 local hours so this
  *  harness can review the 24h strip without a live fetch. */
 function fixtureWithHourly() {
-  const clone = JSON.parse(JSON.stringify(fixture)) as typeof fixture;
+  const clone = JSON.parse(JSON.stringify(fixture)) as {
+    payload?: { daily?: Array<Record<string, unknown> & {
+      layer?: string;
+      time_of_day?: Array<{
+        snow_cm_p50?: number;
+        precip_mm_p50?: number;
+        temp_c_p50?: number;
+        precip_type?: string;
+        weather_code?: number | null;
+        wind_kmh?: number | null;
+        wind_dir_deg?: number | null;
+        wind_gust_kmh?: number | null;
+      }>;
+    }> };
+  };
   const daily = clone.payload?.daily ?? [];
   for (const row of daily) {
     if (row.layer !== "D1-7") continue;
