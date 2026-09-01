@@ -1289,6 +1289,10 @@ def hourly_band_day(
     hour_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(24)]
     hour_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(24)]
     hour_wx: list[list[int]] = [[] for _ in range(24)]
+    # Same free-air-vs-surface rule as the 6-hour blocks: sustained from one
+    # source, gust from every sample. Additive on the slot; older caches omit it.
+    hour_wind_free_air: list[list[tuple[float, float, float]]] = [[] for _ in range(24)]
+    hour_wind_surface: list[list[tuple[float, float, float]]] = [[] for _ in range(24)]
 
     for model in models:
         snow_series = hourly.get(f"snowfall_{model}") or []
@@ -1372,12 +1376,17 @@ def hourly_band_day(
             if wspd is not None and wdir is not None:
                 wgst = wgst_series[index] if index < len(wgst_series) else None
                 sample = (float(wspd), float(wdir), float(wgst) if wgst is not None else float(wspd))
+                hour_i = int(stamp[11:13])
                 if fa is not None:
                     day_wind_free_air.append(sample)
                     block_wind_free_air[block_index].append(sample)
+                    if 0 <= hour_i <= 23:
+                        hour_wind_free_air[hour_i].append(sample)
                 else:
                     day_wind_surface.append(sample)
                     block_wind_surface[block_index].append(sample)
+                    if 0 <= hour_i <= 23:
+                        hour_wind_surface[hour_i].append(sample)
             wx = wx_series[index] if index < len(wx_series) else None
             if wx is not None:
                 block_wx[block_index].append(int(wx))
@@ -1505,6 +1514,10 @@ def hourly_band_day(
             hour_frac = 1.0
         else:
             _, hour_frac = slr_and_snow_fraction(hour_temp_p50)
+        hour_wind_kmh, hour_wind_dir_deg, _ = _wind_aggregate(
+            hour_wind_free_air[hour] or hour_wind_surface[hour])
+        _, _, hour_wind_gust_kmh = _wind_aggregate(
+            hour_wind_free_air[hour] + hour_wind_surface[hour])
         hourly_slots.append(
             {
                 "hour": hour,
@@ -1517,6 +1530,9 @@ def hourly_band_day(
                     "snow" if hour_frac >= 0.8
                     else ("mix" if hour_frac > 0.0 else "rain")),
                 "weather_code": _weather_code_mode(hour_wx[hour]),
+                "wind_kmh": hour_wind_kmh,
+                "wind_dir_deg": hour_wind_dir_deg,
+                "wind_gust_kmh": hour_wind_gust_kmh,
             }
         )
 

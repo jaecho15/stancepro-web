@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
   Cloud,
@@ -462,7 +462,10 @@ function SelectedDayHourlyCard({ row }: { row: DailyRow }) {
         <span className="text-xs font-semibold text-slate-200">
           {dayWeekday(row.date)} {dayMonthDay(row.date)}
         </span>
-        <span className="text-[11px] text-slate-500">Hourly</span>
+          <span className="text-[11px] text-slate-500">Hourly</span>
+          <span className="text-[10px] text-slate-500">
+            Speed · Gust {u.windKmhUnit}
+          </span>
         <span className="ml-auto flex gap-2 text-[11px] font-semibold">
           {snowTotal >= 0.05 && (
             <span className="text-slate-200">{fmt(u.snow(snowTotal))} {u.snowUnit}</span>
@@ -472,7 +475,15 @@ function SelectedDayHourlyCard({ row }: { row: DailyRow }) {
           )}
         </span>
       </div>
-      <div className="flex gap-1 overflow-x-auto scrollbar-thin pb-0.5">
+      <div className="flex gap-1 overflow-x-auto scrollbar-thin pb-0.5 items-start">
+        <div className="shrink-0 w-7 flex flex-col items-end gap-1 pt-0">
+          <span className="h-3" />
+          <span className="h-4" />
+          <span className="h-[52px]" />
+          <span className="h-3" />
+          <span className="h-3 text-[8px] font-medium text-slate-500 leading-none">Spd</span>
+          <span className="h-3 text-[8px] font-medium text-slate-500 leading-none">Gst</span>
+        </div>
         {hours.map((slot) => (
           <HourlyColumn key={slot.hour} slot={slot} scale={scale} u={u} />
         ))}
@@ -492,12 +503,16 @@ function HourlyColumn({
   const snowH = slot.snow_cm_p50 > 0 ? Math.max(3, 52 * slot.snow_cm_p50 / scale) : 0;
   const rainH = rain > 0 ? Math.max(3, 52 * rain / scale) : 0;
   const temp = u.temp(slot.temp_c_p50);
+  const speed = slot.wind_kmh != null ? u.windKmh(slot.wind_kmh) : null;
+  const gust = slot.wind_gust_kmh != null ? u.windKmh(slot.wind_gust_kmh) : null;
   return (
-    <div className="shrink-0 w-7 flex flex-col items-center gap-1">
-      <span className="text-[9px] font-semibold text-slate-500">
+    <div className="shrink-0 w-8 flex flex-col items-center gap-1">
+      <span className="h-3 text-[9px] font-semibold text-slate-500 leading-none flex items-center">
         {String(slot.hour).padStart(2, "0")}
       </span>
-      <HourlySkyIcon slot={slot} />
+      <span className="h-4 w-full flex items-center justify-center">
+        <HourlySkyIcon slot={slot} />
+      </span>
       <div className="h-[52px] flex items-end gap-0.5">
         <span
           className="w-[7px] rounded-sm bg-blue-600"
@@ -508,20 +523,30 @@ function HourlyColumn({
           style={{ height: rainH }}
         />
       </div>
-      <span className={`text-[9px] font-semibold ${temp > 0 ? "text-rose-400" : temp < 0 ? "text-blue-400" : "text-slate-500"}`}>
+      <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${temp > 0 ? "text-rose-400" : temp < 0 ? "text-blue-400" : "text-slate-500"}`}>
         {Math.round(temp)}°
+      </span>
+      <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${speed != null ? "" : "text-slate-500"}`} style={speed != null ? { color: "#14B8A6" } : undefined}>
+        {speed ?? "–"}
+      </span>
+      <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${gust != null ? "" : "text-slate-500"}`} style={gust != null ? { color: "#F59E0B" } : undefined}>
+        {gust ?? "–"}
       </span>
     </div>
   );
 }
 
 function HourlySkyIcon({ slot }: { slot: HourlySlot }) {
-  if (slot.snow_cm_p50 > 0 || (slot.precip_mm_p50 ?? 0) > 0.5) {
-    const kind: PrecipKind =
-      slot.precip_type === "rain" ? "rain" : slot.precip_type === "mix" ? "mix" : "snow";
-    return <PrecipIcon kind={kind} className="w-3 h-3" />;
-  }
-  return <SkyIcon code={slot.weather_code} className="w-3 h-3" />;
+  const inner =
+    slot.snow_cm_p50 > 0 || (slot.precip_mm_p50 ?? 0) > 0.5 ? (
+      <PrecipIcon
+        kind={slot.precip_type === "rain" ? "rain" : slot.precip_type === "mix" ? "mix" : "snow"}
+        className="w-3 h-3"
+      />
+    ) : (
+      <SkyIcon code={slot.weather_code} className="w-3 h-3" />
+    );
+  return <span className="h-3 w-full flex items-center justify-center leading-none">{inner}</span>;
 }
 
 // ============================================================================
@@ -1445,6 +1470,8 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   const u = useUnitFormat();
   const [showLegend, setShowLegend] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [hourlyExpanded, setHourlyExpanded] = useState(false);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1589,14 +1616,31 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
       <SummaryBanner text={summarySentence(quantRows, band, u)} />
 
       {/* 2) 7-day strip */}
-      <SevenDayStrip rows={quantRows} selectedDate={detailDays[0]?.date ?? null} onSelect={setSelectedDay} />
+      <SevenDayStrip
+        rows={quantRows}
+        selectedDate={selectedDay}
+        onSelect={(date) => {
+          const already = selectedDay === date;
+          if (already && hourlyExpanded) {
+            setHourlyExpanded(false);
+            return;
+          }
+          setSelectedDay(date);
+          const row = quantRows.find((r) => r.date === date);
+          setHourlyExpanded((row?.hourly?.length ?? 0) > 0);
+          requestAnimationFrame(() => {
+            gridRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          });
+        }}
+      />
 
-      {pickedHourlyRow && (pickedHourlyRow.hourly?.length ?? 0) > 0 && (
+      {hourlyExpanded && pickedHourlyRow && (pickedHourlyRow.hourly?.length ?? 0) > 0 && (
         <SelectedDayHourlyCard row={pickedHourlyRow} />
       )}
 
       {/* 3) Aligned forecast grid */}
       {detailDays.length > 0 && (
+        <div ref={gridRef}>
         <ForecastGrid
           detailDays={detailDays}
           bands={presentBands}
@@ -1605,6 +1649,7 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
           blockScaleMax={detailBlockSnowMax}
           selectedBand={band}
         />
+        </div>
       )}
 
       {/* 4) Wind */}

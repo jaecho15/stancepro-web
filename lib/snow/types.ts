@@ -46,6 +46,9 @@ export interface HourlySlot {
   temp_c_p50: number;
   precip_type: string;
   weather_code?: number | null;
+  wind_kmh?: number | null;
+  wind_dir_deg?: number | null;
+  wind_gust_kmh?: number | null;
 }
 
 export interface DailyRow {
