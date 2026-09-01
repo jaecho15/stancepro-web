@@ -37,6 +37,17 @@ export interface TimeBlock {
   weather_code?: number | null;
 }
 
+/** One local-hour slot inside a D1-7 day. Additive; absent on older caches. */
+export interface HourlySlot {
+  hour: number;
+  snow_cm_p50: number;
+  precip_mm_p50: number;
+  rain_mm_p50?: number | null;
+  temp_c_p50: number;
+  precip_type: string;
+  weather_code?: number | null;
+}
+
 export interface DailyRow {
   band: BandKey;
   date: string;
@@ -104,6 +115,8 @@ export interface DailyRow {
   /** WMO weather interpretation code (Open-Meteo). Optional on older caches. */
   weather_code?: number | null;
   time_of_day?: TimeBlock[];
+  /** 1-hour slots for D1-7. Empty/absent on D8-16 and older caches. */
+  hourly?: HourlySlot[];
 }
 
 export interface TendencyWeek {

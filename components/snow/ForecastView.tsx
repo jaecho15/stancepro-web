@@ -26,6 +26,7 @@ import type {
   SnowResort,
   TendencyWeek,
   TimeBlock,
+  HourlySlot,
 } from "@/lib/snow/types";
 
 const BAND_LABELS: Record<BandKey, string> = {
@@ -447,6 +448,80 @@ function SevenDayStrip({ rows, selectedDate, onSelect }: { rows: DailyRow[]; sel
       <p className="text-[11px] text-slate-500 px-1">Tap a day to center the grid below</p>
     </div>
   );
+}
+
+function SelectedDayHourlyCard({ row }: { row: DailyRow }) {
+  const u = useUnitFormat();
+  const hours = row.hourly ?? [];
+  const snowTotal = hours.reduce((s, h) => s + h.snow_cm_p50, 0);
+  const rainTotal = hours.reduce((s, h) => s + (h.rain_mm_p50 ?? 0), 0);
+  const scale = Math.max(0.5, ...hours.map((h) => Math.max(h.snow_cm_p50, h.rain_mm_p50 ?? 0)));
+  return (
+    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-3 space-y-2">
+      <div className="flex items-baseline gap-2 px-0.5">
+        <span className="text-xs font-semibold text-slate-200">
+          {dayWeekday(row.date)} {dayMonthDay(row.date)}
+        </span>
+        <span className="text-[11px] text-slate-500">Hourly</span>
+        <span className="ml-auto flex gap-2 text-[11px] font-semibold">
+          {snowTotal >= 0.05 && (
+            <span className="text-slate-200">{fmt(u.snow(snowTotal))} {u.snowUnit}</span>
+          )}
+          {rainTotal >= 0.05 && (
+            <span className="text-cyan-400">{fmt(u.rain(rainTotal))} {u.rainUnit}</span>
+          )}
+        </span>
+      </div>
+      <div className="flex gap-1 overflow-x-auto scrollbar-thin pb-0.5">
+        {hours.map((slot) => (
+          <HourlyColumn key={slot.hour} slot={slot} scale={scale} u={u} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HourlyColumn({
+  slot, scale, u,
+}: {
+  slot: HourlySlot;
+  scale: number;
+  u: UnitFormat;
+}) {
+  const rain = slot.rain_mm_p50 ?? 0;
+  const snowH = slot.snow_cm_p50 > 0 ? Math.max(3, 52 * slot.snow_cm_p50 / scale) : 0;
+  const rainH = rain > 0 ? Math.max(3, 52 * rain / scale) : 0;
+  const temp = u.temp(slot.temp_c_p50);
+  return (
+    <div className="shrink-0 w-7 flex flex-col items-center gap-1">
+      <span className="text-[9px] font-semibold text-slate-500">
+        {String(slot.hour).padStart(2, "0")}
+      </span>
+      <HourlySkyIcon slot={slot} />
+      <div className="h-[52px] flex items-end gap-0.5">
+        <span
+          className="w-[7px] rounded-sm bg-blue-600"
+          style={{ height: snowH }}
+        />
+        <span
+          className="w-[7px] rounded-sm bg-cyan-400"
+          style={{ height: rainH }}
+        />
+      </div>
+      <span className={`text-[9px] font-semibold ${temp > 0 ? "text-rose-400" : temp < 0 ? "text-blue-400" : "text-slate-500"}`}>
+        {Math.round(temp)}°
+      </span>
+    </div>
+  );
+}
+
+function HourlySkyIcon({ slot }: { slot: HourlySlot }) {
+  if (slot.snow_cm_p50 > 0 || (slot.precip_mm_p50 ?? 0) > 0.5) {
+    const kind: PrecipKind =
+      slot.precip_type === "rain" ? "rain" : slot.precip_type === "mix" ? "mix" : "snow";
+    return <PrecipIcon kind={kind} className="w-3 h-3" />;
+  }
+  return <SkyIcon code={slot.weather_code} className="w-3 h-3" />;
 }
 
 // ============================================================================
@@ -1418,6 +1493,11 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
   const detailDates = useMemo(() => new Set(detailDays.map((d) => d.date)), [detailDays]);
 
+  const pickedHourlyRow = useMemo(
+    () => quantRows.find((r) => r.date === selectedDay) ?? quantRows[0] ?? null,
+    [quantRows, selectedDay],
+  );
+
   const daysForBand = useMemo(
     () => (b: BandKey) =>
       (payload?.daily ?? [])
@@ -1510,6 +1590,10 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
       {/* 2) 7-day strip */}
       <SevenDayStrip rows={quantRows} selectedDate={detailDays[0]?.date ?? null} onSelect={setSelectedDay} />
+
+      {pickedHourlyRow && (pickedHourlyRow.hourly?.length ?? 0) > 0 && (
+        <SelectedDayHourlyCard row={pickedHourlyRow} />
+      )}
 
       {/* 3) Aligned forecast grid */}
       {detailDays.length > 0 && (

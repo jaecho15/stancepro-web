@@ -1283,6 +1283,12 @@ def hourly_band_day(
     block_wind_free_air: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wind_surface: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
+    # 1-hour display slots (D1-7 only at serve time). Same hybrid numbers the
+    # 6-hour blocks sum; the caller must not attach this list past the window.
+    hour_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(24)]
+    hour_precip: list[dict[str, float]] = [defaultdict(float) for _ in range(24)]
+    hour_temps: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(24)]
+    hour_wx: list[list[int]] = [[] for _ in range(24)]
 
     for model in models:
         snow_series = hourly.get(f"snowfall_{model}") or []
@@ -1375,6 +1381,13 @@ def hourly_band_day(
             wx = wx_series[index] if index < len(wx_series) else None
             if wx is not None:
                 block_wx[block_index].append(int(wx))
+            hour = int(stamp[11:13])
+            if 0 <= hour <= 23:
+                hour_snow[hour][model] += snow_cm
+                hour_precip[hour][model] += float(precip)
+                hour_temps[hour][model].append(disp_temp)
+                if wx is not None:
+                    hour_wx[hour].append(int(wx))
 
     if not day_snow:
         return [], None
@@ -1458,6 +1471,52 @@ def hourly_band_day(
                 "wind_dir_deg": wind_dir_deg,
                 "wind_gust_kmh": wind_gust_kmh,
                 "weather_code": _weather_code_mode(block_wx[block_index]),
+            }
+        )
+
+    # Same remainder allocation as the 6-hour bars: hour snow_cm_p50 is the
+    # day p50 split by cross-model mean share, so the strip sums to the header.
+    hour_alloc: list[float] | None = None
+    if total_snow > 0:
+        units = int(round(day_p50 * 10))
+        raw_h = [units * sum(hour_snow[i].values()) / total_snow for i in range(24)]
+        floors_h = [int(math.floor(r)) for r in raw_h]
+        spare_h = max(0, units - sum(floors_h))
+        for i in sorted(range(24), key=lambda b: floors_h[b] - raw_h[b])[:spare_h]:
+            floors_h[i] += 1
+        hour_alloc = [f / 10.0 for f in floors_h]
+
+    hourly_slots: list[dict[str, Any]] = []
+    for hour in range(24):
+        present_h = sorted(hour_snow[hour])
+        if not present_h:
+            continue
+        _, hour_p50, _ = _quantiles([hour_snow[hour][m] for m in present_h])
+        if hour_alloc is not None:
+            hour_p50 = hour_alloc[hour]
+        hour_precip_p50 = round(_median([hour_precip[hour][m] for m in present_h]), 1)
+        hour_temp_means = [
+            sum(hour_temps[hour][m]) / len(hour_temps[hour][m]) for m in present_h
+        ]
+        hour_temp_p50 = _median(hour_temp_means)
+        if hour_precip_p50 > 0.0:
+            hour_frac = min(1.0, (hour_p50 / OM_SNOW_CM_PER_MM) / hour_precip_p50)
+        elif hour_p50 > 0.0:
+            hour_frac = 1.0
+        else:
+            _, hour_frac = slr_and_snow_fraction(hour_temp_p50)
+        hourly_slots.append(
+            {
+                "hour": hour,
+                "snow_cm_p50": hour_p50,
+                "precip_mm_p50": hour_precip_p50,
+                "rain_mm_p50": round(
+                    max(0.0, hour_precip_p50 - hour_p50 / OM_SNOW_CM_PER_MM), 1),
+                "temp_c_p50": round(hour_temp_p50, 1),
+                "precip_type": (
+                    "snow" if hour_frac >= 0.8
+                    else ("mix" if hour_frac > 0.0 else "rain")),
+                "weather_code": _weather_code_mode(hour_wx[hour]),
             }
         )
 
@@ -1547,6 +1606,7 @@ def hourly_band_day(
         # these must agree with day_wind_used or wind_source would lie.
         "wind_free_air_hours": len(day_wind_free_air),
         "wind_surface_fallback_hours": 0 if day_wind_free_air else len(day_wind_surface),
+        "hourly": hourly_slots,
     }
     return blocks, day_agg
 
@@ -1986,6 +2046,9 @@ def band_daily_rows(
                 "wind_gust_kmh": wind_gust_kmh,
                 "weather_code": day_weather_code,
                 "time_of_day": blocks,
+                # Additive; empty on D8-16 even when the shadow pass computed slots.
+                "hourly": ((day_agg or {}).get("hourly") or []
+                           if index < time_of_day_days else []),
                 **forecast_tier(
                     day_index=index + 1,
                     n_models=n_models,
