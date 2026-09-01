@@ -27,6 +27,34 @@ import { ForecastView } from "@/components/snow/ForecastView";
 
 import fixture from "./fixture.json";
 
+/** Frozen fixture predates hourly slots. Synthesize 24 local hours so this
+ *  harness can review the 24h strip without a live fetch. */
+function fixtureWithHourly() {
+  const clone = JSON.parse(JSON.stringify(fixture)) as typeof fixture;
+  const daily = clone.payload?.daily ?? [];
+  for (const row of daily) {
+    if (row.layer !== "D1-7") continue;
+    const blocks = row.time_of_day ?? [];
+    row.hourly = Array.from({ length: 24 }, (_, hour) => {
+      const block = blocks[Math.min(3, Math.floor(hour / 6))];
+      const snow = (block?.snow_cm_p50 ?? 0) / 6;
+      return {
+        hour,
+        snow_cm_p50: Math.round(snow * 10) / 10,
+        precip_mm_p50: Math.round(((block?.precip_mm_p50 ?? 0) / 6) * 10) / 10,
+        rain_mm_p50: 0,
+        temp_c_p50: block?.temp_c_p50 ?? 0,
+        precip_type: block?.precip_type ?? "snow",
+        weather_code: block?.weather_code ?? 73,
+        wind_kmh: block?.wind_kmh ?? null,
+        wind_dir_deg: block?.wind_dir_deg ?? null,
+        wind_gust_kmh: block?.wind_gust_kmh ?? null,
+      };
+    });
+  }
+  return clone;
+}
+
 const FIXTURE_RESORT = {
   resort_id: "osm-way-482928467",
   name: "Cardrona",
@@ -46,7 +74,7 @@ export default function DevForecastPage() {
     window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       if (url.includes("/api/short-range-snow")) {
-        return new Response(JSON.stringify(fixture), {
+        return new Response(JSON.stringify(fixtureWithHourly()), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });

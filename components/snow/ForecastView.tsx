@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
   Cloud,
@@ -450,99 +450,6 @@ function SevenDayStrip({ rows, selectedDate, onSelect }: { rows: DailyRow[]; sel
   );
 }
 
-function SelectedDayHourlyCard({ row }: { row: DailyRow }) {
-  const u = useUnitFormat();
-  const hours = row.hourly ?? [];
-  const snowTotal = hours.reduce((s, h) => s + h.snow_cm_p50, 0);
-  const rainTotal = hours.reduce((s, h) => s + (h.rain_mm_p50 ?? 0), 0);
-  const scale = Math.max(0.5, ...hours.map((h) => Math.max(h.snow_cm_p50, h.rain_mm_p50 ?? 0)));
-  return (
-    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-3 space-y-2">
-      <div className="flex items-baseline gap-2 px-0.5">
-        <span className="text-xs font-semibold text-slate-200">
-          {dayWeekday(row.date)} {dayMonthDay(row.date)}
-        </span>
-          <span className="text-[11px] text-slate-500">Hourly</span>
-          <span className="text-[10px] text-slate-500">
-            Speed · Gust {u.windKmhUnit}
-          </span>
-        <span className="ml-auto flex gap-2 text-[11px] font-semibold">
-          {snowTotal >= 0.05 && (
-            <span className="text-slate-200">{fmt(u.snow(snowTotal))} {u.snowUnit}</span>
-          )}
-          {rainTotal >= 0.05 && (
-            <span className="text-cyan-400">{fmt(u.rain(rainTotal))} {u.rainUnit}</span>
-          )}
-        </span>
-      </div>
-      <div className="flex gap-1 overflow-x-auto scrollbar-thin pb-0.5 items-start">
-        <div className="shrink-0 w-7 flex flex-col items-end gap-1 pt-0">
-          <span className="h-3" />
-          <span className="h-4" />
-          <span className="h-5" />
-          <span className="h-[52px]" />
-          <span className="h-3" />
-          <span className="h-3 text-[8px] font-medium text-slate-500 leading-none">Spd</span>
-          <span className="h-3 text-[8px] font-medium text-slate-500 leading-none">Gst</span>
-        </div>
-        {hours.map((slot) => (
-          <HourlyColumn key={slot.hour} slot={slot} scale={scale} u={u} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function HourlyColumn({
-  slot, scale, u,
-}: {
-  slot: HourlySlot;
-  scale: number;
-  u: UnitFormat;
-}) {
-  const rain = slot.rain_mm_p50 ?? 0;
-  const snowH = slot.snow_cm_p50 > 0 ? Math.max(3, 52 * slot.snow_cm_p50 / scale) : 0;
-  const rainH = rain > 0 ? Math.max(3, 52 * rain / scale) : 0;
-  const temp = u.temp(slot.temp_c_p50);
-  const speed = slot.wind_kmh != null ? u.windKmh(slot.wind_kmh) : null;
-  const gust = slot.wind_gust_kmh != null ? u.windKmh(slot.wind_gust_kmh) : null;
-  const snowLabel = slot.snow_cm_p50 >= 0.05 ? fmt(u.snow(slot.snow_cm_p50)) : "\u00a0";
-  const rainLabel = rain >= 0.05 ? fmt(u.rain(rain)) : "\u00a0";
-  return (
-    <div className="shrink-0 w-8 flex flex-col items-center gap-1">
-      <span className="h-3 text-[9px] font-semibold text-slate-500 leading-none flex items-center">
-        {String(slot.hour).padStart(2, "0")}
-      </span>
-      <span className="h-4 w-full flex items-center justify-center">
-        <HourlySkyIcon slot={slot} />
-      </span>
-      <span className="h-5 w-full flex flex-col items-center justify-center leading-none">
-        <span className="text-[8px] font-semibold text-blue-500">{snowLabel}</span>
-        <span className="text-[8px] font-semibold text-cyan-400">{rainLabel}</span>
-      </span>
-      <div className="h-[52px] flex items-end gap-0.5">
-        <span
-          className="w-[7px] rounded-sm bg-blue-600"
-          style={{ height: snowH }}
-        />
-        <span
-          className="w-[7px] rounded-sm bg-cyan-400"
-          style={{ height: rainH }}
-        />
-      </div>
-      <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${temp > 0 ? "text-rose-400" : temp < 0 ? "text-blue-400" : "text-slate-500"}`}>
-        {Math.round(temp)}°
-      </span>
-      <span className={`h-3 text-[10px] font-bold leading-none flex items-center ${speed != null ? "" : "text-slate-500"}`} style={speed != null ? { color: "#14B8A6" } : undefined}>
-        {speed ?? "–"}
-      </span>
-      <span className={`h-3 text-[10px] font-bold leading-none flex items-center ${gust != null ? "" : "text-slate-500"}`} style={gust != null ? { color: "#F59E0B" } : undefined}>
-        {gust ?? "–"}
-      </span>
-    </div>
-  );
-}
-
 function HourlySkyIcon({ slot }: { slot: HourlySlot }) {
   const inner =
     slot.snow_cm_p50 > 0 || (slot.precip_mm_p50 ?? 0) > 0.5 ? (
@@ -562,6 +469,38 @@ function HourlySkyIcon({ slot }: { slot: HourlySlot }) {
 
 function gridTemplate(n: number): string {
   return `3rem repeat(${n}, minmax(0,1fr))`;
+}
+
+function hourlyTabPathD(
+  w: number, h: number, headerH: number, index: number, count: number, radius = 12,
+): string {
+  const inset = 1;
+  const n = Math.max(1, count);
+  const idx = Math.min(Math.max(0, index), n - 1);
+  const left = inset;
+  const top = inset;
+  const right = w - inset;
+  const bottom = h - inset;
+  const yH = Math.min(Math.max(headerH, top), bottom);
+  const tabW = (right - left) / n;
+  const tabL = left + tabW * idx;
+  const tabR = left + tabW * (idx + 1);
+  const r = Math.min(radius, tabW / 2, Math.max(0, (bottom - yH) / 2), Math.max(0, (yH - top) / 2));
+  const first = idx === 0;
+  const last = idx === n - 1;
+  const arc = (x: number, y: number) => `A ${r} ${r} 0 0 1 ${x} ${y}`;
+  let d = `M ${tabL + r} ${top} L ${tabR - r} ${top} ${arc(tabR, top + r)}`;
+  if (last) {
+    d += ` L ${tabR} ${bottom - r} ${arc(tabR - r, bottom)}`;
+  } else {
+    d += ` L ${tabR} ${yH} L ${right - r} ${yH} ${arc(right, yH + r)} L ${right} ${bottom - r} ${arc(right - r, bottom)}`;
+  }
+  if (first) {
+    d += ` L ${tabL + r} ${bottom} ${arc(tabL, bottom - r)} L ${tabL} ${top + r} ${arc(tabL + r, top)}`;
+  } else {
+    d += ` L ${left + r} ${bottom} ${arc(left, bottom - r)} L ${left} ${yH + r} ${arc(left + r, yH)} L ${tabL} ${yH} L ${tabL} ${top + r} ${arc(tabL + r, top)}`;
+  }
+  return `${d} Z`;
 }
 
 /** Small mountain glyph with the slice for this band filled white. */
@@ -590,6 +529,8 @@ function ForecastGrid({
   daysForBand,
   blockScaleMax,
   selectedBand,
+  hourlyDate,
+  onSelectDate,
 }: {
   detailDays: DailyRow[];
   bands: BandKey[];
@@ -597,6 +538,8 @@ function ForecastGrid({
   daysForBand: (b: BandKey) => DailyRow[];
   blockScaleMax: number;
   selectedBand: BandKey;
+  hourlyDate: string | null;
+  onSelectDate: (date: string) => void;
 }) {
   // One scale across the days shown here, so bar heights compare between them.
   const detailSnowMax = Math.max(0, ...detailDays.map((d) => d.snow_cm_p90 ?? 0));
@@ -605,10 +548,51 @@ function ForecastGrid({
   const n = detailDays.length;
   const tpl = gridTemplate(n);
   const dayCellClass = (i: number) => `min-w-0 ${i !== n - 1 ? "border-r border-slate-700/40" : ""}`;
+  const hourlyHours = hourlyDate
+    ? (daysForBand(selectedBand).find((d) => d.date === hourlyDate)?.hourly ?? [])
+    : [];
+  const showingHourly = hourlyHours.length > 0;
+  const hourGapPx = 4;
+  const hourCount = Math.max(1, hourlyHours.length);
+  const hourlyScale = Math.max(
+    0.5,
+    ...bands.flatMap((b) =>
+      (daysForBand(b).find((d) => d.date === hourlyDate)?.hourly ?? []).map((h) =>
+        Math.max(h.snow_cm_p50, h.rain_mm_p50 ?? 0),
+      ),
+    ),
+  );
+  const selectedHourlyIndex = Math.max(0, detailDays.findIndex((d) => d.date === hourlyDate));
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const [tabBox, setTabBox] = useState({ w: 0, h: 0, hh: 0 });
+  // Same width as one 6-hour block in the date strip (4 blocks per day,
+  // gap-1). Fixed px — not 1fr — so 24 hours overflow instead of shrinking.
+  const hourColPx = (() => {
+    if (tabBox.w <= 48 || n < 1) return 32;
+    const dayW = (tabBox.w - 48) / n;
+    return Math.max(32, (dayW - 12) / 4);
+  })();
+  const hourTpl = `3rem repeat(${hourCount}, ${hourColPx}px)`;
+  const hourMinWidth = 48 + hourCount * (hourColPx + hourGapPx);
+  const hourGridStyle = { gridTemplateColumns: hourTpl, columnGap: hourGapPx };
+  useLayoutEffect(() => {
+    if (!showingHourly) return;
+    const wrap = wrapRef.current;
+    const head = headRef.current;
+    if (!wrap || !head) return;
+    const measure = () => setTabBox({ w: wrap.offsetWidth, h: wrap.offsetHeight, hh: head.offsetHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    ro.observe(head);
+    return () => ro.disconnect();
+  }, [showingHourly, hourlyDate, hourlyHours.length, n]);
 
   return (
     <div className="space-y-2">
-      {/* period legend */}
+      {/* period legend — 6-hour blocks only */}
+      {!showingHourly && (
       <div className="flex items-center gap-3 px-1">
         {(["dawn", "morning", "afternoon", "night"] as const).map((b) => (
           <span key={b} className="flex items-center gap-1">
@@ -617,17 +601,27 @@ function ForecastGrid({
           </span>
         ))}
       </div>
+      )}
 
       <div className="rounded-2xl bg-slate-800/40 p-3">
-        {/* header row */}
-        <div className="grid items-end" style={{ gridTemplateColumns: tpl }}>
+        <div ref={showingHourly ? wrapRef : undefined} className="relative">
+        {/* header row — stays put while hourly columns scroll */}
+        <div ref={showingHourly ? headRef : undefined} className="grid items-end" style={{ gridTemplateColumns: tpl }}>
           <span />
           {detailDays.map((day, i) => {
             const amount = dayAmount(day, u);
             const chance = precipChance(day);
             const range = dayTempRange(day);
+            const isHourly = hourlyDate === day.date;
             return (
-              <div key={day.date} className={`${dayCellClass(i)} flex flex-col items-center gap-1 pb-1.5`}>
+              <button
+                key={day.date}
+                type="button"
+                onClick={() => onSelectDate(day.date)}
+                className={`${dayCellClass(i)} flex flex-col items-center gap-1 pb-1.5 pt-1 rounded-xl ${
+                  isHourly ? "bg-slate-700/50" : ""
+                }`}
+              >
                 <span className="text-[11px] font-semibold text-slate-200">{dayLabel(day.date)}</span>
                 <DayConditionIcon row={day} className="w-7 h-7" />
                 <span className="flex items-end gap-1">
@@ -639,11 +633,77 @@ function ForecastGrid({
                 </span>
                 {chance != null && <span className="text-[10px] font-semibold" style={{ color: ACCENT }}>{chance}%</span>}
                 <span className="text-[9px] text-slate-500">{u.tempInt(range.max)}° / {u.tempInt(range.min)}°</span>
-              </div>
+              </button>
             );
           })}
         </div>
 
+        {showingHourly ? (
+          <>
+          <div className="overflow-x-auto">
+            <div style={{ minWidth: hourMinWidth }}>
+            <div className="grid py-1" style={hourGridStyle}>
+              <span className="text-[8.5px] font-medium text-slate-500 self-center">SKY</span>
+              {hourlyHours.map((slot) => (
+                <span key={slot.hour} className="flex justify-center">
+                  <HourlySkyIcon slot={slot} />
+                </span>
+              ))}
+            </div>
+            <div className="grid" style={hourGridStyle}>
+              <span className="text-[8.5px] font-medium text-slate-500 self-center">TIME</span>
+              {hourlyHours.map((slot) => (
+                <span key={slot.hour} className="text-[10px] text-slate-500 text-center">
+                  {String(slot.hour).padStart(2, "0")}
+                </span>
+              ))}
+            </div>
+            <div className="h-px bg-slate-700/40 my-1.5" />
+            <p className="text-[9px] font-bold text-slate-500 mb-1">SNOWFALL BY ELEVATION ({u.snowUnit})</p>
+            {bands.map((band, bi) => {
+              const hours = daysForBand(band).find((d) => d.date === hourlyDate)?.hourly ?? [];
+              const elev = bandElevations[band];
+              return (
+                <div key={band} className="grid py-1" style={hourGridStyle}>
+                  <div className="flex flex-col items-center gap-0.5 self-center">
+                    <MountainGlyph index={bi} count={bands.length} />
+                    {elev != null && <span className="text-[8px] font-medium text-slate-500">{u.elevationLabel(elev)}</span>}
+                  </div>
+                  {hours.map((slot) => (
+                    <HourlyGridBar key={slot.hour} slot={slot} scaleMax={hourlyScale} selected={band === selectedBand} />
+                  ))}
+                </div>
+              );
+            })}
+            <div className="h-px bg-slate-700/40 my-1.5" />
+            <div className="grid py-0.5" style={hourGridStyle}>
+              <span className="text-[8.5px] font-medium text-slate-500 self-center">TEMP</span>
+              {hourlyHours.map((slot) => {
+                const r = Math.round(slot.temp_c_p50);
+                const color = r > 0 ? "#EF4444" : r < 0 ? FREEZING_COLOR : "#94a3b8";
+                return (
+                  <span key={slot.hour} className="text-[10px] font-semibold text-center" style={{ color }}>
+                    {u.tempInt(slot.temp_c_p50)}
+                  </span>
+                );
+              })}
+            </div>
+            </div>
+            </div>
+            {tabBox.w > 0 && (
+              <svg className="pointer-events-none absolute inset-0 overflow-visible" width={tabBox.w} height={tabBox.h}>
+                <path
+                  d={hourlyTabPathD(tabBox.w, tabBox.h, tabBox.hh, selectedHourlyIndex, n)}
+                  fill="none"
+                  stroke={ACCENT}
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </>
+        ) : (
+          <>
         {/* time row */}
         <div className="grid" style={{ gridTemplateColumns: tpl }}>
           <span className="text-[8.5px] font-medium text-slate-500 self-center">TIME</span>
@@ -751,6 +811,9 @@ function ForecastGrid({
             </>
           );
         })()}
+          </>
+        )}
+        </div>
       </div>
     </div>
   );
@@ -775,6 +838,36 @@ function ElevBarCell({ block, scaleMax }: { block: TimeBlock; scaleMax: number }
       <span
         className="w-[11px] rounded-sm"
         style={{ height: h, background: value > 0 ? BLOCK_COLORS[block.block] ?? ACCENT : "rgba(148,163,184,0.18)" }}
+      />
+    </div>
+  );
+}
+
+function HourlyGridBar({
+  slot, scaleMax, selected,
+}: {
+  slot: HourlySlot;
+  scaleMax: number;
+  selected: boolean;
+}) {
+  const u = useUnitFormat();
+  const rain = slot.rain_mm_p50 ?? 0;
+  const isRain = slot.snow_cm_p50 < 0.05 && rain > 0.05;
+  const raw = slot.snow_cm_p50 >= 0.05 ? slot.snow_cm_p50 : isRain ? rain : slot.snow_cm_p50;
+  const has = raw >= 0.05;
+  const h = Math.max(2, Math.min(raw / Math.max(scaleMax, 0.05), 1) * BLOCK_TRACK_PX);
+  const label = isRain
+    ? (u.rain(rain) >= 0.95 ? String(Math.round(u.rain(rain))) : fmt(u.rain(rain)))
+    : (u.snow(slot.snow_cm_p50) >= 0.05 ? fmt(u.snow(slot.snow_cm_p50)) : "");
+  const color = isRain ? "#22D3EE" : selected ? "#1D4ED8" : "#60A5FA";
+  return (
+    <div className="flex flex-col items-center justify-end h-[60px] gap-0.5 min-w-0">
+      <span className={`text-[8px] font-semibold leading-none ${selected && has ? "text-slate-100" : "text-transparent"}`}>
+        {label || "0"}
+      </span>
+      <span
+        className="w-[11px] rounded-sm"
+        style={{ height: h, background: raw > 0 ? color : "rgba(148,163,184,0.18)" }}
       />
     </div>
   );
@@ -1477,7 +1570,7 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   const u = useUnitFormat();
   const [showLegend, setShowLegend] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const [hourlyExpanded, setHourlyExpanded] = useState(false);
+  const [hourlyDate, setHourlyDate] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1526,11 +1619,6 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   }, [quantRows, selectedDay]);
 
   const detailDates = useMemo(() => new Set(detailDays.map((d) => d.date)), [detailDays]);
-
-  const pickedHourlyRow = useMemo(
-    () => quantRows.find((r) => r.date === selectedDay) ?? quantRows[0] ?? null,
-    [quantRows, selectedDay],
-  );
 
   const daysForBand = useMemo(
     () => (b: BandKey) =>
@@ -1627,23 +1715,13 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
         rows={quantRows}
         selectedDate={selectedDay}
         onSelect={(date) => {
-          const already = selectedDay === date;
-          if (already && hourlyExpanded) {
-            setHourlyExpanded(false);
-            return;
-          }
           setSelectedDay(date);
-          const row = quantRows.find((r) => r.date === date);
-          setHourlyExpanded((row?.hourly?.length ?? 0) > 0);
+          if (hourlyDate && hourlyDate !== date) setHourlyDate(null);
           requestAnimationFrame(() => {
             gridRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
           });
         }}
       />
-
-      {hourlyExpanded && pickedHourlyRow && (pickedHourlyRow.hourly?.length ?? 0) > 0 && (
-        <SelectedDayHourlyCard row={pickedHourlyRow} />
-      )}
 
       {/* 3) Aligned forecast grid */}
       {detailDays.length > 0 && (
@@ -1655,6 +1733,14 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
           daysForBand={daysForBand}
           blockScaleMax={detailBlockSnowMax}
           selectedBand={band}
+          hourlyDate={hourlyDate}
+          onSelectDate={(date) => {
+            const row = quantRows.find((r) => r.date === date);
+            setSelectedDay(date);
+            if ((row?.hourly?.length ?? 0) > 0) {
+              setHourlyDate(hourlyDate === date ? null : date);
+            }
+          }}
         />
         </div>
       )}
