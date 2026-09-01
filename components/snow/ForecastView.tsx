@@ -479,6 +479,7 @@ function SelectedDayHourlyCard({ row }: { row: DailyRow }) {
         <div className="shrink-0 w-7 flex flex-col items-end gap-1 pt-0">
           <span className="h-3" />
           <span className="h-4" />
+          <span className="h-5" />
           <span className="h-[52px]" />
           <span className="h-3" />
           <span className="h-3 text-[8px] font-medium text-slate-500 leading-none">Spd</span>
@@ -505,6 +506,8 @@ function HourlyColumn({
   const temp = u.temp(slot.temp_c_p50);
   const speed = slot.wind_kmh != null ? u.windKmh(slot.wind_kmh) : null;
   const gust = slot.wind_gust_kmh != null ? u.windKmh(slot.wind_gust_kmh) : null;
+  const snowLabel = slot.snow_cm_p50 >= 0.05 ? fmt(u.snow(slot.snow_cm_p50)) : "\u00a0";
+  const rainLabel = rain >= 0.05 ? fmt(u.rain(rain)) : "\u00a0";
   return (
     <div className="shrink-0 w-8 flex flex-col items-center gap-1">
       <span className="h-3 text-[9px] font-semibold text-slate-500 leading-none flex items-center">
@@ -512,6 +515,10 @@ function HourlyColumn({
       </span>
       <span className="h-4 w-full flex items-center justify-center">
         <HourlySkyIcon slot={slot} />
+      </span>
+      <span className="h-5 w-full flex flex-col items-center justify-center leading-none">
+        <span className="text-[8px] font-semibold text-blue-500">{snowLabel}</span>
+        <span className="text-[8px] font-semibold text-cyan-400">{rainLabel}</span>
       </span>
       <div className="h-[52px] flex items-end gap-0.5">
         <span
@@ -526,10 +533,10 @@ function HourlyColumn({
       <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${temp > 0 ? "text-rose-400" : temp < 0 ? "text-blue-400" : "text-slate-500"}`}>
         {Math.round(temp)}°
       </span>
-      <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${speed != null ? "" : "text-slate-500"}`} style={speed != null ? { color: "#14B8A6" } : undefined}>
+      <span className={`h-3 text-[10px] font-bold leading-none flex items-center ${speed != null ? "" : "text-slate-500"}`} style={speed != null ? { color: "#14B8A6" } : undefined}>
         {speed ?? "–"}
       </span>
-      <span className={`h-3 text-[9px] font-semibold leading-none flex items-center ${gust != null ? "" : "text-slate-500"}`} style={gust != null ? { color: "#F59E0B" } : undefined}>
+      <span className={`h-3 text-[10px] font-bold leading-none flex items-center ${gust != null ? "" : "text-slate-500"}`} style={gust != null ? { color: "#F59E0B" } : undefined}>
         {gust ?? "–"}
       </span>
     </div>

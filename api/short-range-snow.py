@@ -388,7 +388,31 @@ def _read_cache(resort_id: str) -> dict | None:
     # `refresh=1` is unaffected; it already bypasses this function.
     if row.get("config_version") != CONFIG_VERSION:
         return None
+    # Hourly wind is additive on the slot (same source rule as the 6-hour
+    # blocks, one hour at a time). Older v3.9 rows already have 00–23 snow
+    # slots without those keys, and age-alone freshness would keep serving
+    # them for the rest of the TTL. Missing keys are a miss; a present null
+    # is a real "no sample this hour" and stays a hit.
+    if not _hourly_slots_carry_wind(row.get("payload")):
+        return None
     return row
+
+
+def _hourly_slots_carry_wind(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return True
+    for day in payload.get("daily") or []:
+        if not isinstance(day, dict):
+            continue
+        if (day.get("day_index") or 99) > 7:
+            continue
+        hourly = day.get("hourly") or []
+        if not hourly:
+            continue
+        if any(not isinstance(slot, dict) or "wind_kmh" not in slot
+               for slot in hourly):
+            return False
+    return True
 
 
 def _single_band(payload: dict) -> bool:
