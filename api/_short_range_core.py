@@ -366,6 +366,30 @@ def elevation_bands(resort: dict[str, Any]) -> dict[str, float | None]:
     return bands
 
 
+# Below this much precipitation an aggregate's phase is labelled from the
+# DISPLAY temperature, not from its amounts. The amounts come from the hybrid,
+# which reads the model's 2 m series; the temperature shown beside them is the
+# pressure-profile value at band elevation, and the two differ by up to ~10 C
+# in an inversion. On a trace hour that gap produced "rain, 0.1 mm" next to
+# "-2.7 C" (every one of the 419 such served slots on 2026-09-03 carried
+# <= 0.2 mm). No amount changes: a trace is a trace either way.
+TRACE_PRECIP_MM = 0.25
+
+
+def _phase_fraction(snow_cm: float, precip_mm: float, temp_c: float) -> float:
+    """Snow share of one aggregate's precipitation: emitted snow (as SWE) over
+    precipitation, 1.0 when it snowed on a precip series that read dry, and
+    the dry-bulb ladder when nothing fell or only a trace did. Callers take
+    the max over the allocated and the raw amounts -- see hourly_band_day."""
+    if snow_cm > 0.0 and precip_mm > 0.0:
+        return min(1.0, (snow_cm / OM_SNOW_CM_PER_MM) / precip_mm)
+    if snow_cm > 0.0:
+        return 1.0
+    if precip_mm >= TRACE_PRECIP_MM:
+        return 0.0
+    return slr_and_snow_fraction(temp_c)[1]
+
+
 def slr_and_snow_fraction(t_mean_c: float) -> tuple[float, float]:
     if t_mean_c >= 1.0:
         return 0.0, 0.0
@@ -1455,11 +1479,13 @@ def hourly_band_day(
         if not present:
             continue
         p10, p50, p90 = _quantiles([block_snow[block_index][m] for m in present])
+        raw_p50 = p50
         if alloc_p50 is not None:
             p50 = alloc_p50[block_index]
             p10 = min(p10, p50)
             p90 = max(p90, p50)
-        precip_p50 = round(_median([block_precip[block_index][m] for m in present]), 1)
+        precip_raw = _median([block_precip[block_index][m] for m in present])
+        precip_p50 = round(precip_raw, 1)
         temp_means = [sum(block_temps[block_index][m]) / len(block_temps[block_index][m]) for m in present]
         temp_p50 = _median(temp_means)
         # Sustained speed/direction from the homogeneous set; gust from EVERY
@@ -1472,12 +1498,12 @@ def hourly_band_day(
         # precip_type follows the EMITTED hybrid numbers (snow cm ÷ 0.7 → SWE mm
         # share of the block precip) so a block can never show fresh cm labeled
         # "rain"; dry blocks keep the dry-bulb ladder label.
-        if precip_p50 > 0.0:
-            snow_fraction = min(1.0, (p50 / OM_SNOW_CM_PER_MM) / precip_p50)
-        elif p50 > 0.0:
-            snow_fraction = 1.0
-        else:
-            _, snow_fraction = slr_and_snow_fraction(temp_p50)
+        # Same rule as the hour slots: the allocated OR the raw amounts saying
+        # snow is enough (see hourly_band_day for why).
+        snow_fraction = max(
+            _phase_fraction(p50, precip_p50, temp_p50),
+            _phase_fraction(raw_p50, precip_raw, temp_p50),
+        )
         freezing = freezing_block.get((date, block_index))
         blocks.append(
             {
@@ -1519,20 +1545,28 @@ def hourly_band_day(
         present_h = sorted(hour_snow[hour])
         if not present_h:
             continue
-        _, hour_p50, _ = _quantiles([hour_snow[hour][m] for m in present_h])
-        if hour_alloc is not None:
-            hour_p50 = hour_alloc[hour]
-        hour_precip_p50 = round(_median([hour_precip[hour][m] for m in present_h]), 1)
+        _, hour_raw_p50, _ = _quantiles([hour_snow[hour][m] for m in present_h])
+        hour_p50 = hour_alloc[hour] if hour_alloc is not None else hour_raw_p50
+        hour_precip_raw = _median([hour_precip[hour][m] for m in present_h])
+        hour_precip_p50 = round(hour_precip_raw, 1)
         hour_temp_means = [
             sum(hour_temps[hour][m]) / len(hour_temps[hour][m]) for m in present_h
         ]
         hour_temp_p50 = _median(hour_temp_means)
-        if hour_precip_p50 > 0.0:
-            hour_frac = min(1.0, (hour_p50 / OM_SNOW_CM_PER_MM) / hour_precip_p50)
-        elif hour_p50 > 0.0:
-            hour_frac = 1.0
-        else:
-            _, hour_frac = slr_and_snow_fraction(hour_temp_p50)
+        # Phase from BOTH the allocated amounts (what the bar shows) and the
+        # raw hybrid amounts (what the physics said). The 0.1 cm allocation
+        # floors a trace-snow hour to 0.0 while its 0.1 mm of precipitation
+        # survives rounding; judged on those two numbers alone a -2.5 C hour
+        # read "rain" (419 of 31,920 served slots, 2026-09-03). Either view
+        # saying snow wins, so a slot that draws snow is never labelled rain
+        # and a slot the physics snowed on is not relabelled by its rounding.
+        hour_frac = max(
+            _phase_fraction(hour_p50, hour_precip_p50, hour_temp_p50),
+            _phase_fraction(hour_raw_p50, hour_precip_raw, hour_temp_p50),
+        )
+        # Residual liquid follows the same verdict: a snow slot has none.
+        hour_rain = 0.0 if hour_frac >= 0.8 else max(
+            0.0, hour_precip_raw - max(hour_p50, hour_raw_p50) / OM_SNOW_CM_PER_MM)
         hour_wind_kmh, hour_wind_dir_deg, _ = _wind_aggregate(
             hour_wind_free_air[hour] or hour_wind_surface[hour])
         _, _, hour_wind_gust_kmh = _wind_aggregate(
@@ -1543,8 +1577,7 @@ def hourly_band_day(
                 "hour": hour,
                 "snow_cm_p50": hour_p50,
                 "precip_mm_p50": hour_precip_p50,
-                "rain_mm_p50": round(
-                    max(0.0, hour_precip_p50 - hour_p50 / OM_SNOW_CM_PER_MM), 1),
+                "rain_mm_p50": round(hour_rain, 1),
                 "temp_c_p50": round(hour_temp_p50, 1),
                 "feels_c_p50": round(wind_chill_c(hour_temp_p50, hour_wind_kmh), 1),
                 # Same fields the 6-hour blocks carry, at hour resolution, so
