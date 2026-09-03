@@ -203,6 +203,7 @@ window.OffpisteDraw = (function(){
   var flying=false, flyRAF=null, savedCam=null, routeOpen=false, flyMode="chase", profScale=null, selRoute=null, sessionRoute=null;
   var selPiste=null, pisteSelToken=0;   // tapped piste run (whole course, merged from geometry.json)
   var pinMode=false, waypoints=[], wpMarkers=[], wpPopup=null, depthInfo=null;
+  var deviceFix=null, hereTimer=null, hereDegraded=false;
   var SRC="op-route", LYR="op-route-line";
   var WMx=20037508.342789244;
   var lon2mx=function(l){return l/180*WMx;}, lat2my=function(l){return Math.log(Math.tan(Math.PI/4+l*Math.PI/360))*WMx/Math.PI;};
@@ -522,6 +523,22 @@ window.OffpisteDraw = (function(){
     map.addSource("op-play-cue",{type:"geojson",data:fc([])});
     map.addLayer({id:"op-play-cue-dot",type:"circle",source:"op-play-cue",
       paint:{"circle-radius":8,"circle-color":"#1BC7FF","circle-stroke-color":"#ffffff","circle-stroke-width":2.5}});
+    // Device position ("you are here"), fed by the host. Blue, not the replay
+    // cue's cyan: one is where you are, the other is where you were.
+    //
+    // The accuracy ring is a GEODESIC POLYGON, not a circle layer: MapLibre's
+    // circle-radius is screen pixels even under pitch-alignment "map", so a
+    // circle cannot mean "18 metres" on a pitched terrain view — it would need
+    // re-deriving on every zoom and would still be wrong across the tilt. A
+    // polygon drapes on the mesh the same way op-session-line already does.
+    map.addSource("op-here-acc",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-here-acc-fill",type:"fill",source:"op-here-acc",
+      paint:{"fill-color":"#0A84FF","fill-opacity":0.14}});
+    map.addLayer({id:"op-here-acc-line",type:"line",source:"op-here-acc",
+      paint:{"line-color":"#0A84FF","line-width":1,"line-opacity":0.5}});
+    map.addSource("op-here",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-here-dot",type:"circle",source:"op-here",
+      paint:{"circle-radius":7,"circle-color":"#0A84FF","circle-stroke-color":"#ffffff","circle-stroke-width":2.5}});
     map.addSource(SRC,{type:"geojson",data:fc([])});
     map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
@@ -1532,8 +1549,88 @@ window.OffpisteDraw = (function(){
     try{ if(window.webkit&&webkit.messageHandlers&&webkit.messageHandlers.offpisteReady) webkit.messageHandlers.offpisteReady.postMessage(rid); }catch(e){}
     try{ if(window.AndroidOffpiste&&AndroidOffpiste.onReady) AndroidOffpiste.onReady(rid); }catch(e){}
   }
+  // ---- Device position -------------------------------------------------
+  // The gate is meta.bounds_3857 — the box of the resort THIS PAGE WAS OPENED
+  // FOR. Not the resort boundary polygon: polygons exist for 1,348 of 3,491
+  // catalogued resorts and for no backcountry area, while bounds_3857 is
+  // structurally guaranteed here (:1977 destructures it before the map is even
+  // built, so reaching init() proves it existed).
+  //
+  // Deliberately NOT called "the rendered extent": the terrain mesh is global
+  // and neighbouring resorts draw outside this box, so a rider standing on the
+  // next mountain along sees no dot even though ground is drawn under them.
+  // That is the accepted cost of a gate that exists everywhere.
+  //
+  // It is also an axis-aligned box rather than the boundary, so a neighbouring
+  // valley a kilometre out counts as inside. That is the intended relaxation.
+  var HERE_MAX_AGE_MS = 90000;
+  // Beyond this the fix cannot say where you are on a ski hill; drawing it
+  // would be a confident-looking lie.
+  var HERE_MAX_ACC_M = 1000;
+  // Degraded resorts have no LiDAR artifact, so their box is synthesised from
+  // the OSM geometry (:1963-1968) and is often tiny — measured over the build
+  // tree, 39% are under 1 km across and 15% under 300 m, which would drop a
+  // rider standing mid-resort. The floor applies ONLY there: 31% of LiDAR
+  // resorts are under 3 km across too, and widening the gate for a third of
+  // the fleet is not what this floor is for.
+  var HERE_DEGRADED_MIN_HALF_M = 1500;
+  function hereBox(){
+    var b = meta && meta.bounds_3857;
+    // Short or non-numeric arrays must fail loudly here rather than produce
+    // NaN comparisons, which are all false — a silently dead marker.
+    if(!b || b.length < 4) return null;
+    for(var i=0;i<4;i++){ if(!isFinite(b[i])) return null; }
+    var hx=(b[2]-b[0])/2, hy=(b[3]-b[1])/2;
+    if(hereDegraded){
+      hx=Math.max(hx, HERE_DEGRADED_MIN_HALF_M);
+      hy=Math.max(hy, HERE_DEGRADED_MIN_HALF_M);
+    }
+    var cx=(b[0]+b[2])/2, cy=(b[1]+b[3])/2;
+    return [cx-hx, cy-hy, cx+hx, cy+hy];
+  }
+  // Metres on the ground, as a polygon — see the addLayer comment for why this
+  // is not a circle layer.
+  function hereAccRing(lng, lat, m){
+    var R=6378137, n=48, ring=[], latR=lat*Math.PI/180;
+    var dLat=(m/R)*180/Math.PI, dLng=(m/(R*Math.max(0.01,Math.cos(latR))))*180/Math.PI;
+    for(var i=0;i<=n;i++){
+      var a=2*Math.PI*i/n;
+      ring.push([lng+dLng*Math.sin(a), lat+dLat*Math.cos(a)]);
+    }
+    return {type:"Feature",geometry:{type:"Polygon",coordinates:[ring]},properties:{}};
+  }
+  function clearDeviceFix(){
+    deviceFix=null;
+    if(hereTimer){ clearTimeout(hereTimer); hereTimer=null; }
+    if(!map) return;
+    var d=map.getSource("op-here"); if(d) d.setData(fc([]));
+    var a=map.getSource("op-here-acc"); if(a) a.setData(fc([]));
+  }
+  function setDeviceFix(lng, lat, accM, tsMs){
+    // Gate on `map`, never on `ready`: ready only turns true inside loadElev's
+    // success path (:301), which degraded resorts never reach — the same trap
+    // that already disables their offline button (:1531) and depth badge
+    // (:1541). Those are exactly the resorts the floor above exists to serve.
+    if(!map) return;
+    if(!(isFinite(lng) && isFinite(lat))) return clearDeviceFix();
+    if(tsMs && (Date.now()-tsMs) > HERE_MAX_AGE_MS) return clearDeviceFix();
+    if(accM > HERE_MAX_ACC_M) return clearDeviceFix();
+    var box=hereBox(), x=lon2mx(lng), y=lat2my(lat);
+    if(!box || x<box[0] || x>box[2] || y<box[1] || y>box[3]) return clearDeviceFix();
+    deviceFix={lng:lng, lat:lat, acc:(accM>0?accM:0)};
+    var d=map.getSource("op-here");
+    if(d) d.setData(fc([{type:"Feature",geometry:{type:"Point",coordinates:[lng,lat]},properties:{}}]));
+    var a=map.getSource("op-here-acc");
+    if(a) a.setData(fc(deviceFix.acc>0 ? [hereAccRing(lng,lat,deviceFix.acc)] : []));
+    // A host that stops pushing — screen closed, GPS lost, permission revoked
+    // mid-session — must not leave a stale dot claiming to be "now".
+    if(hereTimer) clearTimeout(hereTimer);
+    hereTimer=setTimeout(clearDeviceFix, HERE_MAX_AGE_MS);
+  }
+
   function init(_map,_meta,_art,_degraded){
     map=_map; meta=_meta||{}; art=_art; southern=!!(meta.bounds_3857 && (meta.bounds_3857[1]+meta.bounds_3857[3])<0);
+    hereDegraded=!!_degraded;
     injectCSS(); injectDOM(); grabEls(); addLayer(); wire(); renderBadge(); refresh(); notifyReady();
     // The V2 aspect:// overlay derives from the DEM tiles, not elev_5m.png —
     // the chip works before (and without) loadElev, so don't keep it locked
@@ -1544,6 +1641,7 @@ window.OffpisteDraw = (function(){
     // defers it to first idle so it never competes with the initial 3D render.
   }
   return { init:init, loadElev:loadElev, loadSaved:loadSaved, loadWaypoints:loadWaypoints, loadSessionTrack:loadSessionTrack, setOfflineState:setOfflineState, setDepth:setDepth,
+    setDeviceFix:setDeviceFix, clearDeviceFix:clearDeviceFix,
     probeAt:probeAt, consumesTaps:consumesTaps,
     _sim:function(a,b,n){ if(!ready) return "not-ready"; if(!active) toggle(); pts=[];
       for(var i=0;i<=n;i++){ addAt(a[0]+(b[0]-a[0])*i/n, a[1]+(b[1]-a[1])*i/n); } refresh(); return pts.length; },
