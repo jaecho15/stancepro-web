@@ -367,12 +367,14 @@ def elevation_bands(resort: dict[str, Any]) -> dict[str, float | None]:
 
 
 # Below this much precipitation an aggregate's phase is labelled from the
-# DISPLAY temperature, not from its amounts. The amounts come from the hybrid,
-# which reads the model's 2 m series; the temperature shown beside them is the
-# pressure-profile value at band elevation, and the two differ by up to ~10 C
-# in an inversion. On a trace hour that gap produced "rain, 0.1 mm" next to
-# "-2.7 C" (every one of the 419 such served slots on 2026-09-03 carried
-# <= 0.2 mm). No amount changes: a trace is a trace either way.
+# DISPLAY temperature, not from its amounts. The amounts came from the hybrid,
+# which until 2026-09-04 read the model's 2 m series; the temperature shown
+# beside them is the pressure-profile value at band elevation, and the two
+# differ by up to ~10 C in an inversion (the phase call now reads the profile
+# too, so the gap survives only on profile-fallback hours). On a trace hour
+# that gap produced "rain, 0.1 mm" next to "-2.7 C" (every one of the 419 such
+# served slots on 2026-09-03 carried <= 0.2 mm). No amount changes: a trace is
+# a trace either way.
 TRACE_PRECIP_MM = 0.25
 
 
@@ -426,6 +428,9 @@ def slr_and_snow_fraction(t_mean_c: float) -> tuple[float, float]:
 #     ramp, trusting the model through the ambiguous zone) — guards valley-floor
 #     bands that sit *below* the grid elevation.
 # Hours without relative_humidity fall back to native unchanged.
+# Temperature input (2026-09-04): the band's pressure-profile temperature
+#   where the profile resolves the band, else the 2 m series — the same
+#   value the display shows. See hourly_band_day.
 OM_SNOW_CM_PER_MM = 0.7      # Open-Meteo snowfall convention: 0.7 cm per 1 mm SWE
 TW_CONVERT_HI_C = 1.0        # rain→snow ramp: full snow ≤0°C Tw → none ≥+1°C
 TW_KEEP_LO_C = 0.5           # snow→rain ramp: native snow kept ≤+0.5°C Tw...
@@ -737,6 +742,10 @@ def hybrid_hourly_snow_cm(
     native_cm: float, precip_mm: float, temp_c: float, rh_pct: float | None,
 ) -> float:
     """Effective new-snow (cm) for one model-hour at band elevation.
+
+    `temp_c` is whatever band temperature the caller chose: since 2026-09-04
+    hourly_band_day passes the pressure-profile value where the profile
+    resolves the band (the 2 m series only as its fallback).
 
     `native_cm` is the API-SUPPLIED snowfall. The parameter name predates the
     finding that its provenance is not established — at ECMWF its temporal
@@ -1366,6 +1375,31 @@ def hourly_band_day(
             snow_hr = snow_series[index] if index < len(snow_series) else None
             rh_hr = rh_series[index] if index < len(rh_series) else None
             day_hours[model] += 1
+            # Band temperature for BOTH the phase call below and the display:
+            # the pressure-profile value at band elevation where the profile
+            # resolves the band, the 2 m series otherwise. Until 2026-09-04 the
+            # phase call read the 2 m series alone — Open-Meteo's lapse of the
+            # grid cell's own 2 m value, 6.5 C/km from the cell's mean
+            # elevation — while the display read the profile. Under a valley
+            # cold pool the two part by 3-4 C: Treble Cone 2026-09-04 00-06 h,
+            # cell 985 m at +4.0 C lapsed to -0.1 C at the 1,608 m mid band,
+            # profile +2.9 C, the models' own freezing level 2,040-2,240 m and
+            # every native phase rain — and the hybrid served 1.8 cm/h of snow
+            # beside +2.9 C. It rained. Same geometry as Cardrona 2026-07-30
+            # (cell below the band) with the opposite profile sign, so the
+            # profile is the discriminator. The fallback path is unchanged and
+            # still counted.
+            disp_temp = None
+            if profile_temps is not None:
+                disp_temp = profile_temps.get(stamp, {}).get(model)
+            if disp_temp is None:
+                disp_temp = float(temp)
+                # Counted, not just used. The two sources differ by up to ~10 C
+                # in a valley inversion — that gap is why v3 exists — so a day
+                # that silently mixed them must not be archived as if it were a
+                # clean profile day. Feeds temp_source in the day aggregate.
+                day_temp_fallback_hours[model] += 1
+            day_temp_profile_hours[model] += 1
             if snow_hr is None:
                 snow_cm = 0.0
                 # No native prior, so no wet-bulb re-partition happened. Weight
@@ -1378,7 +1412,7 @@ def hourly_band_day(
                 else:
                     day_hybrid_hours[model] += 1
                 snow_cm = hybrid_hourly_snow_cm(
-                    float(snow_hr), float(precip), float(temp), rh_hr,
+                    float(snow_hr), float(precip), float(disp_temp), rh_hr,
                 )
                 # Precip the hybrid could re-book as rain, at the SAME density
                 # Open-Meteo uses for the native snowfall it is joining.
@@ -1389,17 +1423,6 @@ def hourly_band_day(
             day_precip[model] += float(precip)
             block_snow[block_index][model] += snow_cm
             block_precip[block_index][model] += float(precip)
-            disp_temp = None
-            if profile_temps is not None:
-                disp_temp = profile_temps.get(stamp, {}).get(model)
-            if disp_temp is None:
-                disp_temp = float(temp)
-                # Counted, not just used. The two sources differ by up to ~10 C
-                # in a valley inversion — that gap is why v3 exists — so a day
-                # that silently mixed them must not be archived as if it were a
-                # clean profile day. Feeds temp_source in the day aggregate.
-                day_temp_fallback_hours[model] += 1
-            day_temp_profile_hours[model] += 1
             day_temps[model].append(disp_temp)
             block_temps[block_index][model].append(disp_temp)
             # SPEED and DIRECTION come from the free atmosphere at band

@@ -99,7 +99,16 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 #
 # Feels-like follows automatically: wind_chill_c already reads the block's
 # aggregated wind, so it now uses the same source it displays.
-CONFIG_VERSION = "hybrid-tw-v3.9-temp-provenance"
+# v4.0 (2026-09-04): the wet-bulb phase call reads the band's PRESSURE-PROFILE
+# temperature — the same value the display shows — instead of the 2 m series
+# lapsed 6.5 C/km from the grid cell. snow_cm_*, precip_type, rain_mm and the
+# hourly slots move; ens_* do not (the ensemble still lapses 2 m, see
+# fetch_ensemble_members). Treble Cone 2026-09-04 00-06 h: cell 985 m +4.0 C
+# lapsed to -0.1 C at the 1,608 m mid band, profile +2.9 C, native phase rain,
+# freezing level 2,040-2,240 m — served 1.8 cm/h of snow beside +2.9 C, and it
+# rained. Fleet at 20:40Z: 43 D1-7 hour slots at 12 NZ resorts labelled snow
+# with >= 1 mm beside a displayed >= 1.5 C.
+CONFIG_VERSION = "hybrid-tw-v4.0-profile-phase"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
