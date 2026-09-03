@@ -27,8 +27,9 @@ import { ForecastView } from "@/components/snow/ForecastView";
 
 import fixture from "./fixture.json";
 
-/** Frozen fixture predates hourly slots. Synthesize 24 local hours so this
- *  harness can review the 24h strip without a live fetch. */
+/** Older fixtures predate hourly slots. Synthesize 24 local hours for those
+ *  so this harness can review the 24h strip without a live fetch; a fixture
+ *  that already carries them (2026-09-03 on) is used as served. */
 function fixtureWithHourly() {
   const clone = JSON.parse(JSON.stringify(fixture)) as {
     payload?: { daily?: Array<Record<string, unknown> & {
@@ -48,6 +49,9 @@ function fixtureWithHourly() {
   const daily = clone.payload?.daily ?? [];
   for (const row of daily) {
     if (row.layer !== "D1-7") continue;
+    // A fixture that already carries real hour slots (freezing level, feels,
+    // wind) must not be overwritten with the block-derived stand-in.
+    if (Array.isArray(row.hourly) && (row.hourly as unknown[]).length > 0) continue;
     const blocks = row.time_of_day ?? [];
     row.hourly = Array.from({ length: 24 }, (_, hour) => {
       const block = blocks[Math.min(3, Math.floor(hour / 6))];
