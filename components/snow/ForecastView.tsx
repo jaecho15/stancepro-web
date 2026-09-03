@@ -814,6 +814,44 @@ function ForecastGrid({
                 );
               })}
             </div>
+            {/* Wind per hour — the same three rows the apps' hourly body carries.
+                Sustained speed/direction are this band's free-air wind; gust is
+                the near-surface field, same for every band, so it sits below a
+                rule like it does in the 6-hour wind table. */}
+            <div className="h-px bg-slate-700/40 my-1.5" />
+            <div className="grid py-0.5" style={hourGridStyle}>
+              <span className="text-[8.5px] font-medium text-slate-500 self-center">DIR</span>
+              {hourlyHours.map((slot) => (
+                <span key={slot.hour} className="flex justify-center" style={{ color: ACCENT }}>
+                  {slot.wind_dir_deg != null ? <WindArrow deg={slot.wind_dir_deg} className="w-2.5 h-2.5" /> : <span className="text-slate-600">–</span>}
+                </span>
+              ))}
+            </div>
+            {(["speed", "gust"] as const).map((kind) => (
+              <div
+                key={kind}
+                className={`grid py-0.5${kind === "gust" ? " mt-1 border-t border-slate-600/40 pt-1" : ""}`}
+                style={hourGridStyle}
+              >
+                {kind === "gust" ? (
+                  <span className="self-center leading-tight">
+                    <span className="block text-[8.5px] font-medium text-slate-500">GUST</span>
+                    <span className="block text-[8px] text-slate-500">near-surf</span>
+                  </span>
+                ) : (
+                  <span className="text-[8.5px] font-medium text-slate-500 self-center">SPD</span>
+                )}
+                {hourlyHours.map((slot) => {
+                  const kmh = kind === "gust" ? slot.wind_gust_kmh : slot.wind_kmh;
+                  const v = kmh != null ? u.windKmh(kmh) : null;
+                  return (
+                    <span key={slot.hour} className="text-[10px] font-semibold text-center" style={{ color: kind === "gust" ? "#F59E0B" : "#14B8A6" }}>
+                      {v ?? "–"}
+                    </span>
+                  );
+                })}
+              </div>
+            ))}
             </div>
           </div>
           </>
@@ -1119,24 +1157,35 @@ function snowLevelM(block: TimeBlock): number | null {
   return null;
 }
 
-function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
+function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel, hourlyDate, hourlySlots }: {
   days: DailyRow[];
   satelliteSnowlineM: number | null;
   satelliteLabel: string | null;
+  /** When a day's hourly columns are open and its slots carry a freezing
+   *  level, the chart draws that day at hour resolution (24 points) instead
+   *  of the window's 6-hour blocks — parity with the apps' snowline strip. */
+  hourlyDate?: string | null;
+  hourlySlots?: HourlySlot[];
 }) {
   const u = useUnitFormat();
   const W = 560, H = 168, leftPad = 48, rightPad = 8, topPad = 10, bottomPad = 26;
   const plotW = W - leftPad - rightPad, plotH = H - topPad - bottomPad;
-  const blocksPer = 4;
-  const numDays = Math.max(1, days.length);
+  const hourly = !!hourlyDate && (hourlySlots ?? []).some((h) => h.freezing_level_m != null);
+  const blocksPer = hourly ? 24 : 4;
+  const numDays = hourly ? 1 : Math.max(1, days.length);
   const dayW = plotW / numDays;
-  const blockSpacing = 4;
+  const blockSpacing = hourly ? 2 : 4;
   const blockW = (dayW - blockSpacing * (blocksPer - 1)) / blocksPer;
 
   // Values display-converted up front: the chart normalizes to the sample
   // range, so a uniform unit scale keeps the shape and converts the axis.
   const satelliteLine = satelliteSnowlineM != null ? u.elevation(satelliteSnowlineM) : null;
-  const samples: Array<{ freezing: number | null; snow: number | null }> = days.flatMap((day) =>
+  const samples: Array<{ freezing: number | null; snow: number | null }> = hourly
+    ? (hourlySlots ?? []).map((h) => ({
+        freezing: h.freezing_level_m != null ? u.elevation(h.freezing_level_m) : null,
+        snow: h.freezing_level_m != null ? u.elevation(h.freezing_level_m - 200) : null,
+      }))
+    : days.flatMap((day) =>
     (day.time_of_day ?? []).map((b) => {
       const snow = snowLevelM(b);
       return {
@@ -1175,14 +1224,14 @@ function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
     return (
       <g key={key}>
         <path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        {pts.map((p) => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r={2} fill={color} />)}
+        {pts.map((p) => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r={hourly ? 1.2 : 2} fill={color} />)}
       </g>
     );
   };
 
   return (
     <div className="space-y-2">
-      <SectionHeader title="Snowline & freezing level" subtitle={`${u.elevationUnit} · median`} />
+      <SectionHeader title="Snowline & freezing level" subtitle={hourly ? `${u.elevationUnit} · hourly · ${dayLabel(hourlyDate ?? "")}` : `${u.elevationUnit} · median`} />
       <div className="flex items-center gap-4 px-1">
         <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded" style={{ background: SNOWLINE_COLOR }} /><span className="text-[9px] text-slate-400">Snowline</span></span>
         <span className="flex items-center gap-1"><span className="w-3.5 h-[3px] rounded" style={{ background: FREEZING_COLOR }} /><span className="text-[9px] text-slate-400">Freezing level</span></span>
@@ -1199,7 +1248,19 @@ function SnowlineFreezingChart({ days, satelliteSnowlineM, satelliteLabel }: {
               </g>
             );
           })}
-          {days.map((day, d) => {
+          {hourly
+            ? [0, 6, 12, 18].map((h) => {
+                // Six-hour ticks under the hour columns so the single day still
+                // reads against the 6-hour grid the rest of the page uses.
+                const tickX = leftPad + h * (blockW + blockSpacing) - blockSpacing / 2;
+                return (
+                  <g key={h}>
+                    {h > 0 && <line x1={tickX} y1={topPad} x2={tickX} y2={topPad + plotH} stroke="#94a3b8" strokeOpacity={0.12} strokeWidth={0.5} />}
+                    <text x={leftPad + h * (blockW + blockSpacing) + blockW / 2} y={H - bottomPad + 14} textAnchor="middle" fontSize={8.5} fontWeight={500} fill="#94a3b8">{String(h).padStart(2, "0")}</text>
+                  </g>
+                );
+              })
+            : days.map((day, d) => {
             const dayLeft = leftPad + dayW * d;
             return (
               <g key={day.date}>
@@ -1890,6 +1951,8 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
       {/* 5) Snowline & freezing */}
       <SnowlineFreezingChart
+        hourlyDate={hourlyDate}
+        hourlySlots={hourlyDate ? quantRows.find((r) => r.date === hourlyDate)?.hourly : undefined}
         days={daysForBand(band)}
         satelliteSnowlineM={satellite?.status === "snowline" ? satellite?.snowline_m ?? null : null}
         satelliteLabel={satellite?.obs_date ? `Satellite snowline · ${satellite.obs_date}` : null}
