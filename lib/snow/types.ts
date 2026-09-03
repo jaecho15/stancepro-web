@@ -44,6 +44,10 @@ export interface HourlySlot {
   precip_mm_p50: number;
   rain_mm_p50?: number | null;
   temp_c_p50: number;
+  feels_c_p50?: number | null;
+  /** Hour-resolution freezing level / snow-level margin (2026-09-03 on). */
+  freezing_level_m?: number | null;
+  snow_level_margin_m?: number | null;
   precip_type: string;
   weather_code?: number | null;
   wind_kmh?: number | null;
@@ -174,6 +178,10 @@ export interface ForecastPayload {
   country_code?: string;
   region_id?: string;
   generated_utc: string;
+  /** Resort IANA timezone + offset (2026-08-20 payloads on). Every `date` is
+   *  a resort-local calendar day; "today" must be read in this zone. */
+  timezone?: string | null;
+  utc_offset_seconds?: number | null;
   models: string[];
   // band → elevation in metres (null when the resort has no top/base data)
   bands: Partial<Record<BandKey, number | null>>;

@@ -1236,6 +1236,24 @@ def freezing_level_by_date_block(payload: dict[str, Any]) -> tuple[dict[str, flo
     )
 
 
+def freezing_level_by_date_hour(payload: dict[str, Any]) -> dict[tuple[str, int], float]:
+    """Per (date, local hour) freezing level, mean across the models that
+    expose it -- the 1-hour counterpart of `freezing_level_by_date_block`, for
+    the hourly display slots. Additive: nothing served before reads it."""
+    hourly = payload.get("hourly") or {}
+    times = hourly.get("time") or []
+    by_hour: dict[tuple[str, int], list[float]] = defaultdict(list)
+    for key, values in hourly.items():
+        if not key.startswith("freezing_level_height"):
+            continue
+        for index, stamp in enumerate(times):
+            value = values[index] if index < len(values) else None
+            if value is None:
+                continue
+            by_hour[(stamp[:10], int(stamp[11:13]))].append(float(value))
+    return {key: sum(vals) / len(vals) for key, vals in by_hour.items()}
+
+
 def hourly_band_day(
     hourly: dict[str, Any],
     band_elevation: float | None,
@@ -1243,6 +1261,7 @@ def hourly_band_day(
     freezing_block: dict[tuple[str, int], float],
     profile_temps: dict[str, dict[str, float]] | None = None,
     free_air_wind: dict[str, dict[str, tuple[float, float]]] | None = None,
+    freezing_hour: dict[tuple[str, int], float] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     times = hourly.get("time") or []
     models = hourly_model_names(hourly)
@@ -1518,6 +1537,7 @@ def hourly_band_day(
             hour_wind_free_air[hour] or hour_wind_surface[hour])
         _, _, hour_wind_gust_kmh = _wind_aggregate(
             hour_wind_free_air[hour] + hour_wind_surface[hour])
+        hour_fz = (freezing_hour or {}).get((date, hour))
         hourly_slots.append(
             {
                 "hour": hour,
@@ -1526,6 +1546,11 @@ def hourly_band_day(
                 "rain_mm_p50": round(
                     max(0.0, hour_precip_p50 - hour_p50 / OM_SNOW_CM_PER_MM), 1),
                 "temp_c_p50": round(hour_temp_p50, 1),
+                "feels_c_p50": round(wind_chill_c(hour_temp_p50, hour_wind_kmh), 1),
+                # Same fields the 6-hour blocks carry, at hour resolution, so
+                # the snowline strip can draw the hour columns it sits under.
+                "freezing_level_m": round(hour_fz) if hour_fz is not None else None,
+                "snow_level_margin_m": _snow_level_margin(band_elevation, hour_fz),
                 "precip_type": (
                     "snow" if hour_frac >= 0.8
                     else ("mix" if hour_frac > 0.0 else "rain")),
@@ -1638,6 +1663,7 @@ def band_daily_rows(
     members_out: list[dict[str, Any]] | None = None,
     grid_elevations: dict[str, float] | None = None,
     unified_block: str | None = None,
+    freezing_by_hour: dict[tuple[str, int], float] | None = None,
 ) -> list[dict[str, Any]]:
     """`members_out`, when given, collects one PER-MODEL row per (band, day)
     BEFORE the quantile reduction below folds the members away.
@@ -1697,7 +1723,7 @@ def band_daily_rows(
         shadow_agg: dict[str, Any] | None = None
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
-                                              profile_temps, free_air_wind)
+                                              profile_temps, free_air_wind, freezing_by_hour)
         elif members_out is not None or UNIFY_D8_THERMODYNAMICS:
             # Gated on members_out because this is pure cost with no served
             # effect: if nobody is persisting diagnostics, nobody can read it.
@@ -3046,6 +3072,7 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             profile_hourly = None  # display temps fall back to the 2m path
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
+    freezing_by_hour = freezing_level_by_date_hour(band_payloads["mid"])
     daily_rows: list[dict[str, Any]] = []
     # Per-model members, captured before the quantile reduction. Carried out
     # under a leading underscore so the serving path can strip it: this is
@@ -3059,6 +3086,7 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                                     freezing_by_date, freezing_by_block,
                                     HOURLY_WINDOW_DAYS,
                                     profile_hourly, members_out=members,
+                                    freezing_by_hour=freezing_by_hour,
                                     grid_elevations=grid_cells,
                                     unified_block=unified_block_reason(
                                         resort.get("resort_id"), band))
