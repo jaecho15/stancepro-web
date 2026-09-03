@@ -108,7 +108,20 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # freezing level 2,040-2,240 m — served 1.8 cm/h of snow beside +2.9 C, and it
 # rained. Fleet at 20:40Z: 43 D1-7 hour slots at 12 NZ resorts labelled snow
 # with >= 1 mm beside a displayed >= 1.5 C.
-CONFIG_VERSION = "hybrid-tw-v4.0-profile-phase"
+# v4.1 (2026-09-04): the ensemble members get the SAME band temperature rule.
+# Each member-hour's lapsed 2 m temperature is shifted by its own family's
+# deterministic profile-minus-2 m at that hour (band_temp_offsets_by_stamp /
+# aggregate_ensemble_members), and only where that deterministic model has a
+# profile — the hours hourly_band_day itself leaves on 2 m stay uncorrected, so
+# the two paths fall back identically. A pooled offset over every member was
+# measured and rejected: with ICON/GEM mostly on 2 m past D7 it moved the
+# ensemble -40 % against a deterministic -18 %. Three-arm A/B, 15 resorts,
+# identical upstream: deterministic D8-16 v3.9->v4.0 -18 %, ensemble
+# uncorrected->corrected -24 %, det-ens gap medians +3.1/+2.9/+2.4 ->
+# +2.5/+2.6/+2.2 C (warm/mid/cold), deterministic percentile inside the
+# ensemble 71-75 -> 78-79. Only ens_* move (web D8-16 rolling chart);
+# snow_cm_*, precip, temperature are byte-identical to v4.0.
+CONFIG_VERSION = "hybrid-tw-v4.1-ensemble-profile-offset"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on

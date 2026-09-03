@@ -2324,17 +2324,74 @@ def hybrid_capped_snow_cm(api_snow_cm: float, precip_mm: float,
             + remaining * _tw_convert_fraction(t_wet) * OM_SNOW_CM_PER_MM)
 
 
+def _ensemble_bands(band_elevations: dict[str, float | None]) -> list[str]:
+    return [b for b, e in band_elevations.items() if isinstance(e, (int, float))]
+
+
+# Deterministic model -> ensemble family label (ENSEMBLE_FAMILIES). The offset a
+# family's members receive is the one ITS OWN deterministic model measured, and
+# only at the hours where that model has a profile — mirroring hourly_band_day,
+# which falls back to the 2 m series for exactly those (model, hour) pairs. A
+# pooled offset applied to every member was measured first and rejected: at
+# D8-16 only GFS/ECMWF carry a profile on most hours, so the deterministic
+# median still sat half on lapsed 2 m while every member was shifted, and the
+# ensemble fell ~40 % against a deterministic that fell ~20 %.
+DETERMINISTIC_FAMILY = {"ecmwf_ifs025": "ECMWF", "gfs_seamless": "GEFS",
+                        "icon_seamless": "ICON", "gem_seamless": "GEM"}
+
+
+def band_temp_offsets_by_stamp(band_hourly: dict[str, Any] | None,
+                               profile_temps: dict[str, dict[str, float]] | None,
+                               ) -> dict[str, dict[str, float]]:
+    """{stamp: {family: profile - 2 m}} for one band, per deterministic model.
+    The same correction hourly_band_day applies to its own phase call (profile
+    in place of the lapsed 2 m series), expressed as an offset so it can be
+    handed to ensemble members that have no pressure profile of their own.
+    (model, stamp) pairs without a profile get no entry, i.e. no correction —
+    the same hours the deterministic path leaves on 2 m."""
+    if not band_hourly or not profile_temps:
+        return {}
+    times = band_hourly.get("time") or []
+    models = hourly_model_names(band_hourly)
+    out: dict[str, dict[str, float]] = {}
+    for index, stamp in enumerate(times):
+        by_model = profile_temps.get(stamp)
+        if not by_model:
+            continue
+        for model in models:
+            family = DETERMINISTIC_FAMILY.get(model)
+            if family is None:
+                continue
+            series = band_hourly.get(f"temperature_2m_{model}") or []
+            t2m = series[index] if index < len(series) else None
+            prof = by_model.get(model)
+            if t2m is None or prof is None:
+                continue
+            out.setdefault(stamp, {})[family] = float(prof) - float(t2m)
+    return out
+
+
 def fetch_ensemble_members(lat: float, lon: float,
                            band_elevations: dict[str, float | None],
+                           temp_offsets: dict[str, dict[str, float]] | None = None,
                            ) -> dict[str, dict[str, dict[str, Any]]]:
-    """{band: {date: aggregate}} from ONE multi-location request.
+    """{band: {date: aggregate}} from ONE multi-location request (fetch +
+    aggregate in one call; compute_forecast splits the two so the aggregate
+    can wait for the profile offsets)."""
+    return aggregate_ensemble_members(fetch_ensemble_body(lat, lon, band_elevations),
+                                      band_elevations, temp_offsets)
 
-    Best-effort like the daily version it replaces: any failure returns {} and
-    the caller keeps the deterministic band, because the ensemble is an
+
+def fetch_ensemble_body(lat: float, lon: float,
+                        band_elevations: dict[str, float | None]) -> list | dict | None:
+    """Raw multi-location ensemble response, or None on any failure.
+
+    Best-effort like the daily version it replaces: any failure returns None
+    and the caller keeps the deterministic band, because the ensemble is an
     enrichment on top of a forecast that already exists."""
-    bands = [b for b, e in band_elevations.items() if isinstance(e, (int, float))]
+    bands = _ensemble_bands(band_elevations)
     if not bands:
-        return {}
+        return None
     params = {
         "latitude": ",".join(f"{lat:.5f}" for _ in bands),
         "longitude": ",".join(f"{lon:.5f}" for _ in bands),
@@ -2347,8 +2404,25 @@ def fetch_ensemble_members(lat: float, lon: float,
         response = requests.get(ENSEMBLE_URL, params=open_meteo_params(params),
                                 timeout=REQUEST_TIMEOUT_S)
         response.raise_for_status()
-        body = response.json()
+        return response.json()
     except Exception:  # noqa: BLE001 — enrichment must never sink the forecast
+        return None
+
+
+def aggregate_ensemble_members(body: list | dict | None,
+                               band_elevations: dict[str, float | None],
+                               temp_offsets: dict[str, dict[str, dict[str, float]]] | None = None,
+                               ) -> dict[str, dict[str, dict[str, Any]]]:
+    """{band: {date: aggregate}} from a fetch_ensemble_body response.
+
+    `temp_offsets` is {band: {stamp: {family: profile - 2 m}}} from
+    band_temp_offsets_by_stamp: each member-hour's lapsed 2 m temperature is
+    shifted by ITS family's deterministic profile-minus-2 m at that hour before
+    the wet-bulb step, so the ensemble phase sees the same band temperature the
+    deterministic path (and the display) uses. Without it the ensemble kept
+    the grid cell's cold pool that v4.0 removed from the deterministic call."""
+    bands = _ensemble_bands(band_elevations)
+    if not bands or body is None:
         return {}
     # A single location returns an object, several return a list. Normalising
     # here keeps the band loop from having to know which it asked for.
@@ -2359,6 +2433,7 @@ def fetch_ensemble_members(lat: float, lon: float,
     for band, location in zip(bands, locations):
         hourly = location.get("hourly") or {}
         stamps = hourly.get("time") or []
+        offsets = (temp_offsets or {}).get(band) or {}
         snow_keys = [k for k in hourly if k.startswith("snowfall")]
         by_date: dict[str, list[int]] = {}
         for i, stamp in enumerate(stamps):
@@ -2373,6 +2448,7 @@ def fetch_ensemble_members(lat: float, lon: float,
                               "relative_humidity_2m" + tail)
                 if pk not in hourly or tk not in hourly or rk not in hourly:
                     continue
+                family = _ensemble_family(key)
                 total = 0.0
                 usable = False
                 for i in idx:
@@ -2383,8 +2459,9 @@ def fetch_ensemble_members(lat: float, lon: float,
                     usable = True
                     snow = hourly[key][i] if i < len(hourly[key]) else None
                     rh = hourly[rk][i] if i < len(hourly[rk]) else None
+                    band_temp = float(temp) + (offsets.get(stamps[i]) or {}).get(family, 0.0)
                     total += hybrid_capped_snow_cm(float(snow or 0.0), float(precip),
-                                                   float(temp), rh)
+                                                   band_temp, rh)
                 if not usable:
                     continue
                 totals.append(total)
@@ -3101,7 +3178,7 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         # fetch_ensemble_members); the per-band daily fetch is the fallback.
         if ENSEMBLE_PHASE_ALIGNED:
             ensemble_future = pool.submit(
-                fetch_ensemble_members, float(resort["lat"]), float(resort["lon"]), bands)
+                fetch_ensemble_body, float(resort["lat"]), float(resort["lon"]), bands)
             ensemble_futures = {}
         else:
             ensemble_future = None
@@ -3116,7 +3193,8 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
         _tz_src = band_payloads.get("mid") or next(iter(band_payloads.values()), {}) or {}
         _tz_name = _tz_src.get("timezone")
         _tz_offset = _tz_src.get("utc_offset_seconds")
-        ensembles = (ensemble_future.result() if ensemble_future is not None
+        ensemble_body = ensemble_future.result() if ensemble_future is not None else None
+        ensembles = (None if ensemble_future is not None
                      else {band: future.result() for band, future in ensemble_futures.items()})
         tendency = tendency_future.result() if tendency_future else []
         season_series, grid_elev = season_future.result()
@@ -3126,6 +3204,18 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
             profile_hourly = (profile_future.result() or {}).get("hourly")
         except Exception:
             profile_hourly = None  # display temps fall back to the 2m path
+
+    if ensembles is None:
+        # Aggregate only now: the member phase call wants the same band
+        # temperature the deterministic path uses, and that needs the band
+        # payloads and the profile (see aggregate_ensemble_members).
+        temp_offsets = {
+            band: band_temp_offsets_by_stamp(
+                (band_payloads.get(band) or {}).get("hourly"),
+                profile_temp_by_stamp(profile_hourly, elev))
+            for band, elev in bands.items()
+        }
+        ensembles = aggregate_ensemble_members(ensemble_body, bands, temp_offsets)
 
     freezing_by_date, freezing_by_block = freezing_level_by_date_block(band_payloads["mid"])
     freezing_by_hour = freezing_level_by_date_hour(band_payloads["mid"])
