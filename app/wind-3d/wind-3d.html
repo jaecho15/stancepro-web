@@ -16,7 +16,10 @@
     font-size:14px;-webkit-font-smoothing:antialiased}
   .mono{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
   #scene{position:absolute;inset:0}
-  #scene canvas{display:block}
+  /* touch-action:none — without it a touch device treats a drag as a scroll,
+     claims the gesture and stops sending pointermove, so orbit dies after
+     the first few pixels. Invisible with a mouse, fatal on a phone. */
+  #scene canvas{display:block;touch-action:none}
   #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
   .lab{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;
     font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:3px 8px;border-radius:6px;
@@ -886,19 +889,55 @@ function placeLabel(key, x, y, z, text, visible){
    ============================================================ */
 let drag = null;
 const el = renderer.domElement;
-el.addEventListener("pointerdown", e => { drag = {x:e.clientX,y:e.clientY}; el.setPointerCapture(e.pointerId); });
+// Every live pointer, so two fingers can be told from one. Zoom used to be
+// wheel-only, i.e. it did not exist on a touch device at all — the shipped
+// pages this prototype feeds are opened from a phone.
+const pointers = new Map();
+let pinchSpan = 0;
+function clampDist(d){ return Math.max(2500, Math.min(SPAN_Z * 3, d)); }
+function spanOf(){
+  const p = [...pointers.values()];
+  if (p.length < 2) return 0;
+  return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+}
+el.addEventListener("pointerdown", e => {
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  el.setPointerCapture(e.pointerId);
+  if (pointers.size >= 2) { pinchSpan = spanOf(); drag = null; }
+  else drag = {x:e.clientX, y:e.clientY};
+});
 el.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (pointers.size >= 2) {
+    const span = spanOf();
+    if (pinchSpan > 0 && span > 0) {
+      cam.dist = clampDist(cam.dist * (pinchSpan / span));
+      applyCamera();
+    }
+    pinchSpan = span;
+    return;
+  }
   if (!drag) return;
   cam.az -= (e.clientX - drag.x) * 0.005;
   cam.el = Math.max(0.05, Math.min(1.45, cam.el + (e.clientY - drag.y) * 0.004));
   drag = {x:e.clientX,y:e.clientY};
   applyCamera();
 });
-el.addEventListener("pointerup", e => { drag = null;
-  if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); });
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  if (pointers.size < 2) pinchSpan = 0;
+  // Lifting one finger of a pinch must not teleport the orbit: re-seat the
+  // drag anchor on whichever finger is still down.
+  const rest = [...pointers.values()];
+  drag = rest.length === 1 ? {x:rest[0].x, y:rest[0].y} : null;
+}
+el.addEventListener("pointerup", endPointer);
+el.addEventListener("pointercancel", endPointer);
 el.addEventListener("wheel", e => {
   e.preventDefault();
-  cam.dist = Math.max(2500, Math.min(SPAN_Z * 3, cam.dist * (1 + Math.sign(e.deltaY) * 0.12)));
+  cam.dist = clampDist(cam.dist * (1 + Math.sign(e.deltaY) * 0.12));
   applyCamera();
 }, { passive: false });
 
