@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Self-contained, **pandas-free** short-range snow compute core.
+"""Short-range snow compute core — the ONE source.
 
-This is the exact base-config compute from fetch_short_range_snow.py, with the
-only pandas dependency (`Series.quantile` / `Series.median`) replaced by a pure
-`_quantile` that reproduces pandas' default LINEAR interpolation bit-for-bit.
-Everything else (SLR ladder, per-model hour-by-hour accumulation, elevation
-bands, freezing/rain-risk, tendency, summary) is copied verbatim.
+This file is what Vercel deploys (api/short-range-snow.py imports it), and it
+is the only place the physics is edited. StancePro/scripts/short_range_core.py
+is a loader shim that imports THIS file by path, and the batch CLI behind the
+nightly bake-off (StancePro/scripts/fetch_short_range_snow.py) takes every
+physics function and constant from here. There is no second copy to keep in
+lockstep any more: until 2026-09-05 there were three, and they drifted twice —
+138 lines behind in August (dfa7add), then a whole-file overwrite with a July
+version on 2026-09-04 while production kept serving the current one.
+scripts/test_short_range_core.py guards the single-source shape.
 
-Purpose: run inside a Vercel Python serverless function (stdlib + requests only,
-no pandas → small cold-start bundle) as the on-demand compute endpoint. Parity
-with the batch pipeline is proven by scripts/test_short_range_core.py (feeds the
-same Open-Meteo payloads to both and asserts identical output).
-
-Keep this in lockstep with fetch_short_range_snow.py's base path.
+Pandas-free on purpose: stdlib + requests only, so the serverless bundle stays
+small. `_quantile` / `_median` reproduce pandas' default LINEAR interpolation
+and median bit-for-bit (the same test checks them against pandas).
 """
 from __future__ import annotations
 
@@ -303,7 +304,7 @@ def _weather_code_mode(codes: list[int]) -> int | None:
     return max(c for c, n in counts.items() if n == top)
 
 
-# ---- copied verbatim from fetch_short_range_snow.py (no pandas) ----
+# ---- compute primitives (no pandas) ----
 
 # A band is only worth computing when it sits far enough from its neighbour to
 # forecast differently. At the dry-adiabatic-ish lapse rates these mountains
@@ -1221,7 +1222,7 @@ def _wind_aggregate(
     Speed is the scalar mean; gust is the max; direction is the SPEED-WEIGHTED
     vector mean of the meteorological 'from' bearings (naive degree averaging
     is wrong across the 0/360 seam, e.g. 350° and 10° must average to 0°, not
-    180°). Pure Python — matches fetch_short_range_snow.py exactly."""
+    180°). Pure Python (no pandas)."""
     if not samples:
         return None, None, None
     speeds = [s for s, _, _ in samples]
