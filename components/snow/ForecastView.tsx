@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
   Cloud,
@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { fetchForecastClient } from "@/lib/snow/fetch";
+import type { RunHistory, RunHistoryPoint, ModelDay } from "@/lib/snow/types";
 import { useUnitFormat, useUnitPref, type UnitFormat, type UnitSystemPref } from "@/lib/snow/units";
 import type {
   BandKey,
@@ -498,6 +499,121 @@ function MountainGlyph({ index, count }: { index: number; count: number }) {
       <polygon points={`${peak},${top} ${right},${bot} ${left},${bot}`} fill={ACCENT} fillOpacity={0.55} />
       <polygon points={`${la},${yA} ${ra},${yA} ${rb},${yB} ${lb},${yB}`} fill="#ffffff" />
     </svg>
+  );
+}
+
+// ============================================================================
+// Expert layer — run-to-run stability and per-model breakdown
+// ============================================================================
+//
+// Sells uncertainty and provenance, not precision. Neither block ranks the
+// models: there is no southern-hemisphere truth to rank on, so agreement is a
+// spread and nothing more. Web has no Pro entitlement, so the segment simply
+// folds the heavy blocks; the apps gate the same blocks on Pro.
+
+const MODEL_COLORS: Record<string, string> = { ECMWF: "#60A5FA", GEM: "#F472B6", GFS: "#FBBF24", ICON: "#34D399" };
+const EXPERT_ACCENT = "#A78BFA";
+
+function ProTag() {
+  return <span className="rounded px-1 text-[9px] font-bold tracking-wide text-white" style={{ background: EXPERT_ACCENT }}>PRO</span>;
+}
+
+function tierColor(tier: string | null | undefined): string {
+  return tier === "high" ? "#22C55E" : tier === "moderate" ? "#F59E0B" : "#F87171";
+}
+
+function StabilityCard({ runs, dateLabel, bandLabel, loading }: {
+  runs: RunHistoryPoint[]; dateLabel: string; bandLabel: string; loading: boolean;
+}) {
+  const u = useUnitFormat();
+  const p50s = runs.map((r) => r.snow_cm_p50).filter((v): v is number => v != null);
+  const W = 170, H = 46;
+  const n = runs.length;
+  const top = Math.max(1, Math.max(...runs.map((r) => r.snow_cm_p90 ?? r.snow_cm_p50 ?? 0)) * 1.08);
+  const x = (i: number) => 4 + (i * (W - 8)) / Math.max(1, n - 1);
+  const y = (v: number) => H - 4 - (v / top) * (H - 8);
+  const band = runs.every((r) => r.snow_cm_p10 != null && r.snow_cm_p90 != null)
+    ? runs.map((r, i) => `${x(i)},${y(r.snow_cm_p90 as number)}`).join(" ") + " " +
+      runs.slice().reverse().map((r, i) => `${x(n - 1 - i)},${y(r.snow_cm_p10 as number)}`).join(" ")
+    : null;
+  const line = runs.map((r, i) => (r.snow_cm_p50 == null ? "" : `${i ? "L" : "M"}${x(i)},${y(r.snow_cm_p50)}`)).join(" ");
+  const first = p50s[0] ?? 0, last = p50s[p50s.length - 1] ?? 0, peak = Math.max(0, ...p50s);
+  const recent = p50s.slice(-6);
+  const swing = recent.length ? (Math.max(...recent) - Math.min(...recent)) / 2 : 0;
+  return (
+    <div className="rounded-2xl bg-slate-800/40 p-3" style={{ boxShadow: `0 0 0 1px ${EXPERT_ACCENT}55` }}>
+      <div className="flex items-center gap-2 mb-2"><ProTag /><span className="text-[11px] font-bold text-slate-200">Forecast stability</span><span className="text-[11px] text-slate-500">· {dateLabel} · {bandLabel}</span></div>
+      {loading ? (
+        <p className="text-[11px] text-slate-500">Loading run history…</p>
+      ) : n < 2 ? (
+        <p className="text-[11px] text-slate-500">No run history for this day yet.</p>
+      ) : (
+        <div className="flex items-center gap-3">
+          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0" aria-hidden>
+            {band && <polygon points={band} fill={ACCENT} opacity={0.16} />}
+            <path d={line} fill="none" stroke={ACCENT} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+            {runs.map((r, i) => r.snow_cm_p50 == null ? null : <circle key={r.run_init_time} cx={x(i)} cy={y(r.snow_cm_p50)} r={2} fill={tierColor(r.tier)} />)}
+          </svg>
+          <div className="text-[11px] leading-snug">
+            <div className="font-semibold text-slate-200">{n} runs · {fmt(u.snow(first))} → {fmt(u.snow(peak))} → {fmt(u.snow(last))} {u.snowUnit}</div>
+            <div className="text-slate-500">Last {recent.length} runs ±{fmt(u.snow(swing))} {u.snowUnit}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function agreementWord(day: ModelDay): string {
+  const values = day.models.map((m) => m.snow_cm);
+  if (!values.length) return "–";
+  const spread = Math.max(...values) - Math.min(...values);
+  const median = day.snow_cm_p50 ?? 0;
+  if (spread <= 5 || (median > 0 && spread / median < 0.4)) return "high";
+  if (spread <= 15 || (median > 0 && spread / median < 0.8)) return "medium";
+  return "low";
+}
+
+function ModelBreakdownCard({ days, bandLabel, loading }: { days: ModelDay[]; bandLabel: string; loading: boolean }) {
+  const u = useUnitFormat();
+  const names = days[0]?.models.map((m) => m.model) ?? [];
+  const scale = Math.max(1, ...days.flatMap((d) => d.models.map((m) => m.snow_cm)));
+  const today = days[0];
+  const spread = today ? Math.max(...today.models.map((m) => m.snow_cm)) - Math.min(...today.models.map((m) => m.snow_cm)) : 0;
+  const snowing = today ? today.models.filter((m) => m.snow_cm >= 0.5).length : 0;
+  return (
+    <div className="rounded-2xl bg-slate-800/40 p-3" style={{ boxShadow: `0 0 0 1px ${EXPERT_ACCENT}55` }}>
+      <div className="flex items-center gap-2 mb-2"><ProTag /><span className="text-[11px] font-bold text-slate-200">By model</span><span className="text-[11px] text-slate-500">· {bandLabel}</span></div>
+      {loading ? (
+        <p className="text-[11px] text-slate-500">Loading model candidates…</p>
+      ) : !days.length || !names.length ? (
+        <p className="text-[11px] text-slate-500">No run history for this day yet.</p>
+      ) : (
+        <>
+          <div className="grid gap-x-2 gap-y-1 items-center text-[10.5px]" style={{ gridTemplateColumns: `52px repeat(${days.length}, minmax(0,1fr))` }}>
+            <span />
+            {days.map((d) => <span key={d.date} className="text-[10px] font-semibold text-slate-500 truncate">{dayLabel(d.date)}</span>)}
+            {names.map((name) => (
+              <Fragment key={name}>
+                <span className="font-semibold" style={{ color: MODEL_COLORS[name] ?? "#94a3b8" }}>{name}</span>
+                {days.map((d) => {
+                  const v = d.models.find((m) => m.model === name)?.snow_cm;
+                  return (
+                    <span key={d.date} className="flex items-center gap-1 min-w-0">
+                      <i className="inline-block h-2 rounded-sm shrink-0" style={{ width: Math.max(2, ((v ?? 0) / scale) * 56), background: MODEL_COLORS[name] ?? "#94a3b8" }} />
+                      <span className="font-semibold text-slate-200">{v != null && v >= 0.05 ? fmt(u.snow(v)) : "–"}</span>
+                    </span>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
+          {today && (
+            <p className="mt-2 text-[10.5px] text-slate-500">Agreement <b className="text-slate-300">{agreementWord(today)}</b> · spread {fmt(u.snow(spread))} {u.snowUnit} · {snowing}/{today.models.length} models snow</p>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1747,6 +1863,19 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   const [showLegend, setShowLegend] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [hourlyDate, setHourlyDate] = useState<string | null>(null);
+  // Expert layer: folds the heavy blocks under a basic | expert segment. The
+  // last choice is remembered per browser. Web has no Pro entitlement, so the
+  // segment is the only gate here; the apps gate the same blocks on Pro.
+  const [expertMode, setExpertMode] = useState<boolean>(false);
+  useEffect(() => {
+    try { setExpertMode(localStorage.getItem("short_range_expert_mode") === "1"); } catch { /* no storage */ }
+  }, []);
+  const setExpert = (on: boolean) => {
+    setExpertMode(on);
+    try { localStorage.setItem("short_range_expert_mode", on ? "1" : "0"); } catch { /* no storage */ }
+  };
+  const [history, setHistory] = useState<RunHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1763,6 +1892,22 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   }, [resort.resort_id]);
 
   const payload = forecast?.payload;
+
+  // Run history for the strip's pick (else the first day) on the selected band.
+  useEffect(() => {
+    if (!expertMode) return;
+    const date = selectedDay ?? undefined;
+    const params = new URLSearchParams({ resort_id: resort.resort_id, band });
+    if (date) params.set("date", date);
+    let cancelled = false;
+    setHistoryLoading(true);
+    fetch(`/api/short-range-history?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: RunHistory | null) => { if (!cancelled) setHistory(data); })
+      .catch(() => { if (!cancelled) setHistory(null); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [expertMode, resort.resort_id, band, selectedDay]);
 
   // Resort-local current hour, only when the open hourly date IS the resort's
   // today and the payload carries its timezone — without it the device clock
@@ -1900,11 +2045,32 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
             <Info className="w-4 h-4" />
           </button>
         </div>
-        <UnitsToggle />
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg bg-slate-800/60 p-0.5" role="tablist" aria-label="Forecast depth">
+            {([["basic", "Basic"], ["expert", "Expert"]] as const).map(([key, label]) => {
+              const on = (key === "expert") === expertMode;
+              return (
+                <button key={key} type="button" role="tab" aria-selected={on} onClick={() => setExpert(key === "expert")}
+                  className={`rounded-md px-3 py-1 text-[11.5px] font-semibold transition-colors ${on ? "bg-slate-700 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <UnitsToggle />
+        </div>
       </div>
 
       {/* 1) Summary */}
       <SummaryBanner text={summarySentence(quantRows, band, u)} />
+      {expertMode && (
+        <StabilityCard
+          runs={history?.run_history ?? []}
+          dateLabel={dayLabel(selectedDay ?? quantRows[0]?.date ?? "")}
+          bandLabel={BAND_LABELS[band]}
+          loading={historyLoading && !history}
+        />
+      )}
 
       {/* 2) 7-day strip */}
       <SevenDayStrip
@@ -1945,6 +2111,14 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
         />
         </div>
       )}
+      {expertMode && (() => {
+        const days = history?.latest_run?.days ?? [];
+        const pick = selectedDay ?? quantRows[0]?.date;
+        const start = Math.max(0, days.findIndex((d) => d.date === pick));
+        return (
+          <ModelBreakdownCard days={days.slice(start, start + 3)} bandLabel={BAND_LABELS[band]} loading={historyLoading && !history} />
+        );
+      })()}
 
       {/* 4) Wind */}
       {daysForBand(band).some((d) => (d.time_of_day ?? []).length > 0) && <WindTable days={daysForBand(band)} />}

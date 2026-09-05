@@ -360,3 +360,41 @@ export interface SeasonalOutlookRow {
   target_season: string;
   generated_at: string | null;
 }
+
+// ---- Expert layer: /api/short-range-history (read-only archive projection) ----
+
+export interface RunHistoryPoint {
+  run_init_time: string;
+  lead_time_days?: number | null;
+  snow_cm_p10?: number | null;
+  snow_cm_p50?: number | null;
+  snow_cm_p90?: number | null;
+  tier?: string | null;
+  n_models?: number | null;
+  config_version?: string | null;
+}
+
+export interface ModelValue {
+  model: string;
+  model_id?: string;
+  snow_cm: number;
+}
+
+export interface ModelDay {
+  date: string;
+  lead_time_days?: number | null;
+  snow_cm_p10?: number | null;
+  snow_cm_p50?: number | null;
+  snow_cm_p90?: number | null;
+  tier?: string | null;
+  temp_source?: string | null;
+  models: ModelValue[];
+}
+
+export interface RunHistory {
+  resort_id: string;
+  band: string;
+  date?: string | null;
+  run_history: RunHistoryPoint[];
+  latest_run?: { run_init_time: string; config_version?: string | null; days: ModelDay[] } | null;
+}
