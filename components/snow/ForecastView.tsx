@@ -2047,7 +2047,7 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg bg-slate-800/60 p-0.5" role="tablist" aria-label="Forecast depth">
-            {([["basic", "Basic"], ["expert", "Expert"]] as const).map(([key, label]) => {
+            {([["basic", "Basic"], ["expert", "Pro"]] as const).map(([key, label]) => {
               const on = (key === "expert") === expertMode;
               return (
                 <button key={key} type="button" role="tab" aria-selected={on} onClick={() => setExpert(key === "expert")}
