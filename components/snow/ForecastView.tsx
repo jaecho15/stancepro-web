@@ -1453,13 +1453,16 @@ type Indicator = {
   valueColor?: string;
   detail?: string;
   description?: string;
+  /** Per-period lights (the apps' three faces): label + level colour. */
+  periods?: { label: string; color: string }[];
 };
 
 function computeIndicators(
   selectedDays: DailyRow[],
   bands: BandKey[],
   daysForBand: (b: BandKey) => DailyRow[],
-  u: UnitFormat
+  u: UnitFormat,
+  selectedDate: string | null
 ): Indicator[] {
   const out: Indicator[] = [];
 
@@ -1512,9 +1515,19 @@ function computeIndicators(
     }
   }
 
-  // visibility
-  const allBlocks = selectedDays.flatMap((d) => d.time_of_day ?? []);
-  // Physical thresholds, NOT a display value: maxGust is m/s regardless of the
+  // visibility — SELECTED DAY, rideable periods only, like the apps. The
+  // 3-day-window maximum used here before let a rough Tuesday night stamp
+  // "Poor" on a calm Sunday: the verdict came from a day the user was not
+  // looking at. 00-06 ("dawn" in the payload) is left out on purpose — nobody
+  // is on the hill, and a 3 a.m. gust used to drag the whole card down.
+  const visDay = selectedDays.find((d) => d.date === selectedDate) ?? selectedDays[0];
+  const ridePeriods: { key: string; label: string }[] = [
+    { key: "morning", label: "AM" }, { key: "afternoon", label: "PM" }, { key: "night", label: "EVE" },
+  ];
+  const allBlocks = ridePeriods
+    .map((p) => ({ p, block: (visDay?.time_of_day ?? []).find((b) => b.block === p.key) }))
+    .filter((x): x is { p: { key: string; label: string }; block: TimeBlock } => !!x.block);
+  // Physical thresholds, NOT a display value: gust is m/s regardless of the
   // user's unit preference, so 17/11 stay 17/11 m/s (≈61/40 km/h) now that wind
   // renders in km/h. Rescale only together with the iOS/Android ports.
   // Plus each block's WMO weather code (2026-09-06): wind and the 6-hour snow
@@ -1529,12 +1542,18 @@ function computeIndicators(
     if (gust >= 11 || b.snow_cm_p50 >= 3 || MODERATE_VISIBILITY_CODES.has(code)) return 1;
     return 0;
   };
-  const worst = allBlocks.reduce<0 | 1 | 2>((m, b) => Math.max(m, visLevel(b)) as 0 | 1 | 2, 0);
-  const poor = worst === 2;
-  const moderate = worst === 1;
-  const level = poor ? "Poor" : moderate ? "Moderate" : "Good";
-  const color = poor ? "#EF4444" : moderate ? "#F59E0B" : "#22C55E";
-  out.push({ icon: <Eye className="w-3.5 h-3.5" style={{ color }} />, title: "Visibility", value: level, valueColor: color, description: "From wind, snowfall and fog" });
+  const visColor = (l: 0 | 1 | 2) => (l === 2 ? "#EF4444" : l === 1 ? "#F59E0B" : "#22C55E");
+  if (allBlocks.length) {
+    const levels = allBlocks.map((x) => ({ label: x.p.label, level: visLevel(x.block) }));
+    const worst = levels.reduce<0 | 1 | 2>((m, x) => Math.max(m, x.level) as 0 | 1 | 2, 0);
+    const level = worst === 2 ? "Poor" : worst === 1 ? "Moderate" : "Good";
+    out.push({
+      icon: <Eye className="w-3.5 h-3.5" style={{ color: visColor(worst) }} />, title: "Visibility", value: level, valueColor: visColor(worst),
+      detail: visDay ? dayWeekday(visDay.date) : undefined,
+      periods: levels.map((x) => ({ label: x.label, color: visColor(x.level) })),
+      description: "From wind, snowfall and fog",
+    });
+  }
 
   return out;
 }
@@ -1559,6 +1578,16 @@ function KeyIndicators({ items }: { items: Indicator[] }) {
             </div>
             <span className="text-lg font-bold leading-tight" style={{ color: it.valueColor ?? "#fff" }}>{it.value}</span>
             {it.detail && <span className="text-[10px] font-medium text-slate-200 leading-tight">{it.detail}</span>}
+            {it.periods && (
+              <div className="flex items-center gap-2">
+                {it.periods.map((p) => (
+                  <span key={p.label} className="flex items-center gap-1 text-[8.5px] font-semibold text-slate-400 leading-none">
+                    <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} aria-hidden />
+                    {p.label}
+                  </span>
+                ))}
+              </div>
+            )}
             {it.description && <span className="text-[9px] text-slate-500 leading-tight">{it.description}</span>}
           </div>
         ))}
@@ -2051,9 +2080,9 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   );
 
   const indicators = useMemo(
-    () => computeIndicators(daysForBand(band), presentBands, daysForBand, u),
+    () => computeIndicators(daysForBand(band), presentBands, daysForBand, u, selectedDay),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- u is value-keyed by imperial
-    [daysForBand, band, presentBands, u.imperial]
+    [daysForBand, band, presentBands, u.imperial, selectedDay]
   );
 
   if (status === "loading") {
