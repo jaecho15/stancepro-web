@@ -1465,6 +1465,8 @@ function computeIndicators(
   selectedDate: string | null
 ): Indicator[] {
   const out: Indicator[] = [];
+  // The day the user picked (the window is previous + picked + next).
+  const selDay = selectedDays.find((d) => d.date === selectedDate) ?? selectedDays[0];
 
   // peak snow block
   let peak: { day: DailyRow; block: TimeBlock } | null = null;
@@ -1483,9 +1485,12 @@ function computeIndicators(
     out.push({ icon: <Mountain className="w-3.5 h-3.5" style={{ color: "#22C55E" }} />, title: "Best elevation", value: BAND_LABELS[bestElev.band], valueColor: "#22C55E", detail: `${Math.round(u.snow(bestElev.total))} ${u.snowUnit} total`, description: "Most snow this window" });
   }
 
-  // strongest wind
+  // strongest wind — SELECTED DAY, all four blocks. A fact, not a verdict,
+  // so 00-06 counts here (the overnight gust is often the day's peak) while
+  // the visibility verdict below keeps to riding hours. Window-wide it named
+  // a gust from a day the user was not looking at.
   let wind: { day: DailyRow; block: TimeBlock } | null = null;
-  selectedDays.forEach((day) => (day.time_of_day ?? []).forEach((b) => {
+  (selDay ? [selDay] : selectedDays).forEach((day) => (day.time_of_day ?? []).forEach((b) => {
     const g = b.wind_gust_kmh ?? b.wind_kmh ?? 0;
     const bg = wind ? (wind.block.wind_gust_kmh ?? wind.block.wind_kmh ?? 0) : -1;
     if (g > bg) wind = { day, block: b };
@@ -1495,7 +1500,7 @@ function computeIndicators(
     const speed = w.block.wind_kmh != null ? u.windKmh(w.block.wind_kmh) : null;
     const gust = w.block.wind_gust_kmh != null ? u.windKmh(w.block.wind_gust_kmh) : null;
     if (speed != null) {
-      out.push({ icon: <Wind className="w-3.5 h-3.5" style={{ color: "#38BDF8" }} />, title: "Strongest wind", value: gust != null ? `${speed}\u2192${gust} ${u.windKmhUnit}` : `${speed} ${u.windKmhUnit}`, detail: `${dayWeekday(w.day.date)} ${enDash(w.block.hours)}`, description: "Peak gust" });
+      out.push({ icon: <Wind className="w-3.5 h-3.5" style={{ color: "#38BDF8" }} />, title: "Strongest wind", value: gust != null ? `${speed}\u2192${gust} ${u.windKmhUnit}` : `${speed} ${u.windKmhUnit}`, detail: `${dayWeekday(w.day.date)} ${enDash(w.block.hours)}`, description: "Peak gust, selected day" });
     }
   }
 
@@ -1520,7 +1525,7 @@ function computeIndicators(
   // "Poor" on a calm Sunday: the verdict came from a day the user was not
   // looking at. 00-06 ("dawn" in the payload) is left out on purpose — nobody
   // is on the hill, and a 3 a.m. gust used to drag the whole card down.
-  const visDay = selectedDays.find((d) => d.date === selectedDate) ?? selectedDays[0];
+  const visDay = selDay;
   const ridePeriods: { key: string; label: string }[] = [
     { key: "morning", label: "AM" }, { key: "afternoon", label: "PM" }, { key: "night", label: "EVE" },
   ];
