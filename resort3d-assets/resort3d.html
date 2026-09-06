@@ -281,7 +281,7 @@ window.OffpisteDraw = (function(){
       +   '<button id="op-offline" class="op-btn" disabled aria-label="Download for offline">⬇</button>'
       + '</div>'
       + '<div id="op-aspect-legend"></div>'
-      + '<div id="op-hint">Draw from the line\u2019s end \u00b7 drag elsewhere to move</div>'
+      + '<div id="op-hint">Continue from the end handle \u00b7 drag elsewhere to move</div>'
       + '<input id="op-wp-input" placeholder="Waypoint label — then tap the map"/>'
       + '<div id="op-oob">Outside LiDAR coverage — no accurate slope here</div>'
       + '<div id="op-dock">'
@@ -344,6 +344,7 @@ window.OffpisteDraw = (function(){
     if(active){ map.dragPan.disable(); if(selRoute) selectSaved(null); if(selPiste) selectPiste(null); }   // drawing takes the dock over
     else{ map.dragPan.enable(); map.dragRotate.enable(); }
     updOpToolsVis();
+    refreshEndHandle();
   }
   // Progressive disclosure of the route toolset. Collapsed: only Pin, the
   // offline-download icon and the Route entry show. Route open adds Draw/Fly;
@@ -441,23 +442,30 @@ window.OffpisteDraw = (function(){
     var canvasEl=byId("map");
     function rel(ev){ var r=map.getCanvas().getBoundingClientRect(); var p=ev.touches?ev.touches[0]:ev;
       return [p.clientX-r.left, p.clientY-r.top]; }
-    var lx=0, ly=0, panning=false, px=0, py=0;
+    var lx=0, ly=0, panning=false, px=0, py=0, pendingStart=false;
     // One finger draws. Two+ fingers are a map gesture — bail (no preventDefault) so
-    // MapLibre's touchZoomRotate handles pan/zoom/rotate even while in draw mode.
+    // MapLibre's touchZoomRotate handles zoom/rotate even while in draw mode.
     // Freehand draws only when the drag STARTS near the line's endpoint (or when
     // there's no line yet). A drag starting away from the end pans the map, so you
     // can reposition and keep drawing. Right-drag / 2-finger still rotate, scroll /
-    // pinch still zoom (native). Proximity threshold in screen px.
+    // pinch still zoom (native). Proximity threshold in screen px: a finger lands
+    // less precisely than a pointer, so touch gets the wider zone (the endpoint
+    // handle drawn by refreshEndHandle marks where to resume).
+    var RESUME_PX_MOUSE=40, RESUME_PX_TOUCH=64;
     function down(ev){
       if(!active) return;
-      if(ev.touches){ if(ev.touches.length!==1){ drawing=false; panning=false; return; } }
+      if(ev.touches){ if(ev.touches.length!==1){ drawing=false; panning=false; pendingStart=false; return; } }
       else if(ev.button!==0){ return; }
       var q=rel(ev);
       if(pts.length>0){
         var lp=pts[pts.length-1], sp=map.project([lp[0],lp[1]]);
-        if(Math.hypot(q[0]-sp.x, q[1]-sp.y) > 40){ panning=true; px=q[0]; py=q[1]; ev.preventDefault(); return; }
+        if(Math.hypot(q[0]-sp.x, q[1]-sp.y) > (ev.touches?RESUME_PX_TOUCH:RESUME_PX_MOUSE)){ panning=true; px=q[0]; py=q[1]; ev.preventDefault(); return; }
       }
-      drawing=true; lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault();
+      // The start point is committed on the first real movement (move()), not
+      // here: a bare tap used to leave one invisible point (a single point
+      // renders no line) whose endpoint then turned every later drag that
+      // began elsewhere into a pan. A tap now leaves nothing behind.
+      drawing=true; pendingStart=true; lx=q[0]; ly=q[1]; ev.preventDefault();
     }
     function move(ev){
       if(!active) return;
@@ -466,12 +474,17 @@ window.OffpisteDraw = (function(){
         var qp=rel(ev); map.panBy([px-qp[0], py-qp[1]], {duration:0}); px=qp[0]; py=qp[1]; ev.preventDefault(); return;
       }
       if(!drawing) return;
-      if(ev.touches && ev.touches.length!==1){ drawing=false; return; }
-      var q=rel(ev); if(Math.hypot(q[0]-lx,q[1]-ly)<6) return; lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault();
+      if(ev.touches && ev.touches.length!==1){ drawing=false; pendingStart=false; return; }
+      var q=rel(ev); if(Math.hypot(q[0]-lx,q[1]-ly)<6) return;
+      if(pendingStart){ pendingStart=false; addAt(lx,ly); }
+      lx=q[0]; ly=q[1]; addAt(q[0],q[1]); refresh(); ev.preventDefault();
     }
-    function up(){ drawing=false; panning=false; }
+    function up(){ drawing=false; panning=false; pendingStart=false; }
     canvasEl.addEventListener("mousedown",down); window.addEventListener("mousemove",move); window.addEventListener("mouseup",up);
     canvasEl.addEventListener("touchstart",down,{passive:false}); canvasEl.addEventListener("touchmove",move,{passive:false}); window.addEventListener("touchend",up);
+    // iOS cancels the touch (not "ends" it) when a system gesture takes over —
+    // without this the stroke stayed armed until the next unrelated touchend.
+    window.addEventListener("touchcancel",up);
     canvasEl.addEventListener("contextmenu",function(ev){ if(active) ev.preventDefault(); });
   }
 
@@ -542,12 +555,26 @@ window.OffpisteDraw = (function(){
     map.addSource(SRC,{type:"geojson",data:fc([])});
     map.addLayer({id:LYR,type:"line",source:SRC,layout:{"line-cap":"round","line-join":"round"},
       paint:{"line-width":5,"line-color":["case",[">=",["get","slope"],45],"#ff453a",[">=",["get","slope"],30],"#ff9f0a","#34c759"]}});
+    // Endpoint handle: the spot a stroke must start from to keep drawing (see
+    // down()). Screen-space circles above the line — a soft halo plus a dot in
+    // the draw-button accent — shown only while draw mode is on.
+    map.addSource("op-route-end",{type:"geojson",data:fc([])});
+    map.addLayer({id:"op-route-end-halo",type:"circle",source:"op-route-end",
+      paint:{"circle-radius":20,"circle-color":"#2f7dfb","circle-opacity":0.22}});
+    map.addLayer({id:"op-route-end-dot",type:"circle",source:"op-route-end",
+      paint:{"circle-radius":7,"circle-color":"#ffffff","circle-stroke-color":"#2f7dfb","circle-stroke-width":3}});
+  }
+  function refreshEndHandle(){
+    var s=map.getSource("op-route-end"); if(!s) return;
+    var lp=(active && pts.length) ? pts[pts.length-1] : null;
+    s.setData(fc(lp ? [{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[lp[0],lp[1]]}}] : []));
   }
   function refresh(){
     var a=analyse();
     var feats=a.segs.map(function(s,i){ return {type:"Feature",properties:{slope:s.slope},
       geometry:{type:"LineString",coordinates:[[pts[i][0],pts[i][1]],[pts[i+1][0],pts[i+1][1]]]}}; });
     map.getSource(SRC).setData(fc(feats));
+    refreshEndHandle();
     syncEditBtns();
     if(el.fly && !flying) el.fly.disabled = !canFly();
     if(el.flyModeSel && !canFly()) el.flyModeSel.classList.remove("show");
