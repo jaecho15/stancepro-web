@@ -19,6 +19,7 @@ import {
 import { fetchForecastClient } from "@/lib/snow/fetch";
 import type { RunHistory, RunHistoryPoint, ModelDay } from "@/lib/snow/types";
 import { useUnitFormat, useUnitPref, type UnitFormat, type UnitSystemPref } from "@/lib/snow/units";
+import { PAYMENTS_DISABLED, useIsPro } from "@/components/auth/useIsPro";
 import type {
   BandKey,
   DailyRow,
@@ -508,8 +509,11 @@ function MountainGlyph({ index, count }: { index: number; count: number }) {
 //
 // Sells uncertainty and provenance, not precision. Neither block ranks the
 // models: there is no southern-hemisphere truth to rank on, so agreement is a
-// spread and nothing more. Web has no Pro entitlement, so the segment simply
-// folds the heavy blocks; the apps gate the same blocks on Pro.
+// spread and nothing more. Gated on the same Pro entitlement as the apps —
+// has_active_pro(), the server row the RevenueCat webhook maintains — with
+// the apps' treatment: one paywall card, then the blocks blurred and inert.
+// A non-Pro browser never fetches run history; the blurred blocks are
+// skeletons, not data.
 
 const MODEL_COLORS: Record<string, string> = { ECMWF: "#60A5FA", GEM: "#F472B6", GFS: "#FBBF24", ICON: "#34D399" };
 const EXPERT_ACCENT = "#A78BFA";
@@ -518,12 +522,49 @@ function ProTag() {
   return <span className="rounded px-1 text-[9px] font-bold tracking-wide text-white" style={{ background: EXPERT_ACCENT }}>PRO</span>;
 }
 
+/** The apps' expertGated{}: blurred, dimmed, inert. */
+function ExpertGated({ children }: { children: ReactNode }) {
+  return (
+    <div aria-hidden className="pointer-events-none select-none" style={{ filter: "blur(3px)", opacity: 0.5 }}>
+      {children}
+    </div>
+  );
+}
+
+/** Skeleton body for a gated card — shape without numbers. */
+function PlaceholderRows({ sparkline }: { sparkline?: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      {sparkline && <div className="h-[46px] w-[170px] shrink-0 rounded bg-slate-700/50" />}
+      <div className="flex-1 space-y-1.5">
+        <div className="h-2.5 w-3/4 rounded bg-slate-700/60" />
+        <div className="h-2.5 w-1/2 rounded bg-slate-700/40" />
+        <div className="h-2.5 w-2/3 rounded bg-slate-700/40" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The apps' expertPaywallCard, same words. The web cannot sell Pro —
+ * RevenueCat purchases are in-app — so the button sends to the app.
+ */
+function ExpertPaywallCard() {
+  return (
+    <a href="/download" className="block rounded-2xl p-3.5 text-white" style={{ background: "linear-gradient(135deg, #6D28D9, #3B82F6)" }}>
+      <div className="text-[13px] font-bold">Expert forecast</div>
+      <p className="mt-1 text-[11px] leading-snug text-white/90">Run-to-run stability, per-model breakdown and provenance. Pro opens them at every resort.</p>
+      <span className="mt-2 inline-block rounded-full bg-white px-3 py-1 text-[11px] font-bold" style={{ color: "#4C1D95" }}>Get Pro in the StancePro app</span>
+    </a>
+  );
+}
+
 function tierColor(tier: string | null | undefined): string {
   return tier === "high" ? "#22C55E" : tier === "moderate" ? "#F59E0B" : "#F87171";
 }
 
-function StabilityCard({ runs, dateLabel, bandLabel, loading }: {
-  runs: RunHistoryPoint[]; dateLabel: string; bandLabel: string; loading: boolean;
+function StabilityCard({ runs, dateLabel, bandLabel, loading, placeholder }: {
+  runs: RunHistoryPoint[]; dateLabel: string; bandLabel: string; loading: boolean; placeholder?: boolean;
 }) {
   const u = useUnitFormat();
   const p50s = runs.map((r) => r.snow_cm_p50).filter((v): v is number => v != null);
@@ -543,7 +584,9 @@ function StabilityCard({ runs, dateLabel, bandLabel, loading }: {
   return (
     <div className="rounded-2xl bg-slate-800/40 p-3" style={{ boxShadow: `0 0 0 1px ${EXPERT_ACCENT}55` }}>
       <div className="flex items-center gap-2 mb-2"><ProTag /><span className="text-[11px] font-bold text-slate-200">Forecast stability</span><span className="text-[11px] text-slate-500">· {dateLabel} · {bandLabel}</span></div>
-      {loading ? (
+      {placeholder ? (
+        <PlaceholderRows sparkline />
+      ) : loading ? (
         <p className="text-[11px] text-slate-500">Loading run history…</p>
       ) : n < 2 ? (
         <p className="text-[11px] text-slate-500">No run history for this day yet.</p>
@@ -574,7 +617,7 @@ function agreementWord(day: ModelDay): string {
   return "low";
 }
 
-function ModelBreakdownCard({ days, bandLabel, loading }: { days: ModelDay[]; bandLabel: string; loading: boolean }) {
+function ModelBreakdownCard({ days, bandLabel, loading, placeholder }: { days: ModelDay[]; bandLabel: string; loading: boolean; placeholder?: boolean }) {
   const u = useUnitFormat();
   const names = days[0]?.models.map((m) => m.model) ?? [];
   const scale = Math.max(1, ...days.flatMap((d) => d.models.map((m) => m.snow_cm)));
@@ -584,7 +627,9 @@ function ModelBreakdownCard({ days, bandLabel, loading }: { days: ModelDay[]; ba
   return (
     <div className="rounded-2xl bg-slate-800/40 p-3" style={{ boxShadow: `0 0 0 1px ${EXPERT_ACCENT}55` }}>
       <div className="flex items-center gap-2 mb-2"><ProTag /><span className="text-[11px] font-bold text-slate-200">By model</span><span className="text-[11px] text-slate-500">· {bandLabel}</span></div>
-      {loading ? (
+      {placeholder ? (
+        <PlaceholderRows />
+      ) : loading ? (
         <p className="text-[11px] text-slate-500">Loading model candidates…</p>
       ) : !days.length || !names.length ? (
         <p className="text-[11px] text-slate-500">No run history for this day yet.</p>
@@ -1472,16 +1517,33 @@ function computeIndicators(
   // Physical thresholds, NOT a display value: maxGust is m/s regardless of the
   // user's unit preference, so 17/11 stay 17/11 m/s (≈61/40 km/h) now that wind
   // renders in km/h. Rescale only together with the iOS/Android ports.
-  const maxGust = Math.max(0, ...allBlocks.map((b) => msFromKmh(b.wind_gust_kmh) ?? 0));
-  const maxSnow = Math.max(0, ...allBlocks.map((b) => b.snow_cm_p50));
-  const poor = maxGust >= 17 || maxSnow >= 8;
-  const moderate = maxGust >= 11 || maxSnow >= 3;
+  // Plus each block's WMO weather code (2026-09-06): wind and the 6-hour snow
+  // sum alone called a day of light, steady snow under overcast "good"
+  // (Treble Cone, 4.7 cm over the day, every block under 3 cm and 40 km/h).
+  // Fog (45/48) and any snow code (71/73/77/85) are at least moderate; heavy
+  // snow (75/86) is poor. Overcast alone (3) stays good. Same table as the apps.
+  const visLevel = (b: TimeBlock): 0 | 1 | 2 => {
+    const gust = msFromKmh(b.wind_gust_kmh) ?? 0;
+    const code = b.weather_code ?? -1;
+    if (gust >= 17 || b.snow_cm_p50 >= 8 || POOR_VISIBILITY_CODES.has(code)) return 2;
+    if (gust >= 11 || b.snow_cm_p50 >= 3 || MODERATE_VISIBILITY_CODES.has(code)) return 1;
+    return 0;
+  };
+  const worst = allBlocks.reduce<0 | 1 | 2>((m, b) => Math.max(m, visLevel(b)) as 0 | 1 | 2, 0);
+  const poor = worst === 2;
+  const moderate = worst === 1;
   const level = poor ? "Poor" : moderate ? "Moderate" : "Good";
   const color = poor ? "#EF4444" : moderate ? "#F59E0B" : "#22C55E";
-  out.push({ icon: <Eye className="w-3.5 h-3.5" style={{ color }} />, title: "Visibility", value: level, valueColor: color, description: "From wind + snowfall" });
+  out.push({ icon: <Eye className="w-3.5 h-3.5" style={{ color }} />, title: "Visibility", value: level, valueColor: color, description: "From wind, snowfall and fog" });
 
   return out;
 }
+
+
+/** WMO codes as Open-Meteo reports them: heavy snow, heavy snow showers. */
+const POOR_VISIBILITY_CODES = new Set([75, 86]);
+/** Fog, rime fog, slight/moderate snow, snow grains, slight snow showers. */
+const MODERATE_VISIBILITY_CODES = new Set([45, 48, 71, 73, 77, 85]);
 
 function KeyIndicators({ items }: { items: Indicator[] }) {
   if (!items.length) return null;
@@ -1863,9 +1925,9 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
   const [showLegend, setShowLegend] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [hourlyDate, setHourlyDate] = useState<string | null>(null);
-  // Expert layer: folds the heavy blocks under a basic | expert segment. The
-  // last choice is remembered per browser. Web has no Pro entitlement, so the
-  // segment is the only gate here; the apps gate the same blocks on Pro.
+  // Expert layer: folds the heavy blocks under a Basic | Pro segment. The
+  // last choice is remembered per browser. Opening them is gated exactly as
+  // in the apps: paymentsDisabled || isPro.
   const [expertMode, setExpertMode] = useState<boolean>(false);
   useEffect(() => {
     try { setExpertMode(localStorage.getItem("short_range_expert_mode") === "1"); } catch { /* no storage */ }
@@ -1874,6 +1936,11 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
     setExpertMode(on);
     try { localStorage.setItem("short_range_expert_mode", on ? "1" : "0"); } catch { /* no storage */ }
   };
+  const isPro = useIsPro();
+  const canUseExpert = PAYMENTS_DISABLED || isPro === true;
+  // Unknown until the session and entitlement resolve: keep the blocks
+  // blurred but hold the paywall card back, so a Pro user never sees it flash.
+  const proResolving = !PAYMENTS_DISABLED && isPro === null;
   const [history, setHistory] = useState<RunHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -1895,7 +1962,7 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
   // Run history for the strip's pick (else the first day) on the selected band.
   useEffect(() => {
-    if (!expertMode) return;
+    if (!expertMode || !canUseExpert) return;
     const date = selectedDay ?? undefined;
     const params = new URLSearchParams({ resort_id: resort.resort_id, band });
     if (date) params.set("date", date);
@@ -1907,7 +1974,7 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
       .catch(() => { if (!cancelled) setHistory(null); })
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
-  }, [expertMode, resort.resort_id, band, selectedDay]);
+  }, [expertMode, canUseExpert, resort.resort_id, band, selectedDay]);
 
   // Resort-local current hour, only when the open hourly date IS the resort's
   // today and the payload carries its timezone — without it the device clock
@@ -2063,14 +2130,19 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
 
       {/* 1) Summary */}
       <SummaryBanner text={summarySentence(quantRows, band, u)} />
-      {expertMode && (
+      {expertMode && !canUseExpert && !proResolving && <ExpertPaywallCard />}
+      {expertMode && (canUseExpert ? (
         <StabilityCard
           runs={history?.run_history ?? []}
           dateLabel={dayLabel(selectedDay ?? quantRows[0]?.date ?? "")}
           bandLabel={BAND_LABELS[band]}
           loading={historyLoading && !history}
         />
-      )}
+      ) : (
+        <ExpertGated>
+          <StabilityCard runs={[]} dateLabel={dayLabel(selectedDay ?? quantRows[0]?.date ?? "")} bandLabel={BAND_LABELS[band]} loading={false} placeholder />
+        </ExpertGated>
+      ))}
 
       {/* 2) 7-day strip */}
       <SevenDayStrip
@@ -2112,6 +2184,13 @@ export function ForecastView({ resort }: { resort: SnowResort }) {
         </div>
       )}
       {expertMode && (() => {
+        if (!canUseExpert) {
+          return (
+            <ExpertGated>
+              <ModelBreakdownCard days={[]} bandLabel={BAND_LABELS[band]} loading={false} placeholder />
+            </ExpertGated>
+          );
+        }
         const days = history?.latest_run?.days ?? [];
         const pick = selectedDay ?? quantRows[0]?.date;
         const start = Math.max(0, days.findIndex((d) => d.date === pick));
