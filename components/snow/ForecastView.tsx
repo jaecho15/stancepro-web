@@ -1575,7 +1575,7 @@ function computeIndicators(
       periods: levels.map((x) => ({ label: x.label, color: visColor(x.level) })),
       description: riskiest
         ? `${riskiest.cloud_risk_pct}% chance of cloud at ${riskiest.cloud_risk_low_m}\u2013${riskiest.cloud_risk_high_m} m`
-        : "From wind, snowfall and fog",
+        : "From wind and snowfall",
     });
   }
 
@@ -1588,8 +1588,16 @@ const cloudOnMountain = (b: TimeBlock): boolean =>
 
 /** WMO codes as Open-Meteo reports them: heavy snow, heavy snow showers. */
 const POOR_VISIBILITY_CODES = new Set([75, 86]);
-/** Fog, rime fog, slight/moderate snow, snow grains, slight snow showers. */
-const MODERATE_VISIBILITY_CODES = new Set([45, 48, 71, 73, 77, 85]);
+/** Falling snow, at any intensity. Fog codes 45/48 are deliberately NOT here:
+ *  weather_code has no vertical dimension — it is diagnosed at the model's grid
+ *  terrain, which sits 136 to 795 m BELOW the skiable ground at every New
+ *  Zealand resort measured, and Open-Meteo elevation-corrects only Celsius
+ *  variables, so it cannot be moved. A fogged-in valley under a resort sitting
+ *  above the inversion would have marked the mountain down for weather the
+ *  rider was looking down at. Being inside cloud is now answered where it can
+ *  be answered, at the rider's own elevation, by cloudOnMountain. Snow codes
+ *  stay: snow falling at the grid terrain is falling harder higher up. */
+const MODERATE_VISIBILITY_CODES = new Set([71, 73, 77, 85]);
 
 function KeyIndicators({ items }: { items: Indicator[] }) {
   if (!items.length) return null;
