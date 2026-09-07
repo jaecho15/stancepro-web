@@ -366,15 +366,151 @@ def _median(values: list[float]) -> float | None:
     return (ordered[mid - 1] + ordered[mid]) / 2.0
 
 
+# The bar at which a block's cloud is worth telling a rider about, as a
+# PROBABILITY, not a density. cloud_cover at a level is the fraction of the
+# grid cell's AREA carrying cloud there, and an ICON cell here is about 136
+# km2 while Cardrona's whole skiable polygon is 4.3 km2 — 3.2% of it, a point
+# at this resolution. For a target that small under decks far wider than it,
+# the expected fraction of the resort under cloud is just the cell fraction,
+# so the number IS the chance the mountain is in cloud at that moment.
+#
+# Read that way, 40 means "two chances in five", which plainly earns a hedged
+# line and one step down. The 60 this started at was inherited from the
+# Vertigram's choice of line style for a summit, and asking for 60 was asking
+# to be told only once it was already more likely than not — measured at
+# Cardrona on 2026-09-07, a morning the rider was fogged in, 60 fired on two
+# cells of the whole morning while the mountain sat at 37-59% from base to
+# summit.
+#
+# Two things push the true chance ABOVE this number and neither is modelled:
+# the resort is the high ground in its cell, and orographic cloud prefers high
+# ground; and a block is six hours of air moving through, not one draw. So
+# this is a floor.
+#
+# It is a product decision — how likely before we say something — not a
+# physical constant, and it should not be defended as one.
+CLOUD_RISK_PCT = 40
+# Metres between samples when scanning the mountain's own elevation span.
+CLOUD_SCAN_STEP_M = 50
+
+
+def _cloud_at(points: list[tuple[float, float]], elev: float) -> float | None:
+    """Cloud % at `elev` from a sorted (height, cloud) profile. No extrapolation."""
+    if len(points) < 2 or elev < points[0][0] or elev > points[-1][0]:
+        return None
+    for (h_lo, c_lo), (h_hi, c_hi) in zip(points, points[1:]):
+        if h_lo <= elev <= h_hi:
+            frac = 0.0 if h_hi == h_lo else (elev - h_lo) / (h_hi - h_lo)
+            return c_lo + frac * (c_hi - c_lo)
+    return None
+
+
+def block_cloud_risk(
+    profile_hourly: dict[str, Any] | None,
+    stamps: list[str],
+    span_lo_m: float | None,
+    span_hi_m: float | None,
+) -> tuple[int | None, int | None, int | None]:
+    """(peak %, lowest m, highest m) for cloud over THIS mountain in this block.
+
+    Scans the resort's own elevation span rather than sampling the three or
+    four band heights, because where the cloud sits is the whole question and
+    the bands are wherever a resort's lifts happen to end. At Cardrona on
+    2026-09-07 the deck peaked at 1,900 m — which the top band caught only
+    because it sits at 1,904.
+
+    Per elevation: the median hour of the block, per model, then the median
+    across models. The median and not the peak hour, because with the bar read
+    as a probability the median already fires — the argument for a peak was
+    only ever a workaround for a bar set too high.
+
+    The returned span is clipped to the mountain: a deck reaching 2,150 m over
+    a hill that tops out at 1,916 is reported as reaching the summit, since
+    nobody rides the air above it.
+    """
+    if not profile_hourly or span_lo_m is None or span_hi_m is None or not stamps:
+        return (None, None, None)
+    times = profile_hourly.get("time") or []
+    if not times:
+        return (None, None, None)
+    index_of = {stamp: i for i, stamp in enumerate(times)}
+    models: set[str] = set()
+    for level in PRESSURE_PROFILE_LEVELS:
+        prefix = f"cloud_cover_{level}hPa_"
+        for key in profile_hourly:
+            if key.startswith(prefix):
+                models.add(key[len(prefix):])
+    if not models:
+        return (None, None, None)
+    # Profiles once per (model, stamp), then every elevation reads off them.
+    profiles: dict[str, list[list[tuple[float, float]]]] = {}
+    for model in models:
+        rows = []
+        for stamp in stamps:
+            index = index_of.get(stamp)
+            if index is None:
+                continue
+            points = []
+            for level in PRESSURE_PROFILE_LEVELS:
+                clouds = profile_hourly.get(f"cloud_cover_{level}hPa_{model}")
+                heights = profile_hourly.get(f"geopotential_height_{level}hPa_{model}")
+                if not clouds or not heights or index >= len(clouds) or index >= len(heights):
+                    continue
+                c, h = clouds[index], heights[index]
+                if c is not None and h is not None:
+                    points.append((float(h), float(c)))
+            points.sort()
+            if len(points) >= 2:
+                rows.append(points)
+        if rows:
+            profiles[model] = rows
+    if not profiles:
+        return (None, None, None)
+    lo, hi = float(span_lo_m), float(span_hi_m)
+    if hi < lo:
+        lo, hi = hi, lo
+    elevations = []
+    step = CLOUD_SCAN_STEP_M
+    e = lo
+    while e <= hi + 0.5:
+        elevations.append(e)
+        e += step
+    if elevations and elevations[-1] < hi:
+        elevations.append(hi)
+    peak: float | None = None
+    hits: list[float] = []
+    for elev in elevations:
+        per_model = []
+        for rows in profiles.values():
+            hourly = [v for v in (_cloud_at(points, elev) for points in rows) if v is not None]
+            typical = _median(hourly)
+            if typical is not None:
+                per_model.append(typical)
+        consensus = _median(per_model)
+        if consensus is None:
+            continue
+        if peak is None or consensus > peak:
+            peak = consensus
+        if consensus >= CLOUD_RISK_PCT:
+            hits.append(elev)
+    if peak is None:
+        return (None, None, None)
+    if not hits:
+        return (int(round(peak)), None, None)
+    return (int(round(peak)), int(round(min(hits))), int(round(max(hits))))
+
+
 def _block_cloud_at_band(per_model: dict[str, list[float]]) -> int | None:
     """Cross-model median of each model's median hour in the block.
 
-    The inner median, not the max: one cloudy hour in six is not a block a
-    rider would call socked in, and this number carries a hedged label rather
-    than a claim, so it should describe the block's typical hour.
+    The chance the band's own elevation is in cloud during a typical hour of
+    this block. Same probability reading as CLOUD_RISK_PCT documents; the
+    resort-wide scan in block_cloud_risk is what the indicator hangs on, and
+    this stays because a band screen asking about its own height deserves a
+    straight answer.
     """
-    per_model_medians = [m for m in (_median(v) for v in per_model.values()) if m is not None]
-    consensus = _median(per_model_medians)
+    per_model_typical = [m for m in (_median(v) for v in per_model.values()) if m is not None]
+    consensus = _median(per_model_typical)
     return None if consensus is None else int(round(consensus))
 
 
@@ -1381,6 +1517,8 @@ def hourly_band_day(
     free_air_wind: dict[str, dict[str, tuple[float, float]]] | None = None,
     freezing_hour: dict[tuple[str, int], float] | None = None,
     profile_clouds: dict[str, dict[str, float]] | None = None,
+    profile_hourly: dict[str, Any] | None = None,
+    terrain_span: tuple[float, float] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     times = hourly.get("time") or []
     models = hourly_model_names(hourly)
@@ -1425,6 +1563,9 @@ def hourly_band_day(
     # cross-model median of per-model block medians, not a median of a pooled
     # bag where a model with more valid hours would outvote the others.
     block_cloud: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
+    # Stamps per block, so the resort-wide elevation scan runs on exactly the
+    # hours this block covers.
+    block_stamps: list[list[str]] = [[] for _ in range(n_blocks)]
     # 1-hour display slots (D1-7 only at serve time). Same hybrid numbers the
     # 6-hour blocks sum; the caller must not attach this list past the window.
     hour_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(24)]
@@ -1523,6 +1664,8 @@ def hourly_band_day(
             # share a correction (measured: ECMWF sustained 4x low with gust
             # ~1.2x, GFS sustained 1.9x low with gust 4.2x low and nearly
             # constant). Changing gust is a separate, unstarted piece of work.
+            if stamp not in block_stamps[block_index]:
+                block_stamps[block_index].append(stamp)
             cloud_band = (profile_clouds or {}).get(stamp, {}).get(model)
             if cloud_band is not None:
                 block_cloud[block_index][model].append(float(cloud_band))
@@ -1589,6 +1732,11 @@ def hourly_band_day(
             floors[i] += 1
         alloc_p50 = [f / 10.0 for f in floors]
 
+    span = terrain_span or (None, None)
+    _cloud_risk = [
+        block_cloud_risk(profile_hourly, block_stamps[i], span[0], span[1])
+        for i in range(n_blocks)
+    ]
     blocks: list[dict[str, Any]] = []
     for block_index, (block_key, block_ko, hour_lo, hour_hi) in enumerate(TIME_BLOCKS):
         present = sorted(block_snow[block_index])
@@ -1645,6 +1793,13 @@ def hourly_band_day(
                 # where the profile cannot answer (band outside the bracketing
                 # levels) — clients must treat that as "unknown", never as 0.
                 "cloud_at_band_pct": _block_cloud_at_band(block_cloud[block_index]),
+                # Cloud over the MOUNTAIN, not this band: the chance of being in
+                # it (peak over the resort's own elevation span) and the heights
+                # where that chance clears CLOUD_RISK_PCT. None where the
+                # profile cannot answer — never 0.
+                "cloud_risk_pct": _cloud_risk[block_index][0],
+                "cloud_risk_low_m": _cloud_risk[block_index][1],
+                "cloud_risk_high_m": _cloud_risk[block_index][2],
             }
         )
 
@@ -1817,6 +1972,7 @@ def band_daily_rows(
     grid_elevations: dict[str, float] | None = None,
     unified_block: str | None = None,
     freezing_by_hour: dict[tuple[str, int], float] | None = None,
+    terrain_span: tuple[float, float] | None = None,
 ) -> list[dict[str, Any]]:
     """`members_out`, when given, collects one PER-MODEL row per (band, day)
     BEFORE the quantile reduction below folds the members away.
@@ -1878,7 +2034,7 @@ def band_daily_rows(
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
                                               profile_temps, free_air_wind, freezing_by_hour,
-                                              profile_clouds)
+                                              profile_clouds, profile_hourly, terrain_span)
         elif members_out is not None or UNIFY_D8_THERMODYNAMICS:
             # Gated on members_out because this is pure cost with no served
             # effect: if nobody is persisting diagnostics, nobody can read it.
@@ -3253,6 +3409,10 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
     fetches, then runs (fast, CPU-only)."""
     bands = elevation_bands(resort)
     multi_band = len(bands) > 1
+    # The mountain's own vertical extent, for the cloud scan. Bands are where a
+    # resort's lifts happen to end; the span is what a rider can stand on.
+    _band_heights = [float(v) for v in bands.values() if isinstance(v, (int, float))]
+    terrain_span = (min(_band_heights), max(_band_heights)) if len(_band_heights) >= 2 else None
     with ThreadPoolExecutor(max_workers=2 * len(bands) + 2) as pool:
         band_futures = {
             band: pool.submit(fetch_band_forecast, resort, bands[band], models,
@@ -3335,7 +3495,8 @@ def compute_forecast(resort: dict[str, Any], models: str = DEFAULT_MODELS,
                                     freezing_by_hour=freezing_by_hour,
                                     grid_elevations=grid_cells,
                                     unified_block=unified_block_reason(
-                                        resort.get("resort_id"), band))
+                                        resort.get("resort_id"), band),
+                                    terrain_span=terrain_span)
         attach_ensemble(band_rows, ensembles.get(band) or {})
         daily_rows.extend(band_rows)
     for row in daily_rows:

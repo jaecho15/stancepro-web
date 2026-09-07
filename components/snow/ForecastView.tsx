@@ -1540,34 +1540,41 @@ function computeIndicators(
   // (Treble Cone, 4.7 cm over the day, every block under 3 cm and 40 km/h).
   // Fog (45/48) and any snow code (71/73/77/85) are at least moderate; heavy
   // snow (75/86) is poor. Overcast alone (3) stays good. Same table as the apps.
-  // And cloud AT the band's elevation, one step down (2026-09-07). The weather
-  // code is not trustworthy for this: measured at Cardrona on 2026-09-07, a
-  // morning the hill was fogged in until midday, the code stayed 3 (overcast)
-  // the whole time and the surface field reported 90% cloud under code 2
-  // (partly cloudy) in the same hour. Cloud interpolated to the band's own
-  // height is the direct reading. One step, not a verdict of its own, and the
-  // label hedges — cloud at your elevation means you MAY be inside it. 60% is
-  // the same cut-off the Vertigram uses to call a summit line "in cloud".
+  // And cloud over the MOUNTAIN, one step down (2026-09-07). The weather code
+  // is not trustworthy for this: measured at Cardrona on 2026-09-07, a morning
+  // the hill was fogged in until midday, the code stayed 3 (overcast) the whole
+  // time and the surface field reported 90% cloud under code 2 (partly cloudy)
+  // in the same hour. The serving scans the resort's own elevation span and
+  // reports the chance of being in cloud plus the heights that clear its bar;
+  // the presence of a range IS the trigger, so the bar is defined once,
+  // server-side, and not restated on three clients. The figure is a
+  // probability, not a density — cloud_cover is the fraction of the cell's AREA
+  // with cloud, and the resort is ~3% of the cell — so the sentence shows it.
   const visLevel = (b: TimeBlock): 0 | 1 | 2 => {
     const gust = msFromKmh(b.wind_gust_kmh) ?? 0;
     const code = b.weather_code ?? -1;
     let base: 0 | 1 | 2 = 0;
     if (gust >= 17 || b.snow_cm_p50 >= 8 || POOR_VISIBILITY_CODES.has(code)) base = 2;
     else if (gust >= 11 || b.snow_cm_p50 >= 3 || MODERATE_VISIBILITY_CODES.has(code)) base = 1;
-    return cloudSitsOnBand(b) ? (Math.min(base + 1, 2) as 0 | 1 | 2) : base;
+    return cloudOnMountain(b) ? (Math.min(base + 1, 2) as 0 | 1 | 2) : base;
   };
   const visColor = (l: 0 | 1 | 2) => (l === 2 ? "#EF4444" : l === 1 ? "#F59E0B" : "#22C55E");
   if (allBlocks.length) {
     const levels = allBlocks.map((x) => ({ label: x.p.label, level: visLevel(x.block) }));
     const worst = levels.reduce<0 | 1 | 2>((m, x) => Math.max(m, x.level) as 0 | 1 | 2, 0);
     const level = worst === 2 ? "Poor" : worst === 1 ? "Moderate" : "Good";
-    const fog = allBlocks.some((x) => cloudSitsOnBand(x.block));
+    // The block carrying the day's highest chance, so the sentence quotes one
+    // coherent pair of numbers rather than mixing periods.
+    const riskiest = allBlocks
+      .map((x) => x.block)
+      .filter(cloudOnMountain)
+      .sort((a, b) => (b.cloud_risk_pct ?? 0) - (a.cloud_risk_pct ?? 0))[0];
     out.push({
       icon: <Eye className="w-3.5 h-3.5" style={{ color: visColor(worst) }} />, title: "Visibility", value: level, valueColor: visColor(worst),
       detail: visDay ? dayWeekday(visDay.date) : undefined,
       periods: levels.map((x) => ({ label: x.label, color: visColor(x.level) })),
-      description: fog
-        ? "Cloud sits at this elevation — fog or flat light is possible"
+      description: riskiest
+        ? `${riskiest.cloud_risk_pct}% chance of cloud at ${riskiest.cloud_risk_low_m}\u2013${riskiest.cloud_risk_high_m} m`
         : "From wind, snowfall and fog",
     });
   }
@@ -1576,11 +1583,8 @@ function computeIndicators(
 }
 
 
-/** Same cut-off the Vertigram uses to call a summit line "in cloud" —
- *  one number, one meaning, app-wide. */
-const IN_CLOUD_PCT = 60;
-const cloudSitsOnBand = (b: TimeBlock): boolean =>
-  b.cloud_at_band_pct != null && b.cloud_at_band_pct >= IN_CLOUD_PCT;
+const cloudOnMountain = (b: TimeBlock): boolean =>
+  b.cloud_risk_low_m != null && b.cloud_risk_high_m != null;
 
 /** WMO codes as Open-Meteo reports them: heavy snow, heavy snow showers. */
 const POOR_VISIBILITY_CODES = new Set([75, 86]);

@@ -41,6 +41,14 @@ export interface TimeBlock {
    *  the profile could not answer (band outside the bracketing levels) or on
    *  payloads cached before the field shipped; null is unknown, never 0. */
   cloud_at_band_pct?: number | null;
+  /** Cloud over the MOUNTAIN in this block, not this band: the chance of being
+   *  in it (peak across the resort's own elevation span) and the heights where
+   *  that chance clears the serving's bar. low/high are null when nothing
+   *  clears it — that absence IS the "no risk" signal, so the bar lives in one
+   *  place (the serving) rather than being restated in every client. */
+  cloud_risk_pct?: number | null;
+  cloud_risk_low_m?: number | null;
+  cloud_risk_high_m?: number | null;
 }
 
 /** One local-hour slot inside a D1-7 day. Additive; absent on older caches. */
