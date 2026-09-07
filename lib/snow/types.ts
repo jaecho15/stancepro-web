@@ -35,6 +35,12 @@ export interface TimeBlock {
   freezing_level_m: number | null;
   /** WMO weather interpretation code for this 6-hour block (Open-Meteo). */
   weather_code?: number | null;
+  /** Cloud cover % interpolated to THIS band's elevation from the pressure
+   *  profile — not the surface field. "Overcast" seen from the valley says
+   *  nothing about whether the lift you are on is inside the deck. null where
+   *  the profile could not answer (band outside the bracketing levels) or on
+   *  payloads cached before the field shipped; null is unknown, never 0. */
+  cloud_at_band_pct?: number | null;
 }
 
 /** One local-hour slot inside a D1-7 day. Additive; absent on older caches. */

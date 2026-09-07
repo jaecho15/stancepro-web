@@ -294,6 +294,90 @@ def profile_temp_by_stamp(
     return out or None
 
 
+def profile_cloud_by_stamp(
+    profile_hourly: dict[str, Any] | None,
+    band_elevation: float | None,
+) -> dict[str, dict[str, float]] | None:
+    """{time stamp: {model: cloud cover % interpolated to band elevation}}.
+
+    The twin of profile_temp_by_stamp, and it exists because the surface
+    cloud_cover field answers a different question than the one a skier asks.
+    "Overcast" seen from the valley says nothing about whether the lift you are
+    on is inside the deck; cloud AT your elevation does.
+
+    The ladder matters more here than for temperature. 850 and 700 hPa are
+    roughly 1,400 m and 2,900 m apart in these mountains, and a stratus deck
+    between them is averaged into nothing: measured at Cardrona on 2026-09-07,
+    800 hPa stood at 1,864 m carrying 61-80% cloud while an 850<->700
+    interpolation put the 1,916 m summit at 27%, on a morning the hill was
+    fogged in until midday. PRESSURE_PROFILE_LEVELS already carries 900 and
+    800, so the bracket is tight enough for this.
+
+    Same no-extrapolation rule as the temperature twin: a band outside the
+    bracketing levels gets no answer rather than an invented one.
+    """
+    if not profile_hourly or band_elevation is None:
+        return None
+    times = profile_hourly.get("time") or []
+    if not times:
+        return None
+    elev = float(band_elevation)
+    models: set[str] = set()
+    for level in PRESSURE_PROFILE_LEVELS:
+        prefix = f"cloud_cover_{level}hPa_"
+        for key in profile_hourly:
+            if key.startswith(prefix):
+                models.add(key[len(prefix):])
+    out: dict[str, dict[str, float]] = {}
+    for model in models:
+        level_pairs = []
+        for level in PRESSURE_PROFILE_LEVELS:
+            clouds = profile_hourly.get(f"cloud_cover_{level}hPa_{model}")
+            heights = profile_hourly.get(f"geopotential_height_{level}hPa_{model}")
+            if clouds and heights:
+                level_pairs.append((clouds, heights))
+        if len(level_pairs) < 2:
+            continue
+        for index, stamp in enumerate(times):
+            points = []
+            for clouds, heights in level_pairs:
+                c = clouds[index] if index < len(clouds) else None
+                h = heights[index] if index < len(heights) else None
+                if c is not None and h is not None:
+                    points.append((float(h), float(c)))
+            points.sort()
+            if len(points) < 2 or elev < points[0][0] or elev > points[-1][0]:
+                continue
+            for (h_lo, c_lo), (h_hi, c_hi) in zip(points, points[1:]):
+                if h_lo <= elev <= h_hi:
+                    frac = 0.0 if h_hi == h_lo else (elev - h_lo) / (h_hi - h_lo)
+                    out.setdefault(stamp, {})[model] = c_lo + frac * (c_hi - c_lo)
+                    break
+    return out or None
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _block_cloud_at_band(per_model: dict[str, list[float]]) -> int | None:
+    """Cross-model median of each model's median hour in the block.
+
+    The inner median, not the max: one cloudy hour in six is not a block a
+    rider would call socked in, and this number carries a hedged label rather
+    than a claim, so it should describe the block's typical hour.
+    """
+    per_model_medians = [m for m in (_median(v) for v in per_model.values()) if m is not None]
+    consensus = _median(per_model_medians)
+    return None if consensus is None else int(round(consensus))
+
+
 def _weather_code_mode(codes: list[int]) -> int | None:
     """Most common WMO weather_code; ties break toward the higher (usually more
     severe) code so a mixed clear/overcast block does not read as clear."""
@@ -1296,6 +1380,7 @@ def hourly_band_day(
     profile_temps: dict[str, dict[str, float]] | None = None,
     free_air_wind: dict[str, dict[str, tuple[float, float]]] | None = None,
     freezing_hour: dict[tuple[str, int], float] | None = None,
+    profile_clouds: dict[str, dict[str, float]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     times = hourly.get("time") or []
     models = hourly_model_names(hourly)
@@ -1336,6 +1421,10 @@ def hourly_band_day(
     block_wind_free_air: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wind_surface: list[list[tuple[float, float, float]]] = [[] for _ in range(n_blocks)]
     block_wx: list[list[int]] = [[] for _ in range(n_blocks)]
+    # Cloud at band elevation, kept per model so the reduction below is a
+    # cross-model median of per-model block medians, not a median of a pooled
+    # bag where a model with more valid hours would outvote the others.
+    block_cloud: list[dict[str, list[float]]] = [defaultdict(list) for _ in range(n_blocks)]
     # 1-hour display slots (D1-7 only at serve time). Same hybrid numbers the
     # 6-hour blocks sum; the caller must not attach this list past the window.
     hour_snow: list[dict[str, float]] = [defaultdict(float) for _ in range(24)]
@@ -1434,6 +1523,9 @@ def hourly_band_day(
             # share a correction (measured: ECMWF sustained 4x low with gust
             # ~1.2x, GFS sustained 1.9x low with gust 4.2x low and nearly
             # constant). Changing gust is a separate, unstarted piece of work.
+            cloud_band = (profile_clouds or {}).get(stamp, {}).get(model)
+            if cloud_band is not None:
+                block_cloud[block_index][model].append(float(cloud_band))
             fa = (free_air_wind or {}).get(model, {}).get(stamp)
             if fa is not None:
                 wspd, wdir = fa[0], fa[1]
@@ -1549,6 +1641,10 @@ def hourly_band_day(
                 "wind_dir_deg": wind_dir_deg,
                 "wind_gust_kmh": wind_gust_kmh,
                 "weather_code": _weather_code_mode(block_wx[block_index]),
+                # Cloud AT the band's own elevation, as a percentage. None
+                # where the profile cannot answer (band outside the bracketing
+                # levels) — clients must treat that as "unknown", never as 0.
+                "cloud_at_band_pct": _block_cloud_at_band(block_cloud[block_index]),
             }
         )
 
@@ -1739,6 +1835,7 @@ def band_daily_rows(
     used_elevation = payload.get("elevation")
     band_elevation = elevation_m if elevation_m is not None else used_elevation
     profile_temps = profile_temp_by_stamp(profile_hourly, band_elevation)
+    profile_clouds = profile_cloud_by_stamp(profile_hourly, band_elevation)
     # Once per band, for the full 16-day horizon: one wind source end to end, so
     # there is no D7->D8 source cliff. Empty per model where the profile cannot
     # answer, which makes the fallback per HOUR rather than per resort.
@@ -1780,7 +1877,8 @@ def band_daily_rows(
         shadow_agg: dict[str, Any] | None = None
         if index < time_of_day_days:
             blocks, day_agg = hourly_band_day(hourly, band_elevation, date, freezing_by_block,
-                                              profile_temps, free_air_wind, freezing_by_hour)
+                                              profile_temps, free_air_wind, freezing_by_hour,
+                                              profile_clouds)
         elif members_out is not None or UNIFY_D8_THERMODYNAMICS:
             # Gated on members_out because this is pure cost with no served
             # effect: if nobody is persisting diagnostics, nobody can read it.
@@ -2714,7 +2812,8 @@ def fetch_pressure_profile(resort: dict[str, Any], models: str) -> dict[str, Any
         # speed across a directional shear understates the result.
         "hourly": ",".join(
             f"temperature_{level}hPa,geopotential_height_{level}hPa,"
-            f"wind_speed_{level}hPa,wind_direction_{level}hPa"
+            f"wind_speed_{level}hPa,wind_direction_{level}hPa,"
+            f"cloud_cover_{level}hPa"
             for level in PRESSURE_PROFILE_LEVELS
         ),
         "models": models,
