@@ -88,7 +88,10 @@ SUPABASE_URL = (
     or "https://ryiitcblrrqvjvxkobpf.supabase.co"
 )
 READ_KEY = (
-    os.environ.get("SUPABASE_ANON_KEY")
+    # RLS: 이 크론은 snow_annual_history 를 읽는 유일한 프로덕션 독자이고,
+    # 그 표는 로그인 사용자 전용으로 잠긴다. 시크릿 키를 먼저 본다.
+    os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_ANON_KEY")
     or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
     or "sb_publishable_QAigcpa5fpKsYihAaHr-4Q_eW_EwBUk"
 )

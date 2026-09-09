@@ -29,6 +29,10 @@ import requests
 
 DEFAULT_SUPABASE_URL = "https://ryiitcblrrqvjvxkobpf.supabase.co"
 DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_QAigcpa5fpKsYihAaHr-4Q_eW_EwBUk"
+# RLS: snow_outlook_resorts / snow_stations / snow_snowlines 는 로그인 사용자 전용으로 잠긴다.
+# 이 모듈은 서버(Vercel 함수)에서만 돌므로 시크릿 키로 읽는다. 환경변수가 없으면 기존
+# publishable 키로 폴백해 로컬·미설정 환경에서 갑자기 죽지 않게 한다.
+SUPABASE_READ_KEY = os.environ.get("SUPABASE_SECRET_KEY") or DEFAULT_SUPABASE_PUBLISHABLE_KEY
 # ---- Open-Meteo, commercial plan (2026-08-03) ----
 # The free tier is licensed for NON-COMMERCIAL use only and this is a commercial
 # product; the provider raised it. Every request now goes to the customer hosts
@@ -3031,8 +3035,8 @@ def fetch_resort(resort_id: str) -> dict[str, Any] | None:
         f"{DEFAULT_SUPABASE_URL}/rest/v1/snow_outlook_resorts",
         params={"select": "resort_id,region_id,country_code,lat,lon,base_elevation_m,top_elevation_m",
                 "resort_id": f"eq.{resort_id}", "limit": 1},
-        headers={"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
-                 "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"},
+        headers={"apikey": SUPABASE_READ_KEY,
+                 "Authorization": f"Bearer {SUPABASE_READ_KEY}"},
         timeout=30,
     )
     response.raise_for_status()
@@ -3251,8 +3255,8 @@ def fetch_nearby_station(resort: dict[str, Any],
                 ("lon", f"gte.{lon - dlon}"), ("lon", f"lte.{lon + dlon}"),
                 ("depth_cm", "not.is.null"),
             ],
-            headers={"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
-                     "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"},
+            headers={"apikey": SUPABASE_READ_KEY,
+                     "Authorization": f"Bearer {SUPABASE_READ_KEY}"},
             timeout=15,
         )
         response.raise_for_status()
@@ -3311,8 +3315,8 @@ def fetch_snowline(resort: dict[str, Any]) -> dict[str, Any] | None:
     Attaches reads up to SNOWLINE_DISPLAY_MAX_AGE_DAYS for the depth-card UI.
     Depth gating itself still uses SNOWLINE_MAX_AGE_DAYS (see
     `_snowline_fresh_enough_to_gate`). Best-effort — never a dependency."""
-    headers = {"apikey": DEFAULT_SUPABASE_PUBLISHABLE_KEY,
-               "Authorization": f"Bearer {DEFAULT_SUPABASE_PUBLISHABLE_KEY}"}
+    headers = {"apikey": SUPABASE_READ_KEY,
+               "Authorization": f"Bearer {SUPABASE_READ_KEY}"}
     row = None
     for candidate in _snowline_candidate_ids(resort):
         try:
