@@ -519,13 +519,41 @@ def _block_cloud_at_band(per_model: dict[str, list[float]]) -> int | None:
 
 
 def _weather_code_mode(codes: list[int]) -> int | None:
-    """Most common WMO weather_code; ties break toward the higher (usually more
-    severe) code so a mixed clear/overcast block does not read as clear."""
+    """Representative WMO weather_code for a set of samples (model x hour).
+
+    Two-stage vote (2026-09-10). "Clear" is ONE bin (0, 1) while "not clear"
+    is spread over partly cloudy (2), overcast (3), fog (45/48) and every
+    precipitation code, so a flat plurality lets a clear MINORITY win.
+    Treble Cone 2026-09-11, mid band, morning block, 4 models x 6 h = 24
+    samples: {0: 7, 1: 5, 2: 5, 3: 6, 45: 1} - 12 of 24 not clear, the
+    plurality said 0, and the day header showed a sun over an hourly row that
+    read cloud or fog for 7 of the 8 riding hours (the hourly vote has only
+    4 samples per hour, so the split rarely bites there). Afternoon was the
+    same shape: {0: 3, 1: 7, 2: 6, 3: 4, 45: 4} -> 1 with 14 of 24 not clear.
+
+    Stage 1: clear (< 2) against not clear (>= 2) by count. Stage 2: the most
+    common code inside the winning side, ties toward the higher code. A set
+    with one side empty reduces to the old plurality, so a clean day is still
+    0 and a day of steady snow is still its snow code.
+
+    An exact split is "mixed", not "clear" and not "overcast": it reads as
+    partly cloudy (2), unless the cloud side's own pick is fog or falling
+    precipitation (>= 45), which stays - two models of four calling fog is
+    not a thing to hide behind a sun-and-cloud glyph. Splits are common where
+    the vote has 4 samples (one per model, the hourly row) and rare at 24.
+    """
     if not codes:
         return None
     counts = Counter(int(c) for c in codes)
-    top = max(counts.values())
-    return max(c for c, n in counts.items() if n == top)
+    not_clear = sum(n for c, n in counts.items() if c >= 2)
+    clear = sum(n for c, n in counts.items() if c < 2)
+    winner_is_cloud = not_clear >= clear
+    side = {c: n for c, n in counts.items() if (c >= 2) == winner_is_cloud}
+    top = max(side.values())
+    pick = max(c for c, n in side.items() if n == top)
+    if not_clear == clear and pick < 45:
+        return 2
+    return pick
 
 
 # ---- compute primitives (no pandas) ----

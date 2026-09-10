@@ -244,7 +244,11 @@ function DaytimeSkyIcon({ row, className }: { row: DailyRow; className?: string 
   const daytime = (row.time_of_day ?? []).filter(
     (b) => b.block === "morning" || b.block === "afternoon",
   );
-  if (daytime.some((b) => b.snow_cm_p50 > 0 || (b.precip_mm_p50 ?? 0) > 0.5)) {
+  // A precipitating deck only where the block's own sky code agrees: the
+  // 6-hour sum has no clock, so a 0.8 cm tail of overnight snow at 06-07 h sat
+  // in the morning block beside a code of 0 and clouded a day that was clear
+  // from 08 h (Treble Cone 2026-09-10). Parity with the apps.
+  if (daytime.some((b) => (b.snow_cm_p50 > 0 || (b.precip_mm_p50 ?? 0) > 0.5) && (b.weather_code ?? 3) >= 2)) {
     return <Cloud className={`${className ?? "w-4 h-4"} text-slate-500 shrink-0`} />;
   }
   const codes = daytime.map((b) => b.weather_code).filter((c): c is number => c != null);
@@ -1550,12 +1554,21 @@ function computeIndicators(
   // server-side, and not restated on three clients. The figure is a
   // probability, not a density — cloud_cover is the fraction of the cell's AREA
   // with cloud, and the resort is ~3% of the cell — so the sentence shows it.
-  const visLevel = (b: TimeBlock): 0 | 1 | 2 => {
+  // The two causes kept apart so the sentence can NAME the one it saw: it used
+  // to read "From wind and snowfall" whatever had fired - Treble Cone
+  // 2026-09-11 read "Poor" on a dry day of 63 km/h gusts. Same cut-offs.
+  const windVisLevel = (b: TimeBlock): 0 | 1 | 2 => {
     const gust = msFromKmh(b.wind_gust_kmh) ?? 0;
+    return gust >= 17 ? 2 : gust >= 11 ? 1 : 0;
+  };
+  const snowVisLevel = (b: TimeBlock): 0 | 1 | 2 => {
     const code = b.weather_code ?? -1;
-    let base: 0 | 1 | 2 = 0;
-    if (gust >= 17 || b.snow_cm_p50 >= 8 || POOR_VISIBILITY_CODES.has(code)) base = 2;
-    else if (gust >= 11 || b.snow_cm_p50 >= 3 || MODERATE_VISIBILITY_CODES.has(code)) base = 1;
+    if (b.snow_cm_p50 >= 8 || POOR_VISIBILITY_CODES.has(code)) return 2;
+    if (b.snow_cm_p50 >= 3 || MODERATE_VISIBILITY_CODES.has(code)) return 1;
+    return 0;
+  };
+  const visLevel = (b: TimeBlock): 0 | 1 | 2 => {
+    const base = Math.max(windVisLevel(b), snowVisLevel(b)) as 0 | 1 | 2;
     return cloudOnMountain(b) ? (Math.min(base + 1, 2) as 0 | 1 | 2) : base;
   };
   const visColor = (l: 0 | 1 | 2) => (l === 2 ? "#EF4444" : l === 1 ? "#F59E0B" : "#22C55E");
@@ -1569,13 +1582,19 @@ function computeIndicators(
       .map((x) => x.block)
       .filter(cloudOnMountain)
       .sort((a, b) => (b.cloud_risk_pct ?? 0) - (a.cloud_risk_pct ?? 0))[0];
+    const windFired = allBlocks.some((x) => windVisLevel(x.block) > 0);
+    const snowFired = allBlocks.some((x) => snowVisLevel(x.block) > 0);
+    const visCause = windFired && snowFired ? "From wind and snowfall"
+      : windFired ? "From wind"
+      : snowFired ? "From snowfall"
+      : "No wind or snowfall expected to limit visibility";
     out.push({
       icon: <Eye className="w-3.5 h-3.5" style={{ color: visColor(worst) }} />, title: "Visibility", value: level, valueColor: visColor(worst),
       detail: visDay ? dayWeekday(visDay.date) : undefined,
       periods: levels.map((x) => ({ label: x.label, color: visColor(x.level) })),
       description: riskiest
         ? `${riskiest.cloud_risk_pct}% chance of cloud at ${riskiest.cloud_risk_low_m}\u2013${riskiest.cloud_risk_high_m} m`
-        : "From wind and snowfall",
+        : visCause,
     });
   }
 

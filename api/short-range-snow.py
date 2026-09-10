@@ -121,7 +121,18 @@ DEFAULT_MAX_AGE_S = 3 * 60 * 60  # 3h — matches the app's TTL and NWP cadence
 # +2.5/+2.6/+2.2 C (warm/mid/cold), deterministic percentile inside the
 # ensemble 71-75 -> 78-79. Only ens_* move (web D8-16 rolling chart);
 # snow_cm_*, precip, temperature are byte-identical to v4.0.
-CONFIG_VERSION = "hybrid-tw-v4.1-ensemble-profile-offset"
+# v4.2 (2026-09-10): weather_code becomes a two-stage vote - clear (0/1)
+# against not-clear by count, then the plurality inside the winning side,
+# an exact split reading partly cloudy unless the cloud side picked fog or
+# precipitation - instead of a flat plurality over every code
+# (_weather_code_mode). Clear is one bin and cloud is many, so a clear
+# minority was winning blocks whose
+# samples were mostly cloud or fog: Treble Cone 2026-09-11 morning, 12 of 24
+# samples not clear, served 0 and a sun header over an hourly row of cloud and
+# fog. Only weather_code moves (blocks, hourly slots, the D1-7 day header,
+# the D8-16 daily code); every numeric field is untouched. Bumped because
+# weather_code is archived and its rule changed.
+CONFIG_VERSION = "hybrid-tw-v4.2-wx-majority"
 
 # Archive cycle bucket. Deliberately equal to the serving TTL above: a refresh
 # that happens inside one TTL window is the same forecast, so it must land on
