@@ -174,6 +174,26 @@ def _daily_snow_cm(precip: list, tmean: list) -> list[float]:
     ]
 
 
+def _parse_timestamp(value) -> datetime | None:
+    """PostgREST timestamptz → aware datetime. PostgREST drops trailing zeros
+    from the fraction ("…25.79596+00:00"), and Python 3.9's fromisoformat — the
+    runtime this ships on — accepts only 3 or 6 fractional digits. Left
+    unparsed, such a row read as stale and was rebuilt on every cron run (two
+    per run, six archive pulls a day, forever) — found 2026-09-10 when a
+    merge-only run re-seeded two regions."""
+    if not value:
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    head, plus, tz = text.partition("+")
+    if "." in head:
+        whole, frac = head.split(".", 1)
+        head = f"{whole}.{frac[:6].ljust(6, '0')}"
+    try:
+        return datetime.fromisoformat(head + plus + tz)
+    except ValueError:
+        return None
+
+
 # --- Serving state ------------------------------------------------------------
 
 def _seasonal_rows() -> list[dict]:
@@ -560,12 +580,8 @@ def run(seed_limit: int = MAX_SEED_PER_RUN) -> dict:
             break
         prior = existing.get(region)
         if prior:
-            fresh = False
-            try:
-                fresh = datetime.fromisoformat(
-                    str(prior["updated_at"]).replace("Z", "+00:00")) >= cutoff
-            except (TypeError, ValueError):
-                pass
+            updated_at = _parse_timestamp(prior.get("updated_at"))
+            fresh = updated_at is not None and updated_at >= cutoff
             # Re-seed a fresh row that predates the snow-line series (backfill),
             # otherwise skip. A missing/empty snowline_history means the old
             # snowfall-only builder wrote it.
