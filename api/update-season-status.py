@@ -172,7 +172,12 @@ def _point_series(resort: dict) -> dict | None:
         "timezone": "auto",
     }
     try:
+        # `models` pinned: the archive default `best_match` splices ERA5-Land/
+        # ERA5 (to 2016) with IFS HRES (2017+), which put a level shift into
+        # every 35-year history — this is where the Australian "increasing
+        # +20.9 %/decade" trend came from. See update-annual-history.py.
         hist = _get_json(ARCHIVE_URL, dict(base_params,
+                                           models="era5_seamless",
                                            start_date=f"{HIST_START_YEAR}-05-01",
                                            end_date=f"{HIST_END_YEAR}-09-30"))
         cur = _get_json(FORECAST_URL, dict(base_params, past_days=92, forecast_days=1,

@@ -326,12 +326,22 @@ def _annual_totals(resort: dict, hemisphere: str, window_start: int,
     # window (end year's DJF finishes in Feb, well before now) still fetches.
     fetch_end = min(date(window_end, 12, 31),
                     datetime.now(tz=timezone.utc).date() - timedelta(days=6))
+    # `models` is pinned ON PURPOSE. The archive's default `best_match` is not
+    # one reanalysis: Open-Meteo splices ERA5-Land/ERA5 up to 2016-12-31 and
+    # ECMWF IFS HRES (9 km) from 2017-01-01 (verified 2026-09-10 at Falls Creek:
+    # best_match == era5_seamless to the decimal before 2017, == ecmwf_ifs
+    # after). IFS runs colder/wetter or warmer per point, so every 35-year
+    # series carried a level shift at 2017 — the Australian "increasing
+    # +20.9 %/decade, snow line falling" card was that splice, not climate.
+    # era5_seamless (ERA5-Land temperature + ERA5 precipitation) is one model
+    # across the whole window; `era5_land` alone returns no precipitation here.
     payload = _get_json(ARCHIVE_URL, {
         "latitude": f"{float(resort['lat']):.5f}",
         "longitude": f"{float(resort['lon']):.5f}",
         "daily": "precipitation_sum,temperature_2m_mean",
         "elevation": str(mid),
         "timezone": "auto",
+        "models": "era5_seamless",
         "start_date": f"{window_start - 1}-01-01",
         "end_date": fetch_end.isoformat(),
     })
