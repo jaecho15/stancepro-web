@@ -117,6 +117,11 @@ def _get_json(url: str, params: dict) -> dict:
     """GET with backoff — the archive API throttles bursts of 35-year requests,
     so a fleet run must absorb 429s instead of dying on them."""
     import time
+    # Every Open-Meteo call carries the subscription key. Until 2026-09-10 this
+    # helper sent the bare params, which the customer-* hosts reject with 401 —
+    # _point_series then returned None for every resort and the cron wrote
+    # nothing ("no reanalysis data") from the 2026-08-03 commercial switch on.
+    params = open_meteo_params(params)
     for attempt in range(4):
         response = requests.get(url, params=params, timeout=TIMEOUT_S)
         if response.status_code in (429, 500, 502, 503, 504):
