@@ -94,6 +94,17 @@ READ_KEY = (
 # Only for the run log below; refreshing needs no elevated key.
 WRITE_KEY = os.environ.get("SUPABASE_SECRET_KEY")
 RUNS_TABLE = "short_range_sweep_runs"
+# The serving table is signed-in-only since the 2026-09 anon lockdown
+# (20260910103000_lock_anon_reads_phase3): to the publishable key it answers
+# HTTP 200 with an empty array, and this sweep read that as "nothing to
+# refresh" for five consecutive cycles (2026-09-09 13:04Z .. 2026-09-10
+# 18:38Z), each logged as a clean run with error=null while every forecast in
+# the fleet aged past the TTL. The fleet is read with the secret key when the
+# environment has one; the publishable key remains only as the fallback for
+# an environment without it, and an empty fleet is reported as an error
+# (see sweep) rather than as a quiet success.
+FLEET_KEY = WRITE_KEY or READ_KEY
+FLEET_KEY_KIND = "secret" if WRITE_KEY else "anon"
 
 DEFAULT_LIMIT = 80          # comfortably above today's 55-row fleet
 DEFAULT_MAX_SECONDS = 240   # vercel.json gives this function 300 s
@@ -137,7 +148,7 @@ def fleet(limit: int) -> list[dict]:
                            "bands:payload->bands,country:payload->>country_code"),
                 "order": "generated_at.asc",
                 "limit": limit},
-        headers={"apikey": READ_KEY, "Authorization": f"Bearer {READ_KEY}"},
+        headers={"apikey": FLEET_KEY, "Authorization": f"Bearer {FLEET_KEY}"},
         timeout=20,
     )
     response.raise_for_status()
@@ -216,6 +227,14 @@ def sweep(limit: int, max_seconds: float, dry_run: bool) -> dict:
         rows = fleet(limit)
     except Exception as exc:  # noqa: BLE001
         return {"error": "fleet_lookup_failed", "detail": _safe_detail(exc)}
+
+    # The serving table always has rows once anyone has opened a resort, so an
+    # empty fleet is a broken read (a key that RLS answers with []), not a quiet
+    # day. Surfaced as an error so the run log and the 500 make it visible.
+    if not rows:
+        return {"error": "fleet_empty", "detail": f"key={FLEET_KEY_KIND}",
+                "origin": SITE_ORIGIN, "fleet": 0, "refreshed": 0, "failed": 0,
+                "elapsed_s": round(time.monotonic() - started, 1)}
 
     if dry_run:
         return {"dry_run": True, "fleet": len(rows), "origin": SITE_ORIGIN,
