@@ -607,11 +607,14 @@ def run(seed_limit: int = MAX_SEED_PER_RUN) -> dict:
                 payload["snowline_baseline"] = hist.get("snowline_baseline")
                 payload["snowline_trend"] = _snowline_trend(
                     [(h["year"], h["snowline_m"]) for h in sl_hist])
-            # For OUR trend-only rows (Europe), keep the trend in sync with the
-            # gated method + latest history. Never touch trend on rows whose trend
-            # comes from another source (NH battle, SH status).
-            if existing_row.get("model_version") == TREND_ONLY_MODEL_VERSION:
-                payload["trend"] = _trend([(h["year"], h["snow_cm"]) for h in hist["history"]])
+            # The trend chip is computed from THIS history for every row
+            # (2026-09-10, user decision). Until then NH battle rows kept the
+            # battle dataset's trend (DJF, from 1991, a best_match monthly cache
+            # with the 2017 IFS splice) and SH rows the status worker's, so a
+            # card's chip and its curve could disagree on window and source.
+            # The SH status worker still writes the same gated trend from the
+            # same points and window; this merge simply re-states it daily.
+            payload["trend"] = _trend([(h["year"], h["snow_cm"]) for h in hist["history"]])
             try:
                 current = _current_point(existing_row, hemisphere, target["sampled"], today)
             except Exception:  # noqa: BLE001 — best-effort
