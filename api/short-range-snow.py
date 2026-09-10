@@ -151,8 +151,17 @@ SUPABASE_URL = (
     or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
     or core.DEFAULT_SUPABASE_URL
 ).rstrip("/")
+# Secret first (2026-09-10). The serving tables are signed-in-only since the
+# anon lockdown (20260910103000_lock_anon_reads_phase3): to the publishable
+# key PostgREST answers HTTP 200 with an empty array, which this file's
+# cache read took for a cache MISS rather than "no access": every request
+# recomputed the full Open-Meteo fan-out for two days (a 1.5 h old row of
+# the same config_version served cached:false, measured 2026-09-10 09:18Z).
+# The publishable names stay only as the fallback for an environment
+# without the secret.
 READ_KEY = (
-    os.environ.get("SUPABASE_ANON_KEY")
+    os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_ANON_KEY")
     or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
     or core.DEFAULT_SUPABASE_PUBLISHABLE_KEY
 )

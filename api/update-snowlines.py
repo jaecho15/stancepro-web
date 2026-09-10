@@ -78,8 +78,16 @@ SUPABASE_URL = (
     or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
     or "https://ryiitcblrrqvjvxkobpf.supabase.co"
 )
+# Secret first (2026-09-10). The serving tables are signed-in-only since the
+# anon lockdown (20260910103000_lock_anon_reads_phase3): to the publishable
+# key PostgREST answers HTTP 200 with an empty array, which _served_resorts()
+# took for an empty fleet: Phase B submitted no new tasks while Phase A kept
+# collecting the ones already queued, so the stall would only have shown once
+# the queue drained. The publishable names stay only as the fallback for an
+# environment without the secret.
 READ_KEY = (
-    os.environ.get("SUPABASE_ANON_KEY")
+    os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_ANON_KEY")
     or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
     or "sb_publishable_QAigcpa5fpKsYihAaHr-4Q_eW_EwBUk"
 )
