@@ -586,7 +586,7 @@ function CombinedSeasonalHistoryChart({
           <span className="font-semibold">Winter snow line</span> — Where winter days
           cross the rain/snow threshold · ERA5 reanalysis. The line tracks temperature,
           so it rises under warming even where snowfall looks flat. Metres are modeled;
-          a 35-year reanalysis trend is indicative, not definitive — decadal swings (and
+          a four-decade reanalysis trend is indicative, not definitive — decadal swings (and
           coarse grids over small ranges) can move it.
         </p>
       )}
@@ -703,7 +703,7 @@ function StatusSection({ status }: { status: SeasonalStatus }) {
         <div className="flex justify-between text-[11px] text-slate-600 mt-1">
           <span>Drier winters</span>
           <span className={`${LEAN[lean].text} font-medium`}>
-            {ordinal(status.percentile)} percentile of 35 winters
+            {ordinal(status.percentile)} percentile of winters since 1981
           </span>
           <span>Snowier winters</span>
         </div>

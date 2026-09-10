@@ -10,7 +10,7 @@
       "maxDuration": 300
     },
     "api/update-season-status.py": {
-      "maxDuration": 60
+      "maxDuration": 120
     },
     "api/update-annual-history.py": {
       "maxDuration": 60

@@ -3,25 +3,28 @@
 GET /api/update-season-status
 
 The validated seasonal-forecast network covers only NH regions; the SH winter
-(JJA) would look empty on the outlook surfaces. This worker serves what CAN be
-said honestly about an in-progress season — OBSERVED facts, no unvalidated
-probabilities: season-to-date snowfall vs a 35-year climatology percentile,
+(May–Oct) would look empty on the outlook surfaces. This worker serves what CAN
+be said honestly about an in-progress season — OBSERVED facts, no unvalidated
+probabilities: season-to-date snowfall vs a since-1981 climatology percentile,
 the last 14 days vs their climatological norm, and the satellite snow-cover
 state of the region's served resorts.
 
 One row per SH region is upserted into `seasonal_snow_outlooks` with the same
 row shape the validated rows use, so every existing decoder keeps working:
-`trend` carries the region's REAL long-term JJA trend (computed here from the
-same reanalysis series), `signal` is null (true — no validated forecast) and
+`trend` carries the region's REAL long-term May–Oct trend (computed here from
+the same reanalysis series), `signal` is null (true — no validated forecast) and
 `watch` is empty. The new content lives in `payload.status`, and
 `payload.mode = "in_season_status"` is the discriminator new renderers key on.
 Legacy apps simply render these as trend-only regions.
 
-Data: Open-Meteo archive API (1991–2025 daily precip + band-downscaled mean
-temp at each sampled resort's mid elevation) for climatology, and the forecast
-API's past_days window (zero lag) for the current season. Snowfall derivation
-matches the depth budget: precip counts as snow on days with tmean ≤ +1 °C at
-SLR 10:1. Runs May–September (SH season); no-op otherwise.
+Data: Open-Meteo archive API (1981–2025 daily precip + band-downscaled mean
+temp at each sampled resort's mid elevation, models=era5_seamless) for
+climatology, and the forecast API's past_days window (zero lag) for the
+current season. Snowfall derivation matches the depth budget: precip counts as
+snow on days with tmean ≤ +1 °C at SLR 10:1. Runs May–October (SH season);
+no-op otherwise. The `target_season` label stays "<year>-JJA": the apps read
+the hemisphere off that token (SeasonalOutlookGrouping), so it is a season key,
+not a description of the window.
 
 Requires SUPABASE_SECRET_KEY; CRON_SECRET (when set) gates the endpoint.
 """
@@ -110,9 +113,12 @@ SH_REGIONS = {
     "ar_northern_patagonia": "Northern Patagonia",
     "ar_southern_patagonia": "Southern Patagonia",
 }
-SEASON_MONTHS = (6, 7, 8)             # JJA
-ACTIVE_MONTHS = range(5, 10)          # worker runs May–September
-HIST_START_YEAR = 1991
+SEASON_MONTHS = (5, 6, 7, 8, 9, 10)   # May–Oct: the whole SH season (2026-09-10;
+                                      # was JJA — the shoulders carry the warming
+                                      # signal, see update-annual-history.py)
+ACTIVE_MONTHS = range(5, 11)          # worker runs May–October
+HIST_START_YEAR = 1981                # was 1991: 35 years left small-range
+                                      # trends inside decadal noise
 HIST_END_YEAR = 2025
 POINTS_PER_REGION = 3
 SNOW_TMEAN_C = 1.0                    # same phase rule as the depth budget
@@ -191,7 +197,7 @@ def _point_series(resort: dict) -> dict | None:
         hist = _get_json(ARCHIVE_URL, dict(base_params,
                                            models="era5_seamless",
                                            start_date=f"{HIST_START_YEAR}-05-01",
-                                           end_date=f"{HIST_END_YEAR}-09-30"))
+                                           end_date=f"{HIST_END_YEAR}-10-31"))
         cur = _get_json(FORECAST_URL, dict(base_params, past_days=92, forecast_days=1,
                                            models="ecmwf_ifs025"))
     except Exception:
@@ -324,9 +330,9 @@ def build_rows() -> tuple[list[dict], dict]:
     finished — the daily cadence fills the rest."""
     today = datetime.now(tz=timezone.utc).date()
     season_year = today.year
-    season_start = date(season_year, 6, 1)
-    window_end = today                                  # [Jun 1, today)
-    if window_end <= season_start:                      # May: season not started
+    season_start = date(season_year, 5, 1)
+    window_end = today                                  # [May 1, today)
+    if window_end <= season_start:                      # April: season not started
         window_end = season_start + timedelta(days=1)   # serve a near-zero baseline
     errors: dict[str, str] = {}
 
@@ -354,14 +360,14 @@ def build_rows() -> tuple[list[dict], dict]:
             std_now.append(_window_sum(s["cur"], season_start, window_end))
             last14_now.append(_window_sum(s["cur"], window_end - timedelta(days=14), window_end))
             for year in range(HIST_START_YEAR, HIST_END_YEAR + 1):
-                y_start = date(year, 6, 1)
+                y_start = date(year, 5, 1)
                 hist_std.setdefault(year, []).append(
                     _window_sum(s["hist"], y_start, y_start + timedelta(days=window_days)))
                 y_end = y_start + timedelta(days=window_days)
                 hist_last14.setdefault(year, []).append(
                     _window_sum(s["hist"], y_end - timedelta(days=14), y_end))
                 hist_full.setdefault(year, []).append(
-                    _window_sum(s["hist"], y_start, date(year, 9, 1)))
+                    _window_sum(s["hist"], y_start, date(year, 11, 1)))
 
         def region_mean(values: list[float]) -> float:
             return sum(values) / len(values)

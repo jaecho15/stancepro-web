@@ -5,20 +5,24 @@ GET /api/update-annual-history
 Two jobs, both idempotent:
 
   1. SEED (rare/expensive): for every served climate_region missing or stale
-     (> 80 days) in `snow_annual_history`, compute the recent ~35-year record of
-     season-total snowfall from ERA5 reanalysis (Open-Meteo archive: daily precip
+     (> 80 days) in `snow_annual_history`, compute the record of season-total
+     snowfall since 1981 from ERA5 reanalysis (Open-Meteo archive: daily precip
      + band-downscaled mean temp at the region's curated resorts, snow when the
      day is cold at SLR 10:1 — the SAME budget the depth/SH-status layers use),
-     plus a baseline (median + p10/p90). NH seasons are DJF (labelled by the end
-     year), SH seasons are JJA. Only a handful of regions are (re)built per run
-     so a 60 s cron never blows its budget; the daily cadence finishes the rest.
+     plus a baseline (median + p10/p90). NH seasons run Nov–Apr (labelled by the
+     end year), SH seasons May–Oct — the whole snow season, not just its core
+     months, because warming takes the shoulders first (Australian Alps
+     September snowfall −27 %/decade while June–July is flat) and a 1981 start
+     because a 35-year window left every small-range trend inside decadal
+     noise. Only a handful of regions are (re)built per run so a 60 s cron
+     never blows its budget; the daily cadence finishes the rest.
 
   2. MERGE (daily/cheap): read every `seasonal_snow_outlooks` row and patch
      payload.history / payload.history_baseline / payload.history_current (and
      the snow-line series, below) onto it (non-destructively — the rest of the
      payload is preserved), so the seasonal cards can draw a year-by-year curve.
      history_current is the in-progress season's to-date total (free from the SH
-     status block; computed for NH only during its Dec–Mar season). Re-runs after
+     status block; computed for NH only during its Nov–Apr season). Re-runs after
      the monthly NH refresh re-attach the history, so a full-row upsert elsewhere
      self-heals next day.
 
@@ -101,7 +105,8 @@ ARCHIVE_URL = OPEN_METEO_HOSTS["archive"]
 FORECAST_URL = OPEN_METEO_HOSTS["forecast"]
 TIMEOUT_S = 55
 
-WINDOW_YEARS = 35
+WINDOW_START_YEAR = 1981     # first season in the record (2026-09-10: was a
+                             # rolling 35 years; too short for small ranges)
 POINTS_PER_REGION = 3
 SNOW_TMEAN_C = 1.0            # precip counts as snow at/below this daily mean
 SLR = 10.0                   # 1 mm water -> 1 cm snow
@@ -306,11 +311,12 @@ def _sample_resorts(resort_ids: list[str], by_id: dict[str, dict]) -> list[dict]
 # --- History builder ----------------------------------------------------------
 
 def _season_windows(hemisphere: str, year: int) -> tuple[date, date]:
-    """[start, end) of season labelled `year`. SH = JJA(year); NH = DJF ending in
-    `year` (Dec year-1 .. Mar 1 year)."""
+    """[start, end) of season labelled `year`. SH = May–Oct of `year`; NH =
+    Nov–Apr ending in `year` (Nov 1 year-1 .. May 1 year). Whole seasons on
+    purpose: the shoulder months carry the warming signal (see module doc)."""
     if hemisphere == "sh":
-        return date(year, 6, 1), date(year, 9, 1)
-    return date(year - 1, 12, 1), date(year, 3, 1)
+        return date(year, 5, 1), date(year, 11, 1)
+    return date(year - 1, 11, 1), date(year, 5, 1)
 
 
 def _snow_line_m(mid: int, tmean: float | None) -> float | None:
@@ -412,7 +418,7 @@ def build_region_history(region: str, label: str, hemisphere: str,
         "region_id": region,
         "label": label,
         "hemisphere": hemisphere,
-        "season_window": "JJA" if hemisphere == "sh" else "DJF",
+        "season_window": "May-Oct" if hemisphere == "sh" else "Nov-Apr",
         "window_start": window_start,
         "window_end": window_end,
         "history": history,
@@ -435,38 +441,63 @@ def _quantile(sorted_input: list[float], q: float) -> float:
 
 
 def _windows_for(hemisphere: str, today: date) -> tuple[int, int]:
-    """Last completed season year + 35-year start. SH JJA completes end Aug; NH
-    DJF completes end Feb."""
+    """(WINDOW_START_YEAR, last completed season year). SH May–Oct completes
+    end Oct; NH Nov–Apr completes end Apr."""
     if hemisphere == "sh":
-        end = today.year if today.month >= 9 else today.year - 1
+        end = today.year if today.month >= 11 else today.year - 1
     else:
-        end = today.year if today.month >= 3 else today.year - 1
-    return end - (WINDOW_YEARS - 1), end
+        end = today.year if today.month >= 5 else today.year - 1
+    return WINDOW_START_YEAR, end
 
 
 # --- current-season point -----------------------------------------------------
 
+def _season_to_date_cm(resort: dict, start: date, today: date) -> float:
+    """Snow (cm) from `start` to today at the resort's mid elevation. The ERA5
+    archive (era5_seamless, ~5-day lag) carries the bulk and the forecast API's
+    past_days window the lagged tail; archive days win where both answer. The
+    forecast API caps past_days at 92, so a Nov–Apr season (up to ~180 days)
+    cannot come from it alone — that cap is why the old Dec–Mar window fit."""
+    mid = round((float(resort["base_elevation_m"]) + float(resort["top_elevation_m"])) / 2)
+    base = {
+        "latitude": f"{float(resort['lat']):.5f}", "longitude": f"{float(resort['lon']):.5f}",
+        "daily": "precipitation_sum,temperature_2m_mean", "elevation": str(mid),
+        "timezone": "auto",
+    }
+    by_day: dict[str, float] = {}
+    archive_end = today - timedelta(days=7)
+    if archive_end >= start:
+        payload = _get_json(ARCHIVE_URL, dict(base, models="era5_seamless",
+                                              start_date=start.isoformat(),
+                                              end_date=archive_end.isoformat()))
+        daily = payload.get("daily") or {}
+        for day, snow in zip(daily.get("time") or [],
+                             _daily_snow_cm(daily.get("precipitation_sum") or [],
+                                            daily.get("temperature_2m_mean") or [])):
+            by_day[day] = snow
+    tail_days = min((today - start).days, 92)
+    if tail_days > 0:
+        payload = _get_json(FORECAST_URL, dict(base, models="ecmwf_ifs025",
+                                               past_days=tail_days, forecast_days=1))
+        daily = payload.get("daily") or {}
+        for day, snow in zip(daily.get("time") or [],
+                             _daily_snow_cm(daily.get("precipitation_sum") or [],
+                                            daily.get("temperature_2m_mean") or [])):
+            if start.isoformat() <= day <= today.isoformat() and day not in by_day:
+                by_day[day] = snow
+    return sum(by_day.values())
+
+
 def _current_point(row: dict, hemisphere: str, resorts: list[dict], today: date) -> dict | None:
     """In-progress season's to-date total. Free from the SH status block; computed
-    for NH only during Dec–Mar. None off-season."""
+    for NH only during Nov–Apr. None off-season."""
     status = (row.get("payload") or {}).get("status") or {}
     if isinstance(status.get("season_to_date_cm"), (int, float)):
-        year = today.year if today.month >= 6 else today.year   # SH JJA = this year
-        return {"year": year, "snow_cm": round(status["season_to_date_cm"]), "partial": True}
-    if hemisphere == "nh" and today.month in (12, 1, 2, 3):
-        season_year = today.year if today.month <= 3 else today.year + 1
-        start = date(season_year - 1, 12, 1)
-        totals = []
-        for resort in resorts:
-            mid = round((float(resort["base_elevation_m"]) + float(resort["top_elevation_m"])) / 2)
-            payload = _get_json(FORECAST_URL, {
-                "latitude": f"{float(resort['lat']):.5f}", "longitude": f"{float(resort['lon']):.5f}",
-                "daily": "precipitation_sum,temperature_2m_mean", "elevation": str(mid),
-                "timezone": "auto", "past_days": min((today - start).days, 92), "forecast_days": 1,
-                "models": "ecmwf_ifs025"})
-            daily = payload.get("daily") or {}
-            totals.append(sum(_daily_snow_cm(daily.get("precipitation_sum") or [],
-                                             daily.get("temperature_2m_mean") or [])))
+        return {"year": today.year, "snow_cm": round(status["season_to_date_cm"]), "partial": True}
+    if hemisphere == "nh" and today.month in (11, 12, 1, 2, 3, 4):
+        season_year = today.year if today.month <= 4 else today.year + 1
+        start = date(season_year - 1, 11, 1)
+        totals = [_season_to_date_cm(resort, start, today) for resort in resorts]
         if totals:
             return {"year": season_year, "snow_cm": round(sum(totals) / len(totals)), "partial": True}
     return None
