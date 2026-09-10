@@ -1,8 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 import type { ForecastResponse, SeasonalOutlookRow, SnowResort } from "./types";
 
-// Cookie-free server-side reads (anon key) so snow pages stay ISR-cacheable,
-// mirroring lib/stance/fetch-rules.ts.
+// Cookie-free reads so snow pages stay ISR-cacheable, mirroring
+// lib/stance/fetch-rules.ts. Two clients:
+//
+// serverClient — server components and ISR. Reads with the secret key, because
+// since 2026-09-10 (migration lock_anon_reads_phase3) the serving tables'
+// SELECT policies are `auth.uid() IS NOT NULL`: the publishable key reads as
+// anonymous and gets 200 + [], and the seasonal card and resort list vanish
+// for every visitor. The secret never reaches the browser — Next.js inlines
+// only NEXT_PUBLIC_* into client bundles, so in the client this resolves to the
+// publishable key (the same thing anonClient returns).
+//
+// anonClient — the browser-side cache fallback in fetchForecastClient only.
 function anonClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
@@ -10,6 +20,18 @@ function anonClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
   return createClient(url, key);
+}
+
+function serverClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 const STORAGE_BASE = () =>
@@ -63,7 +85,7 @@ export async function fetchResortIndex(): Promise<SnowResort[]> {
 }
 
 export async function fetchSnowResorts(): Promise<SnowResort[]> {
-  const supabase = anonClient();
+  const supabase = serverClient();
   if (!supabase) return [];
   const { data } = await supabase
     .from("snow_outlook_resorts")
@@ -86,7 +108,7 @@ export async function resolveResort(resortId: string): Promise<SnowResort | null
 }
 
 export async function fetchSnowResort(resortId: string): Promise<SnowResort | null> {
-  const supabase = anonClient();
+  const supabase = serverClient();
   if (!supabase) return null;
   const { data } = await supabase
     .from("snow_outlook_resorts")
@@ -99,7 +121,7 @@ export async function fetchSnowResort(resortId: string): Promise<SnowResort | nu
 }
 
 export async function fetchSeasonalOutlooks(): Promise<SeasonalOutlookRow[]> {
-  const supabase = anonClient();
+  const supabase = serverClient();
   if (!supabase) return [];
   const { data } = await supabase
     .from("seasonal_snow_outlooks")
