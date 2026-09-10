@@ -82,7 +82,14 @@ SUPABASE_URL = (
     or "https://ryiitcblrrqvjvxkobpf.supabase.co"
 )
 READ_KEY = (
-    os.environ.get("SUPABASE_ANON_KEY")
+    # Secret key first (same as update-annual-history): every table this
+    # worker reads — snow_outlook_resorts, snow_snowlines,
+    # seasonal_snow_outlooks — is RLS-locked to signed-in users, so the anon
+    # key sees zero rows and the run ends as "no curated resorts" for every
+    # region, with ENSO silently falling back to neutral. That is what the
+    # production cron did until 2026-09-10.
+    os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_ANON_KEY")
     or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
     or "sb_publishable_QAigcpa5fpKsYihAaHr-4Q_eW_EwBUk"
 )
