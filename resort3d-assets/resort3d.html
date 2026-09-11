@@ -1384,12 +1384,26 @@ window.OffpisteDraw = (function(){
     // track bbox; pitch is applied on top with a small zoom back-off so the
     // tilted view still contains the track. Bearing is kept as-is (no spin).
     var pose=null;
+    var b=new maplibregl.LngLatBounds([coords[0][0],coords[0][1]],[coords[0][0],coords[0][1]]);
+    coords.forEach(function(c){ b.extend([c[0],c[1]]); });
     try{
-      var b=new maplibregl.LngLatBounds([coords[0][0],coords[0][1]],[coords[0][0],coords[0][1]]);
-      coords.forEach(function(c){ b.extend([c[0],c[1]]); });
       var co=map.cameraForBounds(b,{padding:REPLAY.pad});
       if(co) pose={center:co.center,zoom:co.zoom-REPLAY.zoomBack,bearing:map.getBearing(),pitch:REPLAY.pitch};
     }catch(e){}
+    if(!pose){
+      // cameraForBounds can fault (or return nothing) on a terrain-enabled
+      // transform that hasn't settled yet. Without a pose the replay used to
+      // run with the camera wherever it happened to be — cue and pins possibly
+      // off-screen, reading as "the replay did nothing". Frame the track bbox
+      // directly instead: same span→zoom mapping the hosts use for the boot
+      // focus (resolveSession3D), bbox centre, replay pitch.
+      var cLat=(b.getSouth()+b.getNorth())/2;
+      var spanM=Math.max((b.getNorth()-b.getSouth())*111320,
+                         (b.getEast()-b.getWest())*111320*Math.cos(cLat*Math.PI/180));
+      pose={center:b.getCenter(),
+            zoom:Math.min(15,Math.max(11.5,13.8-Math.log2(Math.max(spanM,300)/2400)))-REPLAY.zoomBack,
+            bearing:map.getBearing(),pitch:REPLAY.pitch};
+    }
     var from={center:map.getCenter(),zoom:map.getZoom(),bearing:map.getBearing(),pitch:map.getPitch()};
     var t0=0, paused=false, pauseT=0;
     // Profile scrub for the replay cue. Seeking during the establishing frame
@@ -1413,9 +1427,13 @@ window.OffpisteDraw = (function(){
       var ms=now-t0;
       if(pose){
         // Gestures stay live during a replay (spec), so the same terrain fault
-        // as in the fly loop can throw here during the establishing frame.
-        if(ms<REPLAY.estMs){ var k=ms/REPLAY.estMs; k=k*k*(3-2*k); try{ map.jumpTo(blend(from,pose,k)); }catch(e){ endFly(); return; } }
-        else { try{ map.jumpTo(pose); }catch(e){ endFly(); return; } pose=null; }   // framing done — camera is the user's
+        // as in the fly loop can throw here during the establishing frame. A
+        // fault abandons only the FRAMING (pose=null) — the cue replay keeps
+        // running. The old endFly() bail silently ended the replay before it
+        // visibly began ("pressed Fly, nothing happened") whenever the mesh
+        // hadn't settled yet; a second press then worked.
+        if(ms<REPLAY.estMs){ var k=ms/REPLAY.estMs; k=k*k*(3-2*k); try{ map.jumpTo(blend(from,pose,k)); }catch(e){ pose=null; } }
+        else { try{ map.jumpTo(pose); }catch(e){} pose=null; }   // framing done — camera is the user's
       }
       var p=Math.min(1,Math.max(0,ms-REPLAY.estMs)/dur);
       cueAt(p*total); updateFlyCursor(p*total);
@@ -1782,10 +1800,19 @@ async function fetchArt(url, tries) {
 let _elevBitmapP = null;
 function loadElevBitmap() {
   if (_elevBitmapP) return _elevBitmapP;
-  _elevBitmapP = fetch(art("elev_5m.png"))
-    .then(r => r.ok ? r.blob() : null)
-    .then(b => b ? createImageBitmap(b) : null)
-    .catch(() => null);
+  // fetchArt (3 back-off attempts) instead of a bare fetch, and — mirroring
+  // loadGeometry — a TRANSPORT failure clears the memo so a later caller can
+  // retry: the old permanent-null memo turned one flaky request into "no dock/
+  // draw tools for the rest of the session". A genuine 404 (degraded resorts
+  // have no elev_5m.png) stays memoised as null — retrying a file that does
+  // not exist would hammer the store on every caller forever.
+  _elevBitmapP = fetchArt(art("elev_5m.png"), 3)
+    .then(r => r.blob())
+    .then(b => createImageBitmap(b))
+    .catch(e => {
+      if (!artMissing(e)) _elevBitmapP = null;   // transport/decode → retryable
+      return null;
+    });
   return _elevBitmapP;
 }
 // Shared geometry.json loader — ONE fetch + ONE parse of the piste/lift GeoJSON,
@@ -2021,6 +2048,31 @@ const geoBounds3857 = gj => {
   return [lon2m(a - pl), lat2m(b - pt), lon2m(c + pl), lat2m(d + pt)];
 };
 const fail = m => { hideLoading(); const e = document.getElementById("err"); e.textContent = m; e.style.display = "block"; };
+// Retry = app-restart equivalent on the host side. iOS answers
+// `offpisteNetReset` by recycling the loopback server's URLSession, rebinding
+// the listener, dropping WebKit's cache for this origin and RELOADING this
+// page against the (possibly new) origin — everything a force-quit cleared,
+// without the force-quit. A host that keeps the page acks with
+// window.__r3dHostResetDone(); one without the hook (web, Android today)
+// resolves at once, and a silent host is capped at 4 s so Retry never hangs.
+const requestHostReset = () => new Promise(res => {
+  let done = false;
+  const finish = () => { if (done) return; done = true; window.__r3dHostResetDone = null; res(); };
+  window.__r3dHostResetDone = finish;
+  let sent = false;
+  try {
+    const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.offpisteNetReset;
+    if (h) { h.postMessage("retry"); sent = true; }
+  } catch (e) {}
+  try {
+    if (!sent && window.AndroidOffpiste && typeof window.AndroidOffpiste.onNetReset === "function") {
+      window.AndroidOffpiste.onNetReset(); sent = true;
+    }
+  } catch (e) {}
+  if (!sent) { finish(); return; }
+  console.log("resort3d retry: host reset requested");
+  setTimeout(finish, 4000);
+});
 // Recoverable variant of fail(): localized network message + a Retry button;
 // resolves when the user taps it. No location.reload() — both apps inject the
 // page via loadHTMLString/loadDataWithBaseURL, where a reload lands on a blank
@@ -2031,7 +2083,7 @@ const failRetry = () => new Promise(res => {
   e.textContent = BOOT_COPY[2] + " ";
   const b = document.createElement("button");
   b.textContent = BOOT_COPY[3];
-  b.onclick = () => { e.style.display = "none"; showLoading(); res(); };
+  b.onclick = () => { e.style.display = "none"; showLoading(); requestHostReset().then(res); };
   e.appendChild(b);
   e.style.display = "block";
 });
@@ -2454,10 +2506,10 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
   // is the ONLY retry if that one failed on a weak link (memo cleared on failure).
   firstIdle.then(() => loadV2Index());
   // Contours (~230 KB, reference-only) fill the pre-declared empty source once
-  // the first frame is up. bc-* (destination_id) has none baked.
-  if (!meta.destination_id) firstIdle.then(() => fetch(art("contours.json"))
+  // the first frame is up. 404 is fine (older bc-* publishes had none baked).
+  firstIdle.then(() => fetch(art("contours.json"))
     .then(r => r.ok ? r.json() : null)
-    .then(d => { const s = d && map.getSource("contours"); if (s) s.setData(d); })
+    .then(d => { const s = d && map.getSource("contours"); if (s && d) s.setData(d); })
     .catch(e => console.log("contours deferred load failed", e)));
 
   // Elevation sampler shared beyond the summit IIFE (frozen-tarn detection);
@@ -3563,10 +3615,20 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     map.setTerrain({ source: "dem", exaggeration: 1.15 });   // ← the real 3D
     _armTerrainReady();
   };
-  map.once("style.load", bootTerrain);   // style spec parsed → arm the mesh NOW
-
-  map.on("load", () => {
-    bootTerrain();   // backstop; style.load has armed it already in practice
+  // Replay/off-piste entry UI — the focus marker, the route/draw tools and the
+  // host-injected session track (line + event pins + dock + Fly). This used to
+  // live inside map "load", i.e. behind ofm/hsdrape exactly like setTerrain
+  // before 2026-08-19 (see the note above): a slow or hanging decorative source
+  // delayed — or starved forever — the very UI a session replay opens this
+  // screen for, while the spinner had already lifted on its 4 s backstop. Same
+  // cure as the mesh: boot it on style.load (OffpisteDraw.init needs only the
+  // parsed style — its addSource/addLayer append with no beforeId, wire() is
+  // pure DOM) and keep "load" as an idempotent backstop. The deferred-asset
+  // triggers (contours/elev/sky on firstIdle) are untouched.
+  let opUIBooted = false;
+  const bootOffpisteUI = () => {
+    if (opUIBooted) return;
+    opUIBooted = true;
     if (focusPt && focusPt.marker !== false) {   // marker:false = frame-only focus (e.g. whole-session view)
       // Display-only event marker — deliberately NOT a waypoint: the host's
       // post-ready loadWaypoints(reset:true) push would clear it, and waypoint
@@ -3591,6 +3653,12 @@ const NAME = ["coalesce", ["get", "name:" + APP_LANG], ["get", "name:en"], ["get
     // so the drawing tools enable a beat later instead of stealing first-paint bandwidth.
     try { OffpisteDraw.init(map, meta, art, degraded); firstIdle.then(() => { try { OffpisteDraw.loadElev(); } catch (e) {} }); } catch (e) { console.log("op init failed", e); }
     if (sessionTrackData) { try { OffpisteDraw.loadSessionTrack(sessionTrackData); } catch (e) { console.log("session track load failed", e); } }
+  };
+  map.once("style.load", () => { bootTerrain(); bootOffpisteUI(); });   // style spec parsed → arm the mesh NOW
+
+  map.on("load", () => {
+    bootTerrain();      // backstop; style.load has armed it already in practice
+    bootOffpisteUI();   // backstop for the entry UI — same idempotent contract
 
     // Tap-to-read elevation. The contours answer "how steep", never "how high";
     // the DEM already holds the metre value, so surfacing it costs a marker.
