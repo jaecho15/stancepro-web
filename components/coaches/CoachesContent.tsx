@@ -484,7 +484,7 @@ const COPY = {
       title: "A short clip and",
       accent: "the rider's context",
       lede:
-        "Coach Feedback is its own request type, not something that happens after an AI pass. Most requests come straight to a coach.",
+        "Riders choose one of three lanes: Self Analysis, AI Analysis or Coach Feedback. Coach Feedback is its own request type, not something that happens after AI Analysis — most requests come straight to a coach.",
       cards: [
         {
           title: "One clip, 30 seconds max",
@@ -520,7 +520,7 @@ const COPY = {
       ],
       shotAlt: "The rider's three request lanes: Self Analysis, AI Analysis and Coach Feedback",
       shotCaption:
-        "Riders choose between three separate lanes. Coach Feedback routes to a human coach directly.",
+        "The rider's own screen. Coach Feedback is the lane that reaches you.",
     },
     routing: {
       eyebrow: "How work reaches you",
@@ -532,7 +532,7 @@ const COPY = {
         {
           title: "Three availability states",
           points: [
-            "Open to Requests — you take queue offers",
+            "Open to Requests — queue offers and riders who pick you by name",
             "Direct Request Only — just riders who choose you",
             "Off Duty — nothing comes in at all",
           ],
@@ -550,7 +550,7 @@ const COPY = {
           points: [
             "Each auto-assign offer holds for 120 minutes",
             "A direct request gives you the same 120 minutes",
-            "A reminder push lands before it lapses — 15 minutes out on a queue offer, 10 on a direct request",
+            "A reminder push arrives before the window closes — 15 minutes left on a queue offer, 10 on a direct request",
           ],
         },
         {
@@ -656,8 +656,7 @@ const COPY = {
           title: "42 payout countries",
           points: [
             "You choose your bank country and currency",
-            "The form is fetched per country rather than hard-coded",
-            "So you fill in the fields your country actually uses",
+            "The bank fields differ from country to country, so you fill in the ones yours actually uses",
           ],
         },
         {
@@ -703,14 +702,14 @@ const COPY = {
           title: "A draft from your own words",
           points: [
             "Captions are generated from your voice",
-            "Turn those captions and your annotations into a structured written draft",
+            "If you want a starting point, AI turns those captions and your annotations into a written draft",
             "Edit it before anything goes out",
           ],
         },
         {
           title: "Move riders forward",
           points: [
-            "Attach a video or a Training Media clip",
+            "Attach a video, or a clip from StancePro's Training Media library",
             "Award coach-verified milestones on the rider's progression map",
           ],
         },
@@ -738,7 +737,7 @@ const COPY = {
         coachNodes: [
           {
             title: "You deliver",
-            body: "Submitting your review books your payout the same moment, as pending.",
+            body: "The moment you submit your review, StancePro creates your payout, marked pending.",
           },
           {
             title: "Approved",
@@ -746,19 +745,19 @@ const COPY = {
           },
           {
             title: "Queued",
-            body: "It queues against the bank account you verified during setup.",
+            body: "Your payout joins the transfer queue for the bank account you registered during setup.",
           },
           {
             title: "Paid out",
-            body: "StancePro sends the transfer. The sending fee is not taken out of your amount.",
+            body: "StancePro sends the transfer and pays the sending fee — it does not come out of your payout.",
           },
         ],
         note:
-          "Two things can hold this up: a rider dispute pauses approval until it is resolved, and without a ready payout account the amount waits instead of queueing. Transfers are initiated by StancePro rather than on an automatic daily run.",
+          "Two things can hold this up. A rider dispute pauses approval until StancePro reviews the session and decides the outcome — a rider cannot cancel your payout on their own. And without a ready payout account, your payout waits instead of queueing. StancePro starts each transfer; there is no automatic daily run.",
       },
       cards: [
         {
-          title: "What sets your amount",
+          title: "What sets your payout amount",
           points: [
             "A fixed amount for each session you deliver",
             "Decided by the tier the rider requested",
@@ -793,17 +792,17 @@ const COPY = {
   ko: {
     hero: {
       eyebrow: "StancePro 코칭",
-      title: "당신의 코칭을,",
+      title: "코치님의 코칭을,",
       accent: "모든 산에서",
       lede:
-        "라이더가 라이딩을 찍어 보내면, 코치의 목소리와 화면에 그린 선이 얹힌 영상으로 돌려받습니다. 신청부터 승인, 실제 코칭까지 어떻게 돌아가는지 그대로 정리했습니다.",
+        "라이더는 라이딩을 찍어 코치에게 보내고, 코치가 목소리를 얹고 선을 그려 넣은 영상으로 돌려받습니다. 신청부터 정산 계좌 등록, 실제 코칭까지 어떻게 돌아가는지 그대로 정리했습니다.",
     },
     request: {
       eyebrow: "무엇이 들어오는가",
       title: "짧은 클립과",
       accent: "라이더의 맥락",
       lede:
-        "Coach Feedback은 독립된 요청 종류입니다. AI 분석을 거쳐야 오는 것이 아니며, 대부분의 요청은 코치에게 바로 옵니다.",
+        "라이더는 Self Analysis · AI Analysis · Coach Feedback 세 경로 중 하나를 고릅니다. Coach Feedback은 독립된 요청 종류이고 AI Analysis를 거쳐야 오는 것이 아니며, 대부분의 요청은 코치에게 바로 옵니다.",
       cards: [
         {
           title: "클립 하나, 최대 30초",
@@ -839,19 +838,19 @@ const COPY = {
       ],
       shotAlt: "라이더의 세 가지 요청 경로: Self Analysis, AI Analysis, Coach Feedback",
       shotCaption:
-        "라이더는 세 경로 중에서 고릅니다. Coach Feedback은 사람 코치에게 바로 연결됩니다.",
+        "라이더가 보는 화면입니다. 코치에게 오는 것은 Coach Feedback입니다.",
     },
     routing: {
-      eyebrow: "일이 도달하는 방식",
-      title: "얼마나 받을지는",
+      eyebrow: "일이 들어오는 방식",
+      title: "요청을 얼마나 받을지는",
       accent: "코치가 정합니다",
       lede:
         "라이더는 자동 배정에 맡기거나 코치를 직접 지목합니다. 둘 중 무엇을 받을지 코치가 고르고, 아예 닫아둘 수도 있습니다.",
       cards: [
         {
-          title: "수신 상태 세 가지",
+          title: "요청 받기 상태 세 가지",
           points: [
-            "Open to Requests — 큐 제안을 받음",
+            "Open to Requests — 큐 제안과 직접 지목 모두 받음",
             "Direct Request Only — 지목한 라이더만",
             "Off Duty — 요청이 전혀 들어오지 않음",
           ],
@@ -869,15 +868,15 @@ const COPY = {
           points: [
             "자동 배정 제안은 120분 유지",
             "지목 요청도 동일하게 120분",
-            "만료 전 알림 푸시 — 큐 제안은 15분 전, 지목 요청은 10분 전",
+            "창이 닫히기 전 알림 푸시 — 큐 제안은 15분 전, 지목 요청은 10분 전",
           ],
         },
         {
           title: "인기가 아니라 회전율",
           points: [
-            "최근 24시간 수임 건수가 적은 순",
+            "최근 24시간 동안 맡은 세션이 적은 순",
             "그다음 평균 응답이 빠른 순",
-            "그다음 마지막 수임이 오래된 순",
+            "그다음 마지막으로 맡은 지 가장 오래된 순",
             "별점은 순서 결정에 들어가지 않음",
             "동시 진행은 최대 3건 — Advanced Coaching은 2건",
           ],
@@ -944,7 +943,7 @@ const COPY = {
           caption: "자격증마다 증빙 사진 1장이 필요합니다.",
         },
         {
-          alt: "바이오와 Coach Services Agreement 화면",
+          alt: "소개글과 Coach Services Agreement 화면",
           caption: "계약 동의는 제출을 막는 필수 관문입니다.",
         },
       ],
@@ -967,7 +966,7 @@ const COPY = {
           title: "정산 계좌가 진짜 관문",
           points: [
             "등록이 끝나기 전에는 라이더의 코치 선택 화면에 뜨지 않음",
-            "큐 작업도 수임할 수 없음",
+            "큐에 올라온 세션도 맡을 수 없음",
             "승인 알림이 바로 그 화면으로 연결",
           ],
         },
@@ -975,8 +974,7 @@ const COPY = {
           title: "정산 가능 42개국",
           points: [
             "은행 국가와 통화를 직접 선택",
-            "입력 양식은 고정이 아니라 국가별로 불러옴",
-            "그래서 해당 국가에서 실제로 쓰는 항목만 채우면 됨",
+            "은행 입력 항목은 국가마다 달라, 해당 국가에서 실제로 쓰는 항목만 채우면 됨",
           ],
         },
         {
@@ -999,7 +997,7 @@ const COPY = {
       shots: [
         {
           alt: "My Coaching Sessions 목록",
-          caption: "수임한 세션이 한 목록에 모입니다.",
+          caption: "맡은 세션이 한 목록에 모입니다.",
         },
         {
           alt: "그리기 도구와 자막이 있는 코치 녹화 화면",
@@ -1022,14 +1020,14 @@ const COPY = {
           title: "내 말에서 나온 초안",
           points: [
             "코치의 음성에서 자막이 생성됨",
-            "그 자막과 주석을 구조화된 서면 초안으로 변환",
+            "원하면 AI가 그 자막과 주석으로 구조화된 서면 초안을 작성",
             "전달 전에 직접 고쳐 쓰면 됨",
           ],
         },
         {
           title: "라이더를 다음 단계로",
           points: [
-            "영상이나 Training Media 클립 첨부",
+            "영상이나 StancePro의 Training Media 라이브러리 클립을 첨부",
             "라이더의 진도 맵에 코치 인증 단계 부여",
           ],
         },
@@ -1057,7 +1055,7 @@ const COPY = {
         coachNodes: [
           {
             title: "전달",
-            body: "리뷰를 제출하는 그 순간 정산 건이 pending 상태로 생성됩니다.",
+            body: "리뷰를 제출하는 그 순간 StancePro가 정산 건을 만들고 대기 상태로 표시합니다.",
           },
           {
             title: "승인",
@@ -1065,19 +1063,19 @@ const COPY = {
           },
           {
             title: "대기열",
-            body: "등록해 둔 은행 계좌를 대상으로 송금 대기열에 오릅니다.",
+            body: "등록해 둔 은행 계좌 앞으로 송금 대기열에 오릅니다.",
           },
           {
             title: "송금",
-            body: "StancePro가 송금합니다. 송금 수수료는 코치 금액에서 빼지 않습니다.",
+            body: "StancePro가 송금하고 송금 수수료도 부담합니다. 코치 정산금에서 빠지지 않습니다.",
           },
         ],
         note:
-          "흐름이 멈출 수 있는 지점은 둘입니다. 라이더가 이의를 제기하면 해결될 때까지 승인이 보류되고, 정산 계좌가 준비되지 않았으면 대기열에 오르지 못한 채 대기합니다. 송금은 매일 자동으로 도는 배치가 아니라 StancePro가 실행합니다.",
+          "흐름이 멈출 수 있는 지점은 둘입니다. 라이더가 이의를 제기하면 StancePro가 세션을 검토해 판단할 때까지 승인이 보류됩니다 — 라이더 혼자서 코치의 정산을 취소할 수는 없습니다. 그리고 정산 계좌가 준비되지 않았으면 대기열에 오르지 못한 채 대기합니다. 송금은 매일 자동으로 도는 배치가 아니라 StancePro가 실행합니다.",
       },
       cards: [
         {
-          title: "금액을 정하는 것",
+          title: "정산 금액을 정하는 것",
           points: [
             "전달한 세션마다 정액",
             "라이더가 요청한 등급으로 결정",
