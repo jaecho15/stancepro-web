@@ -546,11 +546,11 @@ const COPY = {
           ],
         },
         {
-          title: "Two hours to take a queue offer",
+          title: "Two hours to answer, either way",
           points: [
             "Each auto-assign offer holds for 120 minutes",
-            "A reminder push lands at roughly the 15-minute mark",
-            "Direct requests carry their own window, shown on the request",
+            "A direct request gives you the same 120 minutes",
+            "A reminder push lands before it lapses — 15 minutes out on a queue offer, 10 on a direct request",
           ],
         },
         {
@@ -865,11 +865,11 @@ const COPY = {
           ],
         },
         {
-          title: "큐 제안 수락은 2시간",
+          title: "어느 쪽이든 2시간",
           points: [
             "자동 배정 제안은 120분 유지",
-            "만료 15분 전쯤 알림 푸시",
-            "지목 요청은 요청 화면에 표시되는 자체 응답 시간이 적용",
+            "지목 요청도 동일하게 120분",
+            "만료 전 알림 푸시 — 큐 제안은 15분 전, 지목 요청은 10분 전",
           ],
         },
         {
