@@ -507,6 +507,7 @@ const COPY = {
           points: [
             "The stance and gear they've saved in the app — binding angles, width, board or skis",
             "The language they'd like your feedback in",
+            "You don't need to speak it — your captions and written feedback are translated between English, Korean, Japanese, Chinese, German, French and Thai",
           ],
         },
         {
@@ -819,6 +820,7 @@ const COPY = {
           points: [
             "앱에 저장해 둔 스탠스와 장비 — 바인딩 각도, 스탠스 폭, 보드나 스키",
             "피드백을 받고 싶은 언어",
+            "그 언어를 몰라도 됨 — 자막과 서면 피드백은 영어·한국어·일본어·중국어·독일어·프랑스어·태국어 사이에서 서로 번역됨",
           ],
         },
         {
