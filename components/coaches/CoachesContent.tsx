@@ -758,7 +758,7 @@ const COPY = {
             "A fixed amount for every review you send",
             "The amount depends on which type of review the rider ordered",
             "Same for every coach — no bidding, no haggling",
-            "We don't take a percentage of your payment",
+            "The rider pays StancePro; you get the fixed fee, and StancePro keeps the difference to run the platform",
           ],
         },
         {
@@ -1071,7 +1071,7 @@ const COPY = {
             "보낸 리뷰 한 편마다 정해진 금액",
             "금액은 라이더가 고른 리뷰 종류에 따라 다름",
             "모든 코치가 동일 — 입찰도 흥정도 없음",
-            "코치 보수에서 비율로 떼는 수수료 없음",
+            "라이더는 StancePro에 지불하고 코치는 정해진 보수를 받음 — 그 차액은 StancePro가 플랫폼 운영에 씀",
           ],
         },
         {
