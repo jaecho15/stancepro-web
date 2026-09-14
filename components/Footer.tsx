@@ -15,7 +15,7 @@ export function Footer() {
               <BrandLogo iconSize={44} wordmarkWidth={234} />
             </Link>
             <p className="text-slate-400 text-sm">
-              The ultimate snowboard and ski stance calculator. Dial in your setup like the pros.
+              The whole winter at your fingertips. Plan it, ride it, replay it, get coached on it.
             </p>
           </div>
 

@@ -7,13 +7,13 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://stance-pro.com'),
-  title: "StancePro - The Ultimate Snowboard & Ski Stance Calculator",
-  description: "Dial in your perfect stance setup with science-backed recommendations. Compare with pro riders, get video coaching, and join the community.",
-  keywords: ["snowboard", "ski", "stance calculator", "binding angles", "stance width", "snowboarding app"],
+  title: "StancePro - Every moment on snow. One app.",
+  description: "3D resort maps, snow forecast by hour and elevation, automatic ride tracking, AI video analysis and coaching by top-level trainers for snowboarders and skiers.",
+  keywords: ["snowboard", "ski", "3D resort map", "snow forecast", "ride tracker", "AI video analysis", "snowboard coaching", "stance calculator", "snowboarding app"],
   authors: [{ name: "StancePro" }],
   openGraph: {
-    title: "StancePro - The Ultimate Snowboard & Ski Stance Calculator",
-    description: "Dial in your perfect stance setup with science-backed recommendations.",
+    title: "StancePro - Every moment on snow. One app.",
+    description: "3D resort maps, snow forecast, ride tracker, AI video analysis and pro coaching for snowboarders and skiers.",
     url: "https://stance-pro.com",
     siteName: "StancePro",
     images: [
@@ -29,8 +29,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "StancePro - The Ultimate Snowboard & Ski Stance Calculator",
-    description: "Dial in your perfect stance setup with science-backed recommendations.",
+    title: "StancePro - Every moment on snow. One app.",
+    description: "3D resort maps, snow forecast, ride tracker, AI video analysis and pro coaching for snowboarders and skiers.",
     images: ["/og-image.png"],
   },
   robots: {

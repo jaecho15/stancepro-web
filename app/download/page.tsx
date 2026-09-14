@@ -5,22 +5,21 @@ import { Smartphone, Check, Sparkles } from "lucide-react";
 import { AppStoreButtons } from "@/components/AppStoreButtons";
 
 const freeFeatures = [
-  "AI gear assessment tools",
-  "Snowboard and ski setup tools",
-  "Saved stance and gear setups",
-  "Rider setup inspiration",
-  "Gear hub and compare tools",
-  "Field Talks, reviews, and community browsing",
-  "Messaging and account sync",
+  "3D maps of 3,400+ resorts on LiDAR terrain",
+  "Snow forecast by hour and elevation band",
+  "Ride tracker: speed, vertical, jumps, turns, lifts",
+  "Stance calculator and saved gear setups",
+  "Skill progression and season stats",
+  "Friends, meetups, and messaging",
 ];
 
 const proFeatures = [
-  "AI video feedback sessions",
-  "Human coach review requests",
-  "Top-level certified trainer coaching tiers",
-  "Premium coaching credit packs",
-  "In-app upgrades and restore flows",
-  "Advanced coaching and coach hub tools",
+  "AI video analysis with skeleton overlay and turn metrics",
+  "Coaching by top-level certified trainers",
+  "Digital Rider: your ride rebuilt in 3D",
+  "Pro forecast: run-to-run stability, model breakdown, wind fields",
+  "Gear suitability analysis",
+  "Cloud backup and sharing for sessions and clips",
   "Offerings may vary by platform and region",
 ];
 
@@ -61,9 +60,9 @@ export default function DownloadPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            Get the app that combines AI-powered coaching, AI gear assessment,
-            certified trainer reviews, and rider tools in one place. Free to
-            download with optional premium coaching and in-app upgrades.
+            3D resort maps, snow forecast, ride tracker, AI video analysis and
+            coaching by top-level trainers in one app. Free to download, with
+            optional Pro and coaching upgrades inside.
           </motion.p>
 
           <motion.div
@@ -115,8 +114,8 @@ export default function DownloadPage() {
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
           >
-            Start with AI-powered rider tools, then unlock premium coaching
-            inside the app when you want deeper support.
+            Start free with maps, forecast, tracking and setup tools. Add Pro
+            forecast layers or coaching inside the app when you want them.
           </motion.p>
         </div>
 
@@ -129,7 +128,7 @@ export default function DownloadPage() {
             className="glass rounded-2xl p-8"
           >
             <h3 className="text-2xl font-bold mb-2">Core App</h3>
-            <p className="text-slate-400 mb-6">A strong starting point for AI gear insight, setup, and community</p>
+            <p className="text-slate-400 mb-6">Maps, forecast, tracking, setup and community. No account tier needed.</p>
             <div className="text-3xl font-bold mb-8">
               Free to download
             </div>
@@ -158,7 +157,7 @@ export default function DownloadPage() {
               In-App Options
             </div>
             <h3 className="text-2xl font-bold mb-2">Premium & Coaching</h3>
-            <p className="text-slate-400 mb-6">Extra support when you want AI plus certified human review</p>
+            <p className="text-slate-400 mb-6">Pro subscription and coaching credits, bought inside the app</p>
             <div className="text-3xl font-bold mb-8">
               Purchased in app
             </div>

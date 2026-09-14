@@ -154,7 +154,7 @@ export default async function ClipSharePage({
         ))}
       </div>
       <footer className="mt-10 text-center text-xs opacity-50">
-        Shared with StancePro — ride tracking and AI coaching for snow sports.
+        Shared with StancePro. Every moment on snow, one app.
       </footer>
     </main>
   );

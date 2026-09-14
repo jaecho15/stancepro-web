@@ -2,14 +2,13 @@
 
 import { motion } from "framer-motion";
 import {
+  Activity,
   Calculator,
   Users,
   Video,
   Mountain,
   ChevronRight,
-  Star,
-  Target,
-  TrendingUp
+  Snowflake,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -41,7 +40,7 @@ export default function Home() {
           >
             <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass text-sm text-brand-300 mb-8">
               <BrandLogo iconOnly iconSize={16} />
-              Now available for iOS & Android
+              <span className="tracking-[0.2em]">RIDE · TRACK · IMPROVE</span>
             </span>
           </motion.div>
 
@@ -51,8 +50,8 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
           >
-            AI-Powered Coaching
-            <span className="gradient-text block">& Smarter Gear Decisions</span>
+            Every moment on snow.
+            <span className="gradient-text block">One app.</span>
           </motion.h1>
 
           <motion.p 
@@ -61,9 +60,8 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            StancePro now goes far beyond setup recommendations with AI-powered
-            coaching, AI gear assessment, and human reviews from certified
-            top-level trainers and coaches.
+            3D maps of 3,400+ resorts, snow by hour and elevation, every run
+            auto-tracked, AI video analysis, and coaching by top-level trainers.
           </motion.p>
 
           <motion.div
@@ -82,35 +80,50 @@ export default function Home() {
             transition={{ duration: 0.8, delay: 0.4 }}
             className="relative mt-16"
           >
-            <div className="relative mx-auto w-full max-w-6xl">
+            {/* Wider than the hero text column so six phones fit in one row at lg. */}
+            <div className="relative mx-auto w-full max-w-6xl lg:-mx-16 lg:w-[calc(100%+8rem)]">
               <div className="absolute inset-0 bg-gradient-to-t from-mountain-950 via-transparent to-transparent z-10 pointer-events-none" />
               <div className="glass rounded-3xl p-6 sm:p-10 shadow-2xl animate-glow">
-                <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
+                {/* The six stages of a season, in the order the ad tells them.
+                    Phones swipe sideways on narrow screens; three-up from sm,
+                    all six in one row from lg. */}
+                <div className="-mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-6">
                   {[
                     {
-                      src: "/screenshots/home.png",
-                      alt: "StancePro home screen with progression tracking and saved stance setup",
-                      label: "Progress + Saved Setups",
+                      src: "/screenshots/app/setup-stance-gear.webp",
+                      alt: "StancePro stance setup with binding angles and width drawn on a snowboard, plus saved gear",
+                      stage: "Setup",
+                      label: "Stance & gear",
                     },
                     {
-                      src: "/screenshots/measurements.png",
-                      alt: "StancePro body measurements form with height, weight, boot size and leg length",
-                      label: "Body Measurements",
+                      src: "/screenshots/app/plan-snow-forecast.webp",
+                      alt: "StancePro snow forecast for a resort by day, hour and elevation band",
+                      stage: "Plan",
+                      label: "Snow forecast",
                     },
                     {
-                      src: "/screenshots/gear-setup.png",
-                      alt: "StancePro gear setup details with saved board, boots and bindings",
-                      label: "Gear Setup",
+                      src: "/screenshots/app/ride-tracker-session.webp",
+                      alt: "StancePro ride tracker session stats: max speed, vertical, distance, jumps and turns",
+                      stage: "Ride",
+                      label: "Auto-tracked",
                     },
                     {
-                      src: "/screenshots/my-requests.png",
-                      alt: "StancePro rider coaching requests queue with pending reviews",
-                      label: "Coaching Requests",
+                      src: "/screenshots/app/replay-3d-map.webp",
+                      alt: "StancePro 3D resort map with a session track drawn on LiDAR terrain",
+                      stage: "Replay",
+                      label: "3D route & clips",
                     },
                     {
-                      src: "/screenshots/pose-analysis.png",
-                      alt: "StancePro pose analysis overlay on a snowboard riding clip",
-                      label: "AI Pose Analysis",
+                      src: "/screenshots/app/coach-ai-analysis.webp",
+                      alt: "StancePro session details with AI analysis feedback and a request for human coaching",
+                      stage: "Coach",
+                      label: "AI + pro trainers",
+                    },
+                    {
+                      src: "/screenshots/app/progress-home.webp",
+                      alt: "StancePro home screen with skill progress, snow forecast and ride tracker cards",
+                      stage: "Progress",
+                      label: "Skill progression",
                     },
                   ].map((shot, index) => (
                     <motion.div
@@ -118,19 +131,20 @@ export default function Home() {
                       initial={{ opacity: 0, y: 30 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.6, delay: 0.5 + index * 0.1 }}
-                      className="flex flex-col items-center"
+                      className="flex w-[160px] shrink-0 snap-center flex-col items-center sm:w-auto sm:shrink"
                     >
-                      <div className="relative w-[150px] sm:w-[180px] lg:w-[200px] aspect-[1284/2778] rounded-[2.25rem] bg-mountain-950 ring-1 ring-white/10 shadow-2xl overflow-hidden">
+                      <div className="relative w-full max-w-[200px] aspect-[1080/2424] rounded-[1.75rem] bg-mountain-950 ring-1 ring-white/10 shadow-2xl overflow-hidden">
                         <Image
                           src={shot.src}
                           alt={shot.alt}
                           fill
-                          sizes="(min-width: 1024px) 200px, (min-width: 640px) 180px, 150px"
+                          sizes="200px"
                           priority={index === 0}
                           className="object-cover"
                         />
                       </div>
-                      <p className="mt-4 text-sm text-slate-400 text-center">{shot.label}</p>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">{shot.stage}</p>
+                      <p className="mt-1 text-sm text-slate-400 text-center">{shot.label}</p>
                     </motion.div>
                   ))}
                 </div>
@@ -198,52 +212,51 @@ export default function Home() {
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
           >
-            From AI coaching and gear assessment to certified trainer reviews,
-            saved setups, and community tools, StancePro helps you progress with
-            more confidence.
+            Plan the day, ride it, replay it, and get coached on it. The whole
+            winter in one app.
           </motion.p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <FeatureCard
-            icon={Video}
-            title="AI Coaching + Certified Trainers"
-            description="Upload riding clips for AI feedback, then level up with human reviews from certified coaches and top-level trainers."
+            icon={Mountain}
+            title="3,400+ Resorts in Full 3D"
+            description="Real LiDAR terrain with runs, lifts, slope angle and off-piste zones. Fly the mountain before you ride it."
             gradient="from-brand-500 to-cyan-500"
             delay={0}
           />
           <FeatureCard
-            icon={Target}
-            title="AI Gear Assessment"
-            description="Use AI-assisted gear assessment alongside saved gear, comparisons, and setup context to make better equipment decisions."
-            gradient="from-purple-500 to-pink-500"
+            icon={Snowflake}
+            title="Tomorrow's Snow, Known Today"
+            description="Snowfall by hour and by elevation band, plus a season outlook for the resorts you follow."
+            gradient="from-blue-500 to-indigo-500"
             delay={0.1}
           />
           <FeatureCard
-            icon={Calculator}
-            title="Snowboard + Ski Setup Tools"
-            description="Build personalized snowboard and ski recommendations from your measurements, riding style, terrain, and gear context."
-            gradient="from-orange-500 to-red-500"
+            icon={Activity}
+            title="Every Run, Auto-Tracked"
+            description="Speed, vertical, jumps, turns and lifts recorded without touching your phone. Replay the session in 3D."
+            gradient="from-green-500 to-emerald-500"
             delay={0.2}
           />
           <FeatureCard
-            icon={Users}
-            title="Rider Setup Inspiration"
-            description="Browse rider profiles, compare stance widths and angles, and save references alongside your own setups."
-            gradient="from-green-500 to-emerald-500"
+            icon={Video}
+            title="AI Video Analysis"
+            description="Upload a clip and AI breaks it down: pose analysis, skeleton overlay, turn metrics, and your ride rebuilt as a 3D rider."
+            gradient="from-purple-500 to-pink-500"
             delay={0.3}
           />
           <FeatureCard
-            icon={Mountain}
-            title="Community & Messaging"
-            description="Join Field Talks, explore training media and reviews, and stay in touch through built-in messaging."
-            gradient="from-blue-500 to-indigo-500"
+            icon={Users}
+            title="Coaching by Top-Level Trainers"
+            description="Online, frame-by-frame annotations with voice feedback from certified coaches."
+            gradient="from-orange-500 to-red-500"
             delay={0.4}
           />
           <FeatureCard
-            icon={TrendingUp}
-            title="Save, Track & Share"
-            description="Save multiple setups and gear kits, revisit progress over time, and share or import setups with QR tools."
+            icon={Calculator}
+            title="Stance & Gear, Matched to You"
+            description="A stance calculated from your body, gear suitability analysis, and skill progression across the season."
             gradient="from-amber-500 to-orange-500"
             delay={0.5}
           />
@@ -272,8 +285,8 @@ export default function Home() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            Get Dialed in
-            <span className="gradient-text"> 3 Easy Steps</span>
+            One Season,
+            <span className="gradient-text"> Three Moves</span>
           </motion.h2>
         </div>
 
@@ -281,18 +294,18 @@ export default function Home() {
           {[
             {
               step: "01",
-              title: "Build Your Rider Profile",
-              description: "Choose snowboard or ski, add your measurements, riding style, terrain focus, and gear context."
+              title: "Set Up",
+              description: "Snowboard or ski, your measurements, a stance calculated for your body, and gear checked for fit. Then pick the day from the snow forecast."
             },
             {
               step: "02",
-              title: "Get AI Coaching & Gear Insight",
-              description: "Review AI-powered coaching feedback, gear assessment guidance, and setup recommendations tailored to your riding."
+              title: "Ride",
+              description: "Start a session and put the phone away. Every run, lift, jump and turn is recorded, then replayed on the 3D map."
             },
             {
               step: "03",
-              title: "Add Expert Human Review",
-              description: "Bring in certified coaches and top-level trainers when you want deeper technical review, progression support, and standards-based feedback."
+              title: "Improve",
+              description: "Upload a clip for AI analysis, send it to a top-level trainer for annotated feedback, and watch your skill tree fill in."
             }
           ].map((item, index) => (
             <motion.div
@@ -359,12 +372,11 @@ export default function Home() {
           viewport={{ once: true }}
         >
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Ready to Ride Better?
+            This season, <span className="gradient-text">ride different</span>
           </h2>
           <p className="text-xl text-slate-400 mb-8 max-w-2xl mx-auto">
-            Download StancePro today for AI-powered coaching, AI gear
-            assessment, certified trainer reviews, and the setup tools that tie
-            it all together.
+            The whole winter at your fingertips. Free to download on iOS and
+            Android.
           </p>
           <AppStoreButtons />
         </motion.div>
