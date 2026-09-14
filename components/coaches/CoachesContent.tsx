@@ -40,7 +40,7 @@ function Points({ items }: { items: readonly string[] }) {
 /** Phone-shaped frame for an app screenshot. */
 function Shot({ src, alt, caption }: { src: string; alt: string; caption: string }) {
   return (
-    <figure className="flex flex-col items-center">
+    <figure className="flex w-[200px] shrink-0 snap-center flex-col items-center sm:w-auto sm:shrink">
       <div className="w-full max-w-[260px] overflow-hidden rounded-[2rem] border border-white/10 bg-mountain-950 shadow-2xl shadow-black/40">
         <img src={src} alt={alt} className="block h-auto w-full" loading="lazy" />
       </div>
@@ -48,6 +48,24 @@ function Shot({ src, alt, caption }: { src: string; alt: string; caption: string
         {caption}
       </figcaption>
     </figure>
+  );
+}
+
+/**
+ * Several screenshots side by side. On phones they would otherwise stack —
+ * three 560px-tall frames in a row of one — so below `sm` this is a
+ * horizontal snap strip that bleeds to the screen edges; from `sm` up it is
+ * the grid the desktop layout expects.
+ */
+function ShotStrip({ cols, children }: { cols: 2 | 3; children: React.ReactNode }) {
+  const grid =
+    cols === 3 ? "sm:grid-cols-3" : "sm:mx-auto sm:max-w-2xl sm:grid-cols-2";
+  return (
+    <div
+      className={`-mx-6 flex snap-x snap-mandatory gap-6 overflow-x-auto px-6 pb-2 sm:mx-0 sm:grid sm:gap-10 sm:overflow-visible sm:px-0 sm:pb-0 ${grid}`}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -232,7 +250,7 @@ export function CoachesContent() {
             />
           ))}
         </div>
-        <div className="mx-auto grid max-w-2xl grid-cols-2 gap-10">
+        <ShotStrip cols={2}>
           <Shot
             src={`${SHOTS}/coach-review-tools.webp`}
             alt={t.tools.shots[0].alt}
@@ -243,7 +261,7 @@ export function CoachesContent() {
             alt={t.tools.shots[1].alt}
             caption={t.tools.shots[1].caption}
           />
-        </div>
+        </ShotStrip>
       </Section>
 
       {/* 3. how work reaches you */}
@@ -317,7 +335,7 @@ export function CoachesContent() {
             <Step key={s.title} n={i + 1} title={s.title} points={s.points} />
           ))}
         </ol>
-        <div className="grid gap-10 sm:grid-cols-3">
+        <ShotStrip cols={3}>
           <Shot
             src={`${SHOTS}/coach-application-profile.webp`}
             alt={t.begin.shots[0].alt}
@@ -333,7 +351,7 @@ export function CoachesContent() {
             alt={t.begin.shots[2].alt}
             caption={t.begin.shots[2].caption}
           />
-        </div>
+        </ShotStrip>
       </Section>
 
       {/* CTA */}
