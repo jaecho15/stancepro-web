@@ -4,6 +4,9 @@ type BrandLogoProps = {
   iconOnly?: boolean;
   iconSize?: number;
   wordmarkWidth?: number;
+  /** Extra classes on the wordmark <img>, e.g. a responsive width that
+   *  overrides `wordmarkWidth` at some breakpoints (`w-[180px] lg:w-[234px]`). */
+  wordmarkClassName?: string;
   className?: string;
 };
 
@@ -14,6 +17,7 @@ export function BrandLogo({
   iconOnly = false,
   iconSize = 32,
   wordmarkWidth = 160,
+  wordmarkClassName = "",
   className = "",
 }: BrandLogoProps) {
   return (
@@ -33,7 +37,7 @@ export function BrandLogo({
           alt="StancePro"
           width={wordmarkWidth}
           height={Math.round(wordmarkWidth / WORDMARK_ASPECT_RATIO)}
-          className="h-auto max-w-full"
+          className={`h-auto max-w-full ${wordmarkClassName}`.trim()}
           priority
           unoptimized
         />

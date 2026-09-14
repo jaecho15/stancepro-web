@@ -6,9 +6,11 @@ export function Footer() {
   return (
     <footer className="border-t border-white/10 bg-mountain-950/50">
       <div className="container mx-auto px-6 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
+        {/* Six tracks: the brand column takes two so the wordmark and tagline
+            have room and clear space before the "Web tools" column. */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-8 mb-12">
           {/* Brand */}
-          <div className="col-span-2 md:col-span-1">
+          <div className="col-span-2 md:col-span-2 md:pr-8">
             <Link href="/" className="flex items-center mb-4">
               <BrandLogo iconSize={44} wordmarkWidth={234} />
             </Link>

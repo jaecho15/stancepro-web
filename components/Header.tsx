@@ -36,11 +36,18 @@ export function Header() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center">
-              <BrandLogo iconSize={44} wordmarkWidth={234} />
+              {/* Between md and lg the bar cannot fit a 234px wordmark plus
+                  five nav items: the first link touched the logo and the nav
+                  wrapped to two rows at 768px. */}
+              <BrandLogo
+                iconSize={44}
+                wordmarkWidth={234}
+                wordmarkClassName="w-[180px] lg:w-[234px]"
+              />
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-8">
+            <nav className="hidden md:flex items-center gap-5 lg:gap-8">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
