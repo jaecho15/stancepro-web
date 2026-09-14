@@ -15,7 +15,6 @@ import Link from "next/link";
 import { AppStoreButtons } from "@/components/AppStoreButtons";
 import { WebToolCards } from "@/components/WebToolCards";
 import { FeatureCard } from "@/components/FeatureCard";
-import { TestimonialCard } from "@/components/TestimonialCard";
 import { StatsSection } from "@/components/StatsSection";
 import { ProRidersShowcase } from "@/components/ProRidersShowcase";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -321,45 +320,6 @@ export default function Home() {
               <p className="text-slate-400">{item.description}</p>
             </motion.div>
           ))}
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section className="relative container mx-auto px-6 py-24">
-        <div className="text-center mb-16">
-          <motion.h2 
-            className="text-4xl md:text-5xl font-bold mb-4"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-          >
-            Loved by Riders
-            <span className="gradient-text"> Worldwide</span>
-          </motion.h2>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          <TestimonialCard
-            quote="The AI coaching gave me clear next steps, and the coach follow-up helped me actually fix what was holding my riding back."
-            author="Jake M."
-            role="Freestyle Rider"
-            rating={5}
-            delay={0}
-          />
-          <TestimonialCard
-            quote="Being able to combine AI feedback with a certified coach review completely changed how I approached my carving."
-            author="Sarah L."
-            role="All-Mountain Rider"
-            rating={5}
-            delay={0.1}
-          />
-          <TestimonialCard
-            quote="The gear assessment tools made it much easier to narrow down what actually fits my riding instead of just guessing."
-            author="Mike R."
-            role="Park Rider"
-            rating={5}
-            delay={0.2}
-          />
         </div>
       </section>
 

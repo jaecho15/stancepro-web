@@ -116,7 +116,7 @@ const features: Feature[] = [
     icon: Map,
     gradient: "from-emerald-500 to-teal-600",
     webHref: "/resort-3d",
-    shot: { src: `${SHOTS}/replay-3d-map.webp`, alt: "StancePro 3D resort map with a session track drawn on LiDAR terrain" },
+    shot: { src: `${SHOTS}/plan-resort-3d.webp`, alt: "StancePro 3D map of Treble Cone: LiDAR terrain, satellite imagery, runs and lifts" },
     details: [
       { icon: Mountain, text: "LiDAR 5 m terrain where available, worldwide coverage everywhere" },
       { icon: Route, text: "Runs, lifts, slope angle and off-piste context draped over real relief" },
@@ -161,6 +161,7 @@ const features: Feature[] = [
     description: "Digital Rider turns phone video into a full 3D rider you can orbit and slow down, joint by joint.",
     icon: Zap,
     gradient: "from-cyan-500 to-blue-600",
+    shot: { src: `${SHOTS}/replay-digital-rider.webp`, alt: "StancePro Digital Rider: a 3D skeleton rebuilt from a phone clip, mid-air, with the source frame in the corner" },
     details: [
       { icon: Video, text: "From a single phone clip to a 3D avatar replay" },
       { icon: Compass, text: "Any angle, any speed" },
