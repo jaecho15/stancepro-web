@@ -537,11 +537,11 @@ const COPY = {
           ],
         },
         {
-          title: "When the app picks, it asks one coach at a time",
+          title: "When the app picks, everyone who's open gets asked",
           points: [
-            "A request goes to one coach, not to everyone at once",
-            "If you pass, or don't answer in time, it moves to the next coach",
-            "So when the app asks you, the job is yours if you want it",
+            "The request goes to every coach set to Open to Requests who can take it",
+            "The first coach to accept takes it — the others' requests simply close",
+            "If nobody accepts within 2 hours it goes out again, up to three times",
           ],
         },
         {
@@ -549,16 +549,16 @@ const COPY = {
           points: [
             "Same 2 hours whether a rider picked you or the app did",
             "You get a push notification when it arrives, and a reminder before time runs out",
-            "If you pass, it simply goes to the next coach",
+            "If you pass, you won't be asked again for that request — the others still can take it",
           ],
         },
         {
-          title: "Who the app asks first",
+          title: "Who counts as able to take it",
           points: [
-            "Coaches who've done fewer reviews in the last 24 hours go first — so work is shared around",
-            "Then coaches who send reviews back fastest, then whoever has waited longest since their last one",
-            "Your star rating only comes in as a tie-breaker",
-            "You can have 3 reviews on the go at once (2 for Advanced Coaching). A review you've already sent still counts until the rider's 24 hours are up",
+            "Set to Open to Requests, bank details in, and approved for that type of review",
+            "Fewer than 3 reviews on the go (2 for Advanced Coaching)",
+            "A review you've already sent still counts until the rider's 24 hours are up",
+            "No ranking, no rating — if you're open and under your limit, you're asked",
           ],
         },
       ],
@@ -850,11 +850,11 @@ const COPY = {
           ],
         },
         {
-          title: "앱이 고를 땐 한 번에 한 코치에게만",
+          title: "앱이 고를 땐 열려 있는 코치 모두에게",
           points: [
-            "요청은 한 코치에게 감 — 모두에게 동시에 뿌리지 않음",
-            "거절하거나 제때 답하지 않으면 다음 코치에게 넘어감",
-            "그래서 앱이 물어보면, 원할 경우 그 일은 코치 것",
+            "Open to Requests 상태이면서 맡을 수 있는 코치 전원에게 요청이 감",
+            "먼저 수락한 코치가 가져감 — 나머지 코치의 요청은 그냥 닫힘",
+            "2시간 안에 아무도 수락하지 않으면 다시 보내며, 최대 세 번",
           ],
         },
         {
@@ -862,16 +862,16 @@ const COPY = {
           points: [
             "라이더가 골랐든 앱이 골랐든 똑같이 2시간",
             "요청이 오면 푸시 알림, 시간이 다 되기 전에 한 번 더 알림",
-            "거절하면 그냥 다음 코치에게 넘어감",
+            "거절하면 그 요청은 다시 오지 않음 — 다른 코치들은 계속 받을 수 있음",
           ],
         },
         {
-          title: "앱이 누구에게 먼저 물어보는가",
+          title: "맡을 수 있는 코치의 조건",
           points: [
-            "최근 24시간 동안 리뷰를 덜 한 코치가 먼저 — 일이 골고루 돌아가도록",
-            "그다음은 수락 후 리뷰를 빨리 보내는 코치, 그다음은 마지막 리뷰 이후 가장 오래 기다린 코치",
-            "별점은 동점일 때만 작용",
-            "동시에 3건까지 진행 가능 (Advanced Coaching은 2건). 이미 보낸 리뷰도 라이더의 24시간이 끝날 때까지는 진행 중으로 셈",
+            "Open to Requests 상태, 은행 계좌 등록 완료, 그 리뷰 종류에 승인된 레벨",
+            "진행 중인 리뷰가 3건 미만 (Advanced Coaching은 2건 미만)",
+            "이미 보낸 리뷰도 라이더의 24시간이 끝날 때까지는 진행 중으로 셈",
+            "순위도 별점도 없음 — 열려 있고 한도 아래면 요청이 옴",
           ],
         },
       ],
