@@ -348,6 +348,7 @@ export function DevelopmentLogViewer() {
   const [timeline2025, setTimeline2025] = useState<Timeline2025Payload | null>(null);
   const [dataSource, setDataSource] = useState<"db" | "json" | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -427,6 +428,7 @@ export function DevelopmentLogViewer() {
           if (dbResult) {
             setPayload(dbResult.payload);
             setDataSource("db");
+            setFallbackNotice(null);
             setLastSyncedAt(
               dbResult.syncRun?.generated_at ??
                 dbResult.syncRun?.finished_at ??
@@ -434,14 +436,32 @@ export function DevelopmentLogViewer() {
             );
             return;
           }
+          // RLS returns an empty set (not an error) when the signed-in email is
+          // not on internal_member_allowlist — surface that instead of silently
+          // showing the bundled snapshot as if it were current.
+          setFallbackNotice(
+            `Supabase returned no sessions for ${session?.user?.email ?? "this account"}. ` +
+              "This usually means the email is not on the internal allowlist " +
+              "(development_log_sessions is RLS-gated). Showing the static JSON " +
+              "snapshot bundled with the site, which is only as fresh as the last deploy."
+          );
         } catch (dbErr) {
           console.warn("Development log DB fetch failed; falling back to JSON", dbErr);
+          setFallbackNotice(
+            `Supabase fetch failed (${dbErr instanceof Error ? dbErr.message : "unknown error"}). ` +
+              "Showing the static JSON snapshot bundled with the site, which is only as fresh as the last deploy."
+          );
         }
+      } else {
+        setFallbackNotice(
+          "No Supabase client — showing the static JSON snapshot bundled with the site."
+        );
       }
 
       await loadPromptLogFromJson(bustCache);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Load failed");
+      setFallbackNotice(null);
       setPayload(null);
       setJournal(null);
       setTimeline2025(null);
@@ -450,7 +470,7 @@ export function DevelopmentLogViewer() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, loadStaticAssets, loadPromptLogFromJson]);
+  }, [supabase, session?.user?.email, loadStaticAssets, loadPromptLogFromJson]);
 
   useEffect(() => {
     void load();
@@ -593,6 +613,11 @@ export function DevelopmentLogViewer() {
                 Cursor/Claude sessions: {dataSource === "db" ? "Supabase" : "static JSON"}
                 {lastSyncedAt ? ` · synced ${lastSyncedAt.slice(0, 19)}` : ""}
                 {" · auto-refresh daily"}
+              </p>
+            ) : null}
+            {dataSource === "json" && fallbackNotice ? (
+              <p className="max-w-2xl rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+                {fallbackNotice}
               </p>
             ) : null}
           </div>
