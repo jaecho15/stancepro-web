@@ -3901,7 +3901,10 @@ window.WinterImagery = (function(){
     // Cache key prefers the per-resort scene_date so an unchanged resort is
     // never re-downloaded by a global manifest bump.
     var dver = entry.scene_date || ver;
-    var ATTR = "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2";
+    // Attribution comes from the resort entry so each region credits its own
+    // imagery provider (GSI for Japan, NAIP, swisstopo...). Entries written
+    // before the field existed are all LINZ, hence the fallback.
+    var ATTR = entry.attribution || "Imagery © Toitū Te Whenua LINZ (CC BY 4.0) · Snow: Copernicus Sentinel-2";
     // Layered resorts serve the summer photo and the snow as separate tiles.
     // The aerial path embeds a survey fingerprint (aerial@<fp>): it only ever
     // changes when new survey photography is published, so seasonal snow
@@ -4009,6 +4012,10 @@ window.WinterImagery = (function(){
       .then(function(man){
         if (!man || !man.resorts || !man.resorts[RESORT_ID]) return;   // not covered — final
         var entry = man.resorts[RESORT_ID], ver = man.version || "1";
+        // Northern-hemisphere resorts are staged out of season: the aerial
+        // layer is published in autumn and the snow layer arrives with the
+        // first usable scene. Until then there is nothing wintry to show.
+        if (entry.aerial && entry.aerial.path && !entry.detail_path) return;
         var tries = 0;
         (function tryArm(){
           try { arm(m, entry, ver); }
